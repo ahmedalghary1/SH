@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}المنتجات{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>المنتجات</h1>
+    {% if request.user.is_manager %}<a class="btn btn-accent" href="{% url 'products:create' %}">إضافة منتج جديد</a>{% endif %}
+</div>
+<form class="filters">
+    <input name="q" placeholder="بحث بالاسم أو SKU" value="{{ request.GET.q }}">
+    <select name="category"><option value="">كل التصنيفات</option>{% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}</select>
+    <select name="status"><option value="">كل الحالات</option><option value="active">نشط</option><option value="inactive">متوقف</option></select>
+    <button class="btn btn-primary">بحث</button>
+</form>
+<div class="table-wrap">
+    <table>
+        <thead><tr><th>الصورة</th><th>الاسم</th><th>SKU</th><th>التصنيف</th><th>قطاعي</th><th>جملة</th><th>المتغيرات</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+        <tbody>
+        {% for product in products %}
+            <tr>
+                <td>{% if product.image %}<img class="thumb" src="{{ product.image.url }}" alt="{{ product.name }}">{% else %}<span class="empty-img">-</span>{% endif %}</td>
+                <td>{{ product.name }}</td>
+                <td>{{ product.sku }}</td>
+                <td>{{ product.category|default:'-' }}</td>
+                <td>{{ product.retail_price }}</td>
+                <td>{{ product.wholesale_price }}</td>
+                <td>{{ product.variant_count }}</td>
+                <td><span class="badge {% if product.is_active %}success{% else %}danger{% endif %}">{% if product.is_active %}نشط{% else %}متوقف{% endif %}</span></td>
+                <td class="actions">
+                    <a class="btn btn-light" href="{% url 'products:detail' product.pk %}">عرض</a>
+                    {% if request.user.is_manager %}
+                        <a class="btn btn-light" href="{% url 'products:update' product.pk %}">تعديل</a>
+                        <form method="post" action="{% url 'products:deactivate' product.pk %}" data-confirm="إيقاف المنتج؟">{% csrf_token %}<button class="btn btn-danger">إيقاف</button></form>
+                    {% endif %}
+                </td>
+            </tr>
+        {% empty %}<tr><td colspan="9">لا توجد منتجات</td></tr>{% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include 'partials/pagination.html' %}
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}تفاصيل الطلب{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{{ order.order_number }}</h1><span class="badge status-{{ order.status }}">{{ order.get_status_display }}</span></div>
+<section class="card detail-grid">
+    <div><span>العميل</span><strong>{{ order.customer|default:'-' }}</strong></div>
+    <div><span>النوع</span><strong>{{ order.get_order_type_display }}</strong></div>
+    <div><span>المخزن</span><strong>{{ order.warehouse|default:'-' }}</strong></div>
+    <div><span>الدفع</span><strong>{{ order.get_payment_method_display }}</strong></div>
+    <div><span>الإجمالي</span><strong>{{ order.total }}</strong></div>
+    <div><span>المتبقي</span><strong>{{ order.remaining_amount }}</strong></div>
+</section>
+<div class="table-wrap"><table><thead><tr><th>المنتج</th><th>اللون</th><th>المقاس</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>الإجمالي</th></tr></thead><tbody>
+{% for item in order.items.all %}<tr><td>{{ item.variant.product.name }}</td><td>{{ item.variant.color|default:'-' }}</td><td>{{ item.variant.size|default:'-' }}</td><td>{{ item.quantity }}</td><td>{{ item.unit_price }}</td><td>{{ item.discount }}</td><td>{{ item.total }}</td></tr>{% endfor %}
+</tbody></table></div>
+<div class="button-row">
+    {% if order.status == 'draft' %}<form method="post" action="{% url 'orders:confirm' order.pk %}">{% csrf_token %}<button class="btn btn-accent">تأكيد وخصم المخزون</button></form>{% endif %}
+    <form method="post" action="{% url 'orders:cancel' order.pk %}" data-confirm="إلغاء الطلب؟">{% csrf_token %}<button class="btn btn-danger">إلغاء</button></form>
+    <form method="post" action="{% url 'orders:return' order.pk %}" data-confirm="تسجيل مرتجع؟">{% csrf_token %}<button class="btn btn-secondary">مرتجع</button></form>
+    {% if not order.invoice %}<form method="post" action="{% url 'invoices:generate' order.pk %}">{% csrf_token %}<button class="btn btn-primary">إصدار فاتورة</button></form>{% else %}<a class="btn btn-primary" href="{% url 'invoices:detail' order.invoice.pk %}">عرض الفاتورة</a>{% endif %}
+</div>
+{% endblock %}

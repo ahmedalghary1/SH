@@ -1,0 +1,3 @@
+{% extends 'base.html' %}
+{% block title %}تقرير المخزون{% endblock %}
+{% block content %}<div class="page-head"><h1>تقرير المخزون</h1></div><div class="stats-grid"><div class="stat-card"><span>منخفض</span><strong>{{ low_stocks.count }}</strong></div><div class="stat-card"><span>نفد</span><strong>{{ out_stocks.count }}</strong></div></div>{% include 'reports/report_links.html' %}{% endblock %}

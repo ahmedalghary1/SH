@@ -1,0 +1,3 @@
+{% extends 'base.html' %}
+{% block title %}تقرير المبيعات الشهرية{% endblock %}
+{% block content %}<div class="page-head"><h1>تقرير المبيعات الشهرية</h1></div><div class="stats-grid"><div class="stat-card"><span>B2B</span><strong>{{ b2b_total }}</strong></div><div class="stat-card"><span>B2C</span><strong>{{ b2c_total }}</strong></div></div>{% include 'reports/report_links.html' %}{% endblock %}

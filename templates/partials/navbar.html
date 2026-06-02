@@ -1,0 +1,10 @@
+<header class="topbar">
+    <div>
+        <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
+        <span class="muted">{{ request.user.get_role_display }}</span>
+    </div>
+    <form method="post" action="{% url 'accounts:logout' %}">
+        {% csrf_token %}
+        <button class="btn btn-secondary" type="submit">خروج</button>
+    </form>
+</header>

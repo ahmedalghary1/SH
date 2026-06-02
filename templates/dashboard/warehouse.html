@@ -1,0 +1,6 @@
+{% extends 'base.html' %}
+{% block title %}لوحة المستودع{% endblock %}
+{% block content %}
+<div class="page-head"><h1>لوحة المستودع</h1><div class="button-row"><a class="btn btn-accent" href="{% url 'inventory:transfer' %}">تحويل مخزون</a><a class="btn btn-light" href="{% url 'inventory:stock_in' %}">إدخال مخزون</a></div></div>
+<section class="card"><h2>طلبات قيد التجهيز</h2><div class="table-wrap"><table><tbody>{% for order in preparing_orders %}<tr><td>{{ order.order_number }}</td><td>{{ order.customer }}</td><td>{{ order.warehouse }}</td></tr>{% empty %}<tr><td>لا توجد طلبات تجهيز</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

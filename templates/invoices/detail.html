@@ -1,0 +1,6 @@
+{% extends 'base.html' %}
+{% block title %}فاتورة{% endblock %}
+{% block content %}
+<div class="page-head"><h1>فاتورة {{ invoice.invoice_number }}</h1><a class="btn btn-accent" href="{% url 'invoices:print' invoice.pk %}" target="_blank">طباعة</a></div>
+{% include 'invoices/_invoice_box.html' %}
+{% endblock %}

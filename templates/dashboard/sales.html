@@ -1,0 +1,6 @@
+{% extends 'base.html' %}
+{% block title %}لوحة المبيعات{% endblock %}
+{% block content %}
+<div class="page-head"><h1>لوحة المبيعات</h1><a class="btn btn-accent" href="{% url 'orders:create' %}">طلب جديد</a></div>
+<div class="stats-grid"><div class="stat-card"><span>طلباتي اليوم</span><strong>{{ my_orders_today }}</strong></div><div class="stat-card"><span>مبيعاتي اليوم</span><strong>{{ my_sales_today }}</strong></div><div class="stat-card"><span>عملاء جدد</span><strong>{{ my_customers }}</strong></div></div>
+{% endblock %}

@@ -1,0 +1,15 @@
+<form method="post" enctype="multipart/form-data" class="card form-grid">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    {% for field in form %}
+        <label>
+            <span>{{ field.label }}</span>
+            {{ field }}
+            {% if field.errors %}<small class="error">{{ field.errors|join:', ' }}</small>{% endif %}
+        </label>
+    {% endfor %}
+    <div class="form-actions">
+        <button class="btn btn-primary" type="submit">{{ button_text|default:'حفظ' }}</button>
+        <button class="btn btn-light" type="button" onclick="history.back()">رجوع</button>
+    </div>
+</form>

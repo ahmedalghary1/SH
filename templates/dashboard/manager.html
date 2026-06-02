@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% block title %}لوحة المدير{% endblock %}
+{% block content %}
+<div class="page-head"><h1>لوحة المدير</h1></div>
+<div class="stats-grid"><div class="stat-card"><span>مبيعات اليوم</span><strong>{{ today_sales }}</strong></div><div class="stat-card"><span>طلبات اليوم</span><strong>{{ today_orders }}</strong></div><div class="stat-card"><span>المدفوع</span><strong>{{ paid_total }}</strong></div><div class="stat-card"><span>المتبقي</span><strong>{{ remaining_total }}</strong></div></div>
+<section class="card"><h2>آخر الطلبات</h2><div class="table-wrap"><table><tbody>{% for order in latest_orders %}<tr><td>{{ order.order_number }}</td><td>{{ order.customer }}</td><td>{{ order.total }}</td><td>{{ order.get_status_display }}</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

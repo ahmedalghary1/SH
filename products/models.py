@@ -1,0 +1,77 @@
+from django.db import models
+
+
+class Category(models.Model):
+    name = models.CharField(max_length=100, db_index=True)
+    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        verbose_name_plural = 'Categories'
+
+    def __str__(self):
+        return self.name
+
+
+class Color(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+    hex_code = models.CharField(max_length=7, blank=True, null=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Size(models.Model):
+    name = models.CharField(max_length=20, unique=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+
+    def __str__(self):
+        return self.name
+
+
+class Product(models.Model):
+    name = models.CharField(max_length=200, db_index=True)
+    sku = models.CharField(max_length=100, unique=True, db_index=True)
+    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True)
+    description = models.TextField(blank=True, null=True)
+    material = models.CharField(max_length=100, blank=True, null=True)
+    season = models.CharField(max_length=100, blank=True, null=True)
+    retail_price = models.DecimalField(max_digits=10, decimal_places=2)
+    wholesale_price = models.DecimalField(max_digits=10, decimal_places=2)
+    image = models.ImageField(upload_to='products/', blank=True, null=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['sku']),
+            models.Index(fields=['name', 'is_active']),
+            models.Index(fields=['created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.name} ({self.sku})'
+
+
+class ProductVariant(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variants')
+    color = models.ForeignKey(Color, on_delete=models.SET_NULL, null=True)
+    size = models.ForeignKey(Size, on_delete=models.SET_NULL, null=True)
+    variant_sku = models.CharField(max_length=120, unique=True, db_index=True)
+    barcode = models.CharField(max_length=120, blank=True, null=True, db_index=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['variant_sku']),
+            models.Index(fields=['barcode']),
+            models.Index(fields=['is_active']),
+        ]
+
+    def __str__(self):
+        return f'{self.product.name} - {self.color} - {self.size}'
+
+# Create your models here.
