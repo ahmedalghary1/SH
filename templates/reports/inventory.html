@@ -1,3 +1,26 @@
 {% extends 'base.html' %}
 {% block title %}تقرير المخزون{% endblock %}
-{% block content %}<div class="page-head"><h1>تقرير المخزون</h1></div><div class="stats-grid"><div class="stat-card"><span>منخفض</span><strong>{{ low_stocks.count }}</strong></div><div class="stat-card"><span>نفد</span><strong>{{ out_stocks.count }}</strong></div></div>{% include 'reports/report_links.html' %}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>تقرير المخزون</h1></div>
+{% include 'reports/report_links.html' %}
+<div class="stats-grid">
+    <div class="stat-card"><span>إجمالي السجلات</span><strong>{{ stocks.count }}</strong></div>
+    <div class="stat-card"><span>منخفض</span><strong>{{ low_stocks.count }}</strong></div>
+    <div class="stat-card"><span>نفد</span><strong>{{ out_stocks.count }}</strong></div>
+</div>
+<section class="card">
+    <h2>المنتجات منخفضة أو منتهية المخزون</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>المخزن</th><th>المنتج</th><th>اللون</th><th>المقاس</th><th>الكمية</th><th>الحد الأدنى</th></tr></thead>
+            <tbody>
+            {% for stock in low_stocks %}
+                <tr><td>{{ stock.warehouse }}</td><td>{{ stock.variant.product.name }}</td><td>{{ stock.variant.color|default:'-' }}</td><td>{{ stock.variant.size|default:'-' }}</td><td>{{ stock.quantity }}</td><td>{{ stock.min_quantity }}</td></tr>
+            {% empty %}
+                <tr><td colspan="6">لا توجد منتجات منخفضة</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

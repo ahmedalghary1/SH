@@ -1,6 +1,60 @@
 {% extends 'base.html' %}
 {% block title %}تعديل منتج{% endblock %}
 {% block content %}
-<div class="page-head"><h1>تعديل منتج</h1></div>
-{% include 'partials/model_form.html' with button_text='تحديث المنتج' %}
+<div class="page-head">
+    <h1>تعديل منتج</h1>
+    <a class="btn btn-light" href="{% url 'products:detail' product.pk %}">رجوع للتفاصيل</a>
+</div>
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <section class="card form-grid">
+        <h2>بيانات المنتج</h2>
+        {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+        {% for field in form %}
+            <label>
+                <span>{{ field.label }}</span>
+                {{ field }}
+                {% if field.errors %}<small class="error">{{ field.errors|join:', ' }}</small>{% endif %}
+            </label>
+        {% endfor %}
+    </section>
+
+    <section class="card">
+        <div class="page-head compact-head">
+            <h2>المخازن والكميات</h2>
+            <a class="btn btn-light" href="{% url 'products:variant_create' %}?product={{ product.pk }}">إضافة لون / مقاس</a>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>المتغير</th><th>اللون</th><th>المقاس</th><th>المخزن</th><th>الكمية</th><th>حد التنبيه</th></tr></thead>
+                <tbody>
+                {% for stock in stock_rows %}
+                    <tr>
+                        <td>{{ stock.variant.variant_sku }}</td>
+                        <td>{{ stock.variant.color|default:'-' }}</td>
+                        <td>{{ stock.variant.size|default:'-' }}</td>
+                        <td>
+                            <input type="hidden" name="stock_id" value="{{ stock.pk }}">
+                            <select name="stock_{{ stock.pk }}_warehouse">
+                                {% for warehouse in warehouses %}
+                                    <option value="{{ warehouse.pk }}" {% if warehouse.pk == stock.warehouse_id %}selected{% endif %}>{{ warehouse.name }} - {{ warehouse.get_warehouse_type_display }}</option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td><input type="number" min="0" name="stock_{{ stock.pk }}_quantity" value="{{ stock.quantity }}"></td>
+                        <td><input type="number" min="0" name="stock_{{ stock.pk }}_min_quantity" value="{{ stock.min_quantity }}"></td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6">لا توجد كميات مخزون لهذا المنتج بعد. أضف متغيرًا ثم أدخل الكمية من شاشة دخول المخزون.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <div class="form-actions">
+        <button class="btn btn-primary" type="submit">تحديث المنتج والمخزون</button>
+        <button class="btn btn-light" type="button" onclick="history.back()">رجوع</button>
+    </div>
+</form>
 {% endblock %}

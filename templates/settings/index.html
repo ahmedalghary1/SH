@@ -2,5 +2,5 @@
 {% block title %}الإعدادات{% endblock %}
 {% block content %}
 <div class="page-head"><h1>الإعدادات</h1></div>
-<section class="card"><p>مساحة إعدادات النظام العامة. يمكن لاحقًا إضافة بيانات الشركة والشعار وبيانات الطباعة هنا.</p></section>
+{% include 'partials/model_form.html' with button_text='حفظ الإعدادات' %}
 {% endblock %}

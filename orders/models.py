@@ -58,6 +58,8 @@ class Order(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True)
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default=PAYMENT_UNPAID, db_index=True)
     payment_method = models.CharField(max_length=30, choices=PAYMENT_METHOD_CHOICES, default=METHOD_CASH)
+    wallet_from_number = models.CharField(max_length=50, blank=True, null=True)
+    wallet_to_number = models.CharField(max_length=50, blank=True, null=True)
     subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     discount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=12, decimal_places=2, default=0)

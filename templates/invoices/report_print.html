@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block title %}تقرير الفواتير{% endblock %}
+{% block content %}
+<div class="page-head no-print">
+    <h1>تقرير الفواتير</h1>
+    <button class="btn btn-accent" onclick="window.print()">طباعة / حفظ PDF</button>
+</div>
+<section class="invoice-box">
+    <div class="invoice-head">
+        {% if company_settings.logo %}
+            <img class="invoice-logo" src="{{ company_settings.logo.url }}" alt="{{ company_settings.company_name }}">
+        {% else %}
+            <div class="brand-mark">م</div>
+        {% endif %}
+        <div>
+            <h1>{{ company_settings.company_name|default:'شركة الملابس' }}</h1>
+            <p>تقرير الفواتير</p>
+        </div>
+    </div>
+    <table>
+        <thead><tr><th>رقم الفاتورة</th><th>رقم الطلب</th><th>العميل</th><th>المندوب</th><th>الدفع</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>التاريخ</th></tr></thead>
+        <tbody>
+        {% for invoice in invoices %}
+            <tr><td>{{ invoice.invoice_number }}</td><td>{{ invoice.order.order_number }}</td><td>{{ invoice.order.customer|default:'عميل فردي' }}</td><td>{{ invoice.order.created_by|default:'-' }}</td><td>{{ invoice.order.get_payment_method_display }}</td><td>{{ invoice.order.total }}</td><td>{{ invoice.order.paid_amount }}</td><td>{{ invoice.order.remaining_amount }}</td><td>{{ invoice.issued_at }}</td></tr>
+        {% empty %}
+            <tr><td colspan="9">لا توجد فواتير</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

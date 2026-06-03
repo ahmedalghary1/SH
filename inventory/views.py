@@ -10,7 +10,7 @@ from django.views.generic import CreateView, FormView, ListView
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin
 from products.models import ProductVariant
 
-from .forms import StockAdjustmentForm, StockMovementForm, StockTransferForm, WarehouseForm
+from .forms import RepresentativeIssueForm, RepresentativeReturnForm, StockAdjustmentForm, StockMovementForm, StockTransferForm, WarehouseForm
 from .models import Stock, StockMovement, Warehouse
 from .services import adjust_stock, stock_in, stock_out, transfer_stock
 
@@ -21,6 +21,9 @@ class WarehouseListView(RoleRequiredMixin, ListView):
     template_name = 'inventory/warehouses/list.html'
     context_object_name = 'warehouses'
     paginate_by = 20
+
+    def get_queryset(self):
+        return Warehouse.objects.select_related('assigned_user').order_by('warehouse_type', 'name')
 
 
 class WarehouseCreateView(ManagerRequiredMixin, CreateView):
@@ -39,6 +42,8 @@ class StockListView(RoleRequiredMixin, ListView):
 
     def get_queryset(self):
         qs = Stock.objects.select_related('warehouse', 'variant__product', 'variant__color', 'variant__size')
+        if self.request.user.role == 'sales' and not self.request.user.is_superuser:
+            qs = qs.filter(warehouse__assigned_user=self.request.user, warehouse__warehouse_type=Warehouse.TYPE_REPRESENTATIVE)
         q = self.request.GET.get('q')
         if q:
             qs = qs.filter(Q(variant__product__name__icontains=q) | Q(variant__variant_sku__icontains=q))
@@ -98,6 +103,64 @@ class StockTransferView(WarehouseRequiredMixin, FormView):
         try:
             transfer_stock(user=self.request.user, **form.cleaned_data)
             messages.success(self.request, 'تم تحويل المخزون')
+            return redirect(self.success_url)
+        except ValidationError as exc:
+            form.add_error(None, exc.message)
+            return self.form_invalid(form)
+
+
+class RepresentativeIssueView(WarehouseRequiredMixin, FormView):
+    template_name = 'inventory/movements/representative_issue.html'
+    form_class = RepresentativeIssueForm
+    success_url = reverse_lazy('inventory:movements')
+
+    def form_valid(self, form):
+        representative = form.cleaned_data['representative']
+        rep_warehouse, _ = Warehouse.objects.get_or_create(
+            warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
+            assigned_user=representative,
+            defaults={'name': f'عهدة {representative.get_full_name() or representative.username}', 'is_active': True},
+        )
+        try:
+            transfer_stock(
+                user=self.request.user,
+                variant=form.cleaned_data['variant'],
+                from_warehouse=form.cleaned_data['from_warehouse'],
+                to_warehouse=rep_warehouse,
+                quantity=form.cleaned_data['quantity'],
+                note=form.cleaned_data.get('note') or 'تسليم كمية للمندوب',
+            )
+            messages.success(self.request, 'تم تسليم الكمية للمندوب')
+            return redirect(self.success_url)
+        except ValidationError as exc:
+            form.add_error(None, exc.message)
+            return self.form_invalid(form)
+
+
+class RepresentativeReturnView(WarehouseRequiredMixin, FormView):
+    template_name = 'inventory/movements/representative_return.html'
+    form_class = RepresentativeReturnForm
+    success_url = reverse_lazy('inventory:movements')
+
+    def form_valid(self, form):
+        rep_warehouse = Warehouse.objects.filter(
+            warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
+            assigned_user=form.cleaned_data['representative'],
+            is_active=True,
+        ).first()
+        if not rep_warehouse:
+            form.add_error('representative', 'لا توجد عهدة مخزون لهذا المندوب')
+            return self.form_invalid(form)
+        try:
+            transfer_stock(
+                user=self.request.user,
+                variant=form.cleaned_data['variant'],
+                from_warehouse=rep_warehouse,
+                to_warehouse=form.cleaned_data['to_warehouse'],
+                quantity=form.cleaned_data['quantity'],
+                note=form.cleaned_data.get('note') or 'إرجاع كمية غير مباعة من المندوب',
+            )
+            messages.success(self.request, 'تم استلام الكمية المرتجعة من المندوب')
             return redirect(self.success_url)
         except ValidationError as exc:
             form.add_error(None, exc.message)

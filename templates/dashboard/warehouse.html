@@ -1,6 +1,58 @@
 {% extends 'base.html' %}
 {% block title %}لوحة المستودع{% endblock %}
 {% block content %}
-<div class="page-head"><h1>لوحة المستودع</h1><div class="button-row"><a class="btn btn-accent" href="{% url 'inventory:transfer' %}">تحويل مخزون</a><a class="btn btn-light" href="{% url 'inventory:stock_in' %}">إدخال مخزون</a></div></div>
-<section class="card"><h2>طلبات قيد التجهيز</h2><div class="table-wrap"><table><tbody>{% for order in preparing_orders %}<tr><td>{{ order.order_number }}</td><td>{{ order.customer }}</td><td>{{ order.warehouse }}</td></tr>{% empty %}<tr><td>لا توجد طلبات تجهيز</td></tr>{% endfor %}</tbody></table></div></section>
+<div class="page-head">
+    <h1>لوحة المستودع</h1>
+    <div class="button-row">
+        <a class="btn btn-accent" href="{% url 'inventory:transfer' %}">تحويل مخزون</a>
+        <a class="btn btn-light" href="{% url 'inventory:stock_in' %}">إدخال مخزون</a>
+    </div>
+</div>
+<section class="card">
+    <h2>طلبات قيد التجهيز</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>رقم الطلب</th><th>العميل</th><th>المخزن</th><th>إجراءات</th></tr></thead>
+            <tbody>
+            {% for order in preparing_orders %}
+                <tr><td>{{ order.order_number }}</td><td>{{ order.customer|default:'-' }}</td><td>{{ order.warehouse|default:'-' }}</td><td><a class="btn btn-light" href="{% url 'orders:detail' order.pk %}">عرض</a></td></tr>
+            {% empty %}
+                <tr><td colspan="4">لا توجد طلبات تجهيز</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+<div class="order-layout">
+    <section class="card">
+        <h2>مخزون منخفض</h2>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>المخزن</th><th>المنتج</th><th>الكمية</th></tr></thead>
+                <tbody>
+                {% for stock in low_stocks %}
+                    <tr><td>{{ stock.warehouse }}</td><td>{{ stock.variant.product.name }}</td><td>{{ stock.quantity }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="3">لا توجد تنبيهات</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="card">
+        <h2>آخر حركات المخزون</h2>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>النوع</th><th>المنتج</th><th>الكمية</th></tr></thead>
+                <tbody>
+                {% for movement in latest_movements %}
+                    <tr><td>{{ movement.get_movement_type_display }}</td><td>{{ movement.variant.product.name }}</td><td>{{ movement.quantity }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="3">لا توجد حركات</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
 {% endblock %}

@@ -1,36 +1,65 @@
 <aside class="sidebar">
     <div class="brand">
-        <div class="brand-mark">SH</div>
+        <div class="brand-mark">م</div>
         <div>
             <strong>إدارة الملابس</strong>
-            <span>نظام داخلي</span>
+            <span>ERP داخلي للمبيعات والمخازن</span>
         </div>
     </div>
     <nav class="side-nav">
-        <a href="{% url 'dashboard:index' %}">الرئيسية</a>
+        <div class="nav-section">
+            <strong>الإدارة العامة</strong>
+            <a class="nav-link" href="{% url 'dashboard:index' %}"><span class="nav-icon color-red"></span>الرئيسية<span class="nav-arrow">‹</span></a>
+        </div>
         {% if request.user.is_manager %}
-            <a href="{% url 'products:list' %}">المنتجات</a>
-            <a href="{% url 'inventory:warehouses' %}">المخازن</a>
-            <a href="{% url 'inventory:stock' %}">المخزون</a>
-            <a href="{% url 'inventory:movements' %}">حركات المخزون</a>
-            <a href="{% url 'customers:list' %}">العملاء</a>
-            <a href="{% url 'orders:list' %}">الطلبات</a>
-            <a href="{% url 'reports:daily_sales' %}">التقارير</a>
-            <a href="{% url 'accounts:user_list' %}">الموظفين</a>
-            <a href="{% url 'settings_app:index' %}">الإعدادات</a>
+            <div class="nav-section">
+                <strong>نظام المنتجات</strong>
+                <a class="nav-link" href="{% url 'products:list' %}"><span class="nav-icon color-cyan"></span>المنتجات<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'products:categories' %}"><span class="nav-icon color-yellow"></span>التصنيفات<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'products:sizes' %}"><span class="nav-icon color-purple"></span>المقاسات<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'products:colors' %}"><span class="nav-icon color-green"></span>الألوان<span class="nav-arrow">‹</span></a>
+            </div>
+            <div class="nav-section">
+                <strong>نظام المخازن</strong>
+                <a class="nav-link" href="{% url 'inventory:warehouses' %}"><span class="nav-icon color-purple"></span>إعدادات المخازن<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'inventory:stock' %}"><span class="nav-icon color-cyan"></span>المخزون<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'inventory:movements' %}"><span class="nav-icon color-green"></span>الحركات المخزنية<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'inventory:representative_issue' %}"><span class="nav-icon color-yellow"></span>تسليم لمندوب<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'inventory:representative_return' %}"><span class="nav-icon color-red"></span>استلام من مندوب<span class="nav-arrow">‹</span></a>
+            </div>
+            <div class="nav-section">
+                <strong>المبيعات</strong>
+                <a class="nav-link" href="{% url 'customers:list' %}"><span class="nav-icon color-green"></span>العملاء<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'invoices:list' %}"><span class="nav-icon color-yellow"></span>الفواتير<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'reports:daily_sales' %}"><span class="nav-icon color-purple"></span>تقارير المبيعات<span class="nav-arrow">‹</span></a>
+            </div>
+            <div class="nav-section">
+                <strong>نظام الحسابات</strong>
+                <a class="nav-link" href="{% url 'accounts:user_list' %}"><span class="nav-icon color-cyan"></span>المستخدمون والصلاحيات<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'settings_app:index' %}"><span class="nav-icon color-purple"></span>الإعدادات<span class="nav-arrow">‹</span></a>
+            </div>
         {% elif request.user.role == 'sales' %}
-            <a href="{% url 'orders:create' %}">إنشاء طلب</a>
-            <a href="{% url 'orders:list' %}">طلباتي</a>
-            <a href="{% url 'customers:list' %}">العملاء</a>
-            <a href="{% url 'products:list' %}">المنتجات</a>
-            <a href="{% url 'inventory:stock' %}">مخزون المحل</a>
+            <div class="nav-section">
+                <strong>المبيعات</strong>
+                <a class="nav-link" href="{% url 'customers:list' %}"><span class="nav-icon color-yellow"></span>العملاء<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'invoices:list' %}"><span class="nav-icon color-purple"></span>الفواتير<span class="nav-arrow">‹</span></a>
+            </div>
+            <div class="nav-section">
+                <strong>العهدة</strong>
+                <a class="nav-link" href="{% url 'products:list' %}"><span class="nav-icon color-cyan"></span>المنتجات<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'inventory:stock' %}"><span class="nav-icon color-green"></span>مخزون العهدة<span class="nav-arrow">‹</span></a>
+            </div>
         {% elif request.user.role == 'warehouse' %}
-            <a href="{% url 'inventory:stock' %}">المخزون</a>
-            <a href="{% url 'inventory:movements' %}">حركات المخزون</a>
-            <a href="{% url 'inventory:transfer' %}">تحويل مخزون</a>
-            <a href="{% url 'inventory:stock_in' %}">إدخال مخزون</a>
-            <a href="{% url 'orders:list' %}?status=preparing">طلبات التجهيز</a>
-            <a href="{% url 'products:list' %}">المنتجات</a>
+            <div class="nav-section">
+                <strong>نظام المخازن</strong>
+                <a class="nav-link" href="{% url 'inventory:stock' %}"><span class="nav-icon color-cyan"></span>المخزون<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'inventory:movements' %}"><span class="nav-icon color-green"></span>الحركات المخزنية<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'inventory:transfer' %}"><span class="nav-icon color-purple"></span>تحويل مخزون<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'inventory:representative_issue' %}"><span class="nav-icon color-yellow"></span>تسليم لمندوب<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'inventory:representative_return' %}"><span class="nav-icon color-red"></span>استلام من مندوب<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'inventory:stock_in' %}"><span class="nav-icon color-cyan"></span>إدخال مخزون<span class="nav-arrow">‹</span></a>
+                <a class="nav-link" href="{% url 'products:list' %}"><span class="nav-icon color-green"></span>المنتجات<span class="nav-arrow">‹</span></a>
+            </div>
         {% endif %}
     </nav>
 </aside>

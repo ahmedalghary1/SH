@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}تقرير المبيعات السنوية{% endblock %}
+{% block content %}
+<div class="page-head"><h1>تقرير المبيعات السنوية</h1></div>
+{% include 'reports/report_links.html' %}
+<div class="table-wrap">
+    <table>
+        <thead><tr><th>السنة</th><th>عدد الفواتير</th><th>إجمالي الدخل</th><th>المدفوع</th><th>المتبقي</th></tr></thead>
+        <tbody>
+        {% for year in years %}
+            <tr><td>{{ year.year }}</td><td>{{ year.count }}</td><td>{{ year.total }}</td><td>{{ year.paid }}</td><td>{{ year.remaining }}</td></tr>
+        {% empty %}
+            <tr><td colspan="5">لا توجد مبيعات سنوية</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

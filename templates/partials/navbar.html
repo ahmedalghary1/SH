@@ -1,10 +1,16 @@
 <header class="topbar">
-    <div>
+    <button class="icon-btn menu-toggle" type="button" data-sidebar-toggle aria-label="فتح القائمة">☰</button>
+    <div class="topbar-tools" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+    </div>
+    <div class="topbar-user">
         <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
-        <span class="muted">{{ request.user.get_role_display }}</span>
+        <span>{{ request.user.get_role_display }}</span>
     </div>
     <form method="post" action="{% url 'accounts:logout' %}">
         {% csrf_token %}
-        <button class="btn btn-secondary" type="submit">خروج</button>
+        <button class="btn btn-secondary" type="submit">تسجيل الخروج</button>
     </form>
 </header>

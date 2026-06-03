@@ -17,6 +17,8 @@
     const paidAmount = document.getElementById("id_paid_amount");
     const generalDiscount = document.getElementById("id_discount");
     const customerSelect = document.getElementById("id_customer");
+    const customerSearch = document.getElementById("customer-search");
+    const customerResults = document.getElementById("customer-results");
     const items = [];
     let selectedProduct = null;
 
@@ -105,6 +107,42 @@
             option.dataset.size = variant.size;
             variantSelect.appendChild(option);
         });
+    });
+
+    customerSearch?.addEventListener("input", async () => {
+        const q = customerSearch.value.trim();
+        if (q.length < 2) {
+            customerResults.classList.remove("is-open");
+            return;
+        }
+        const data = await fetchJson(`/orders/ajax/search-customers/?q=${encodeURIComponent(q)}`);
+        customerResults.innerHTML = "";
+        data.data.forEach((customer) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "search-result";
+            button.textContent = `${customer.name} - ${customer.phone}`;
+            button.dataset.id = customer.id;
+            button.dataset.name = customer.name;
+            button.dataset.phone = customer.phone;
+            customerResults.appendChild(button);
+        });
+        customerResults.classList.add("is-open");
+    });
+
+    customerResults?.addEventListener("click", (event) => {
+        const button = event.target.closest(".search-result");
+        if (!button) return;
+        let option = customerSelect.querySelector(`option[value="${button.dataset.id}"]`);
+        if (!option) {
+            option = document.createElement("option");
+            option.value = button.dataset.id;
+            option.textContent = `${button.dataset.name} - ${button.dataset.phone}`;
+            customerSelect.appendChild(option);
+        }
+        option.selected = true;
+        customerSearch.value = option.textContent;
+        customerResults.classList.remove("is-open");
     });
 
     async function refreshVariantMeta() {

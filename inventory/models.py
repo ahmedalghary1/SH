@@ -7,13 +7,22 @@ from products.models import ProductVariant
 class Warehouse(models.Model):
     TYPE_MAIN = 'main'
     TYPE_STORE = 'store'
+    TYPE_REPRESENTATIVE = 'representative'
     WAREHOUSE_TYPE_CHOICES = [
         (TYPE_MAIN, 'مخزن رئيسي'),
         (TYPE_STORE, 'محل بيع'),
+        (TYPE_REPRESENTATIVE, 'عهدة مندوب'),
     ]
 
     name = models.CharField(max_length=100, db_index=True)
     warehouse_type = models.CharField(max_length=20, choices=WAREHOUSE_TYPE_CHOICES, db_index=True)
+    assigned_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_warehouses',
+    )
     address = models.TextField(blank=True, null=True)
     is_active = models.BooleanField(default=True, db_index=True)
 

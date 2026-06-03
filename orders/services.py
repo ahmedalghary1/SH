@@ -59,7 +59,7 @@ def create_order(*, order_data, items, user, confirm=False):
         )
     calculate_order_totals(order)
     if confirm:
-        confirm_order(order=order, user=user)
+        order = confirm_order(order=order, user=user)
     return order
 
 

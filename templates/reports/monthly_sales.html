@@ -1,3 +1,22 @@
 {% extends 'base.html' %}
 {% block title %}تقرير المبيعات الشهرية{% endblock %}
-{% block content %}<div class="page-head"><h1>تقرير المبيعات الشهرية</h1></div><div class="stats-grid"><div class="stat-card"><span>B2B</span><strong>{{ b2b_total }}</strong></div><div class="stat-card"><span>B2C</span><strong>{{ b2c_total }}</strong></div></div>{% include 'reports/report_links.html' %}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>تقرير المبيعات الشهرية</h1></div>
+{% include 'reports/report_links.html' %}
+<div class="stats-grid">
+    <div class="stat-card"><span>مبيعات الجملة</span><strong>{{ b2b_total }}</strong></div>
+    <div class="stat-card"><span>مبيعات القطاعي</span><strong>{{ b2c_total }}</strong></div>
+</div>
+<div class="table-wrap">
+    <table>
+        <thead><tr><th>الشهر</th><th>عدد الطلبات</th><th>إجمالي المبيعات</th></tr></thead>
+        <tbody>
+        {% for month in months %}
+            <tr><td>{{ month.month|date:'Y-m' }}</td><td>{{ month.count }}</td><td>{{ month.total }}</td></tr>
+        {% empty %}
+            <tr><td colspan="3">لا توجد مبيعات شهرية</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

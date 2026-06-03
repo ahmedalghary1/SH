@@ -1,3 +1,18 @@
 {% extends 'base.html' %}
 {% block title %}تقرير الموظفين{% endblock %}
-{% block content %}<div class="page-head"><h1>تقرير الموظفين</h1></div><div class="table-wrap"><table><thead><tr><th>الموظف</th><th>الطلبات</th><th>المبيعات</th><th>التحصيل</th></tr></thead><tbody>{% for emp in employees %}<tr><td>{{ emp.created_by__username }}</td><td>{{ emp.count }}</td><td>{{ emp.total }}</td><td>{{ emp.paid }}</td></tr>{% endfor %}</tbody></table></div>{% include 'reports/report_links.html' %}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>تقرير الموظفين</h1></div>
+{% include 'reports/report_links.html' %}
+<div class="table-wrap">
+    <table>
+        <thead><tr><th>الموظف</th><th>الطلبات</th><th>المبيعات</th><th>التحصيل</th><th>متوسط الطلب</th></tr></thead>
+        <tbody>
+        {% for emp in employees %}
+            <tr><td>{{ emp.created_by__username|default:'-' }}</td><td>{{ emp.count }}</td><td>{{ emp.sales_total }}</td><td>{{ emp.paid }}</td><td>{{ emp.avg_order|default:'-' }}</td></tr>
+        {% empty %}
+            <tr><td colspan="5">لا توجد بيانات موظفين</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

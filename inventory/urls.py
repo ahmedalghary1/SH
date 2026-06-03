@@ -12,6 +12,8 @@ urlpatterns = [
     path('movements/in/', views.StockInView.as_view(), name='stock_in'),
     path('movements/out/', views.StockOutView.as_view(), name='stock_out'),
     path('movements/transfer/', views.StockTransferView.as_view(), name='transfer'),
+    path('movements/representative-issue/', views.RepresentativeIssueView.as_view(), name='representative_issue'),
+    path('movements/representative-return/', views.RepresentativeReturnView.as_view(), name='representative_return'),
     path('movements/adjustment/', views.StockAdjustmentView.as_view(), name='adjustment'),
     path('ajax/check-stock/', views.ajax_check_stock, name='ajax_check_stock'),
 ]

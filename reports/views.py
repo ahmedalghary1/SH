@@ -1,5 +1,5 @@
-from django.db.models import Count, F, Sum
-from django.db.models.functions import TruncMonth
+from django.db.models import Avg, Count, F, Sum
+from django.db.models.functions import ExtractYear, TruncMonth
 from django.utils import timezone
 from django.views.generic import TemplateView
 
@@ -64,7 +64,27 @@ class EmployeeSalesReportView(ManagerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['employees'] = Order.objects.values('created_by__username').annotate(total=Sum('total'), paid=Sum('paid_amount'), count=Count('id')).order_by('-total')
+        context['employees'] = Order.objects.values('created_by__username').annotate(
+            sales_total=Sum('total'),
+            paid=Sum('paid_amount'),
+            count=Count('id'),
+            avg_order=Avg('total'),
+        ).order_by('-sales_total')
+        return context
+
+
+class YearlySalesReportView(ManagerRequiredMixin, TemplateView):
+    template_name = 'reports/yearly_sales.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        orders = Order.objects.exclude(status__in=[Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
+        context['years'] = orders.annotate(year=ExtractYear('created_at')).values('year').annotate(
+            total=Sum('total'),
+            paid=Sum('paid_amount'),
+            remaining=Sum('remaining_amount'),
+            count=Count('id'),
+        ).order_by('-year')
         return context
 
 # Create your views here.

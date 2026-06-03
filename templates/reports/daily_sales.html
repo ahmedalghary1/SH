@@ -2,6 +2,43 @@
 {% block title %}تقرير المبيعات اليومية{% endblock %}
 {% block content %}
 <div class="page-head"><h1>تقرير المبيعات اليومية</h1></div>
-<div class="stats-grid"><div class="stat-card"><span>إجمالي اليوم</span><strong>{{ total_sales }}</strong></div><div class="stat-card"><span>عدد الطلبات</span><strong>{{ orders_count }}</strong></div><div class="stat-card"><span>المدفوع</span><strong>{{ paid_total }}</strong></div><div class="stat-card"><span>المتبقي</span><strong>{{ remaining_total }}</strong></div></div>
 {% include 'reports/report_links.html' %}
+<div class="stats-grid">
+    <div class="stat-card"><span>إجمالي اليوم</span><strong>{{ total_sales }}</strong></div>
+    <div class="stat-card"><span>عدد الطلبات</span><strong>{{ orders_count }}</strong></div>
+    <div class="stat-card"><span>المدفوع</span><strong>{{ paid_total }}</strong></div>
+    <div class="stat-card"><span>المتبقي</span><strong>{{ remaining_total }}</strong></div>
+</div>
+<div class="order-layout">
+    <section class="card">
+        <h2>أكثر المنتجات مبيعًا</h2>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>المنتج</th><th>الكمية</th></tr></thead>
+                <tbody>
+                {% for item in top_products %}
+                    <tr><td>{{ item.variant__product__name }}</td><td>{{ item.qty }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="2">لا توجد مبيعات اليوم</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="card">
+        <h2>مبيعات الموظفين</h2>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>الموظف</th><th>الطلبات</th><th>الإجمالي</th></tr></thead>
+                <tbody>
+                {% for employee in employee_sales %}
+                    <tr><td>{{ employee.created_by__username|default:'-' }}</td><td>{{ employee.count }}</td><td>{{ employee.total }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="3">لا توجد بيانات اليوم</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
 {% endblock %}

@@ -8,9 +8,9 @@ class User(AbstractUser):
     ROLE_WAREHOUSE = 'warehouse'
 
     ROLE_CHOICES = [
-        (ROLE_MANAGER, 'مدير'),
-        (ROLE_SALES, 'موظف مبيعات'),
-        (ROLE_WAREHOUSE, 'موظف مستودع'),
+        (ROLE_MANAGER, 'مسؤول النظام'),
+        (ROLE_SALES, 'مندوب مبيعات'),
+        (ROLE_WAREHOUSE, 'مسؤول مخزن'),
     ]
 
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_SALES, db_index=True)

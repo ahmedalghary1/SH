@@ -2,5 +2,42 @@
 {% block title %}إضافة منتج{% endblock %}
 {% block content %}
 <div class="page-head"><h1>إضافة منتج</h1></div>
-{% include 'partials/model_form.html' with button_text='حفظ المنتج' %}
+<form method="post" enctype="multipart/form-data" class="card form-grid">
+    {% csrf_token %}
+    {% if product_form.non_field_errors %}<div class="form-errors">{{ product_form.non_field_errors }}</div>{% endif %}
+    <h2>بيانات المنتج</h2>
+    {% for field in product_form %}
+        <label>
+            <span>{{ field.label }}</span>
+            {{ field }}
+            {% if field.errors %}<small class="error">{{ field.errors|join:', ' }}</small>{% endif %}
+        </label>
+    {% endfor %}
+
+    <h2>اللون والمقاس</h2>
+    {% if variant_form.non_field_errors %}<div class="form-errors">{{ variant_form.non_field_errors }}</div>{% endif %}
+    {% for field in variant_form %}
+        <label>
+            <span>{{ field.label }}</span>
+            {{ field }}
+            {% if field.errors %}<small class="error">{{ field.errors|join:', ' }}</small>{% endif %}
+        </label>
+    {% endfor %}
+
+    <h2>المخزون الأولي</h2>
+    {% if stock_form.non_field_errors %}<div class="form-errors">{{ stock_form.non_field_errors }}</div>{% endif %}
+    {% for field in stock_form %}
+        <label>
+            <span>{{ field.label }}</span>
+            {{ field }}
+            {% if field.errors %}<small class="error">{{ field.errors|join:', ' }}</small>{% endif %}
+        </label>
+    {% endfor %}
+    <div class="form-actions">
+        <button class="btn btn-primary" type="submit">حفظ المنتج</button>
+        <a class="btn btn-light" href="{% url 'products:colors' %}">إدارة الألوان</a>
+        <a class="btn btn-light" href="{% url 'products:sizes' %}">إدارة المقاسات</a>
+        <button class="btn btn-light" type="button" onclick="history.back()">رجوع</button>
+    </div>
+</form>
 {% endblock %}

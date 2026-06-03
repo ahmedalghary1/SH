@@ -12,6 +12,7 @@ from django.views.generic import DetailView, FormView, ListView, UpdateView, Vie
 
 from accounts.permissions import RoleRequiredMixin, SalesRequiredMixin, sales_required
 from customers.models import Customer
+from invoices.services import generate_invoice
 from inventory.models import Stock
 from products.models import Product, ProductVariant
 
@@ -44,6 +45,11 @@ class OrderCreateView(SalesRequiredMixin, FormView):
     form_class = OrderForm
     template_name = 'orders/create.html'
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
+
     def form_valid(self, form):
         raw_items = self.request.POST.get('items_json', '[]')
         try:
@@ -59,6 +65,10 @@ class OrderCreateView(SalesRequiredMixin, FormView):
                 })
             confirm = self.request.POST.get('action') == 'confirm'
             order = create_order(order_data=form.cleaned_data, items=items, user=self.request.user, confirm=confirm)
+            if confirm:
+                invoice = generate_invoice(order)
+                messages.success(self.request, 'تم حفظ الفاتورة وخصم الكمية من المخزون')
+                return redirect('invoices:detail', pk=invoice.pk)
             messages.success(self.request, 'تم حفظ الطلب' + (' وتأكيده' if confirm else ' كمسودة'))
             return redirect('orders:detail', pk=order.pk)
         except (ValidationError, ProductVariant.DoesNotExist, KeyError, ValueError, json.JSONDecodeError) as exc:

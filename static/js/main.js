@@ -31,3 +31,23 @@ document.addEventListener("click", (event) => {
         event.target.closest(".modal").hidden = true;
     }
 });
+
+document.addEventListener("DOMContentLoaded", () => {
+    const currentPath = window.location.pathname;
+    document.querySelectorAll(".side-nav a").forEach((link) => {
+        const linkPath = new URL(link.href, window.location.origin).pathname;
+        if (linkPath === currentPath || (linkPath !== "/" && currentPath.startsWith(linkPath))) {
+            link.classList.add("is-active");
+        }
+    });
+});
+
+document.addEventListener("click", (event) => {
+    if (event.target.closest("[data-sidebar-toggle]")) {
+        document.body.classList.toggle("sidebar-open");
+    }
+
+    if (event.target.closest("[data-sidebar-close]") || event.target.closest(".side-nav a")) {
+        document.body.classList.remove("sidebar-open");
+    }
+});

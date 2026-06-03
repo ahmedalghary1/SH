@@ -1,9 +1,18 @@
 {% extends 'base.html' %}
 {% block title %}تفاصيل المنتج{% endblock %}
 {% block content %}
-<div class="page-head"><h1>{{ product.name }}</h1><a class="btn btn-light" href="{% url 'products:list' %}">رجوع</a></div>
+<div class="page-head">
+    <h1>{{ product.name }}</h1>
+    <div class="button-row">
+        {% if request.user.is_manager %}
+            <a class="btn btn-accent" href="{% url 'products:variant_create' %}?product={{ product.pk }}">إضافة متغير</a>
+            <a class="btn btn-light" href="{% url 'products:update' product.pk %}">تعديل المنتج</a>
+        {% endif %}
+        <a class="btn btn-light" href="{% url 'products:list' %}">رجوع</a>
+    </div>
+</div>
 <section class="card detail-grid">
-    <div><span>SKU</span><strong>{{ product.sku }}</strong></div>
+    <div><span>كود المنتج</span><strong>{{ product.sku }}</strong></div>
     <div><span>التصنيف</span><strong>{{ product.category|default:'-' }}</strong></div>
     <div><span>سعر القطاعي</span><strong>{{ product.retail_price }}</strong></div>
     <div><span>سعر الجملة</span><strong>{{ product.wholesale_price }}</strong></div>
@@ -12,10 +21,22 @@
 </section>
 <h2>المتغيرات</h2>
 <div class="table-wrap">
-    <table><thead><tr><th>SKU</th><th>اللون</th><th>المقاس</th><th>باركود</th><th>الحالة</th></tr></thead><tbody>
+    <table><thead><tr><th>كود المتغير</th><th>اللون</th><th>المقاس</th><th>الباركود</th><th>الحالة</th>{% if request.user.is_manager %}<th>إجراءات</th>{% endif %}</tr></thead><tbody>
         {% for variant in product.variants.all %}
-            <tr><td>{{ variant.variant_sku }}</td><td>{{ variant.color|default:'-' }}</td><td>{{ variant.size|default:'-' }}</td><td>{{ variant.barcode|default:'-' }}</td><td>{{ variant.is_active|yesno:'نشط,متوقف' }}</td></tr>
-        {% empty %}<tr><td colspan="5">لا توجد متغيرات</td></tr>{% endfor %}
+            <tr>
+                <td>{{ variant.variant_sku }}</td>
+                <td>{{ variant.color|default:'-' }}</td>
+                <td>{{ variant.size|default:'-' }}</td>
+                <td>{{ variant.barcode|default:'-' }}</td>
+                <td><span class="badge {% if variant.is_active %}success{% else %}danger{% endif %}">{% if variant.is_active %}نشط{% else %}متوقف{% endif %}</span></td>
+                {% if request.user.is_manager %}
+                    <td class="actions">
+                        <a class="btn btn-light" href="{% url 'products:variant_update' variant.pk %}">تعديل</a>
+                        <form method="post" action="{% url 'products:variant_deactivate' variant.pk %}" data-confirm="إيقاف هذا المتغير؟">{% csrf_token %}<button class="btn btn-danger">إيقاف</button></form>
+                    </td>
+                {% endif %}
+            </tr>
+        {% empty %}<tr><td colspan="{% if request.user.is_manager %}6{% else %}5{% endif %}">لا توجد متغيرات</td></tr>{% endfor %}
     </tbody></table>
 </div>
 {% endblock %}

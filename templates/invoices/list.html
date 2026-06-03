@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}الفواتير{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>الفواتير</h1>
+    <a class="btn btn-accent" href="{% url 'orders:create' %}">إضافة فاتورة</a>
+</div>
+<form class="filters" method="get">
+    {{ filter_form.date_from }}
+    {{ filter_form.date_to }}
+    <button class="btn btn-primary" type="submit">تصفية</button>
+    <a class="btn btn-light" href="{% url 'invoices:list' %}">إعادة ضبط</a>
+</form>
+<form method="post">
+    {% csrf_token %}
+    <div class="button-row card">
+        <button class="btn btn-accent" formaction="{% url 'invoices:export_excel' %}?date_from={{ request.GET.date_from }}&date_to={{ request.GET.date_to }}" type="submit">تصدير Excel</button>
+        <button class="btn btn-light" formaction="{% url 'invoices:report_print' %}?date_from={{ request.GET.date_from }}&date_to={{ request.GET.date_to }}" formtarget="_blank" type="submit">تقرير PDF / طباعة</button>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>اختيار</th><th>رقم الفاتورة</th><th>رقم الطلب</th><th>العميل</th><th>المندوب</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>تاريخ الإصدار</th><th>إجراءات</th></tr></thead>
+            <tbody>
+            {% for invoice in invoices %}
+                <tr>
+                    <td><input type="checkbox" name="invoice_ids" value="{{ invoice.pk }}"></td>
+                    <td>{{ invoice.invoice_number }}</td>
+                    <td>{{ invoice.order.order_number }}</td>
+                    <td>{{ invoice.order.customer|default:'عميل فردي' }}</td>
+                    <td>{{ invoice.order.created_by|default:'-' }}</td>
+                    <td>{{ invoice.order.total }}</td>
+                    <td>{{ invoice.order.paid_amount }}</td>
+                    <td>{{ invoice.order.remaining_amount }}</td>
+                    <td>{{ invoice.issued_at }}</td>
+                    <td class="actions">
+                        <a class="btn btn-light" href="{% url 'invoices:detail' invoice.pk %}">عرض</a>
+                        <a class="btn btn-accent" href="{% url 'invoices:print' invoice.pk %}" target="_blank">طباعة</a>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="10">لا توجد فواتير</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</form>
+{% include 'partials/pagination.html' %}
+{% endblock %}
