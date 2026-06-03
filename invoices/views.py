@@ -12,6 +12,7 @@ from settings_app.models import CompanySettings
 
 from .forms import InvoiceFilterForm
 from .models import Invoice
+from .pdf import build_invoice_report_pdf
 from .services import generate_invoice
 
 
@@ -102,6 +103,27 @@ class InvoiceExcelExportView(InvoiceExportMixin, SalesRequiredMixin, View):
                 invoice.order.remaining_amount,
                 invoice.issued_at,
             ])
+        return response
+
+
+class InvoicePDFExportView(InvoiceExportMixin, SalesRequiredMixin, View):
+    def dispatch(self, request, *args, **kwargs):
+        self.request = request
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        return self.build_response(request)
+
+    def post(self, request):
+        return self.build_response(request)
+
+    def build_response(self, request):
+        pdf_bytes = build_invoice_report_pdf(
+            invoices=self.get_filtered_invoices(request),
+            company_settings=CompanySettings.load(),
+        )
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename="invoice-report.pdf"'
         return response
 
 

@@ -15,7 +15,8 @@
     {% csrf_token %}
     <div class="button-row card">
         <button class="btn btn-accent" formaction="{% url 'invoices:export_excel' %}?date_from={{ request.GET.date_from }}&date_to={{ request.GET.date_to }}" type="submit">تصدير Excel</button>
-        <button class="btn btn-light" formaction="{% url 'invoices:report_print' %}?date_from={{ request.GET.date_from }}&date_to={{ request.GET.date_to }}" formtarget="_blank" type="submit">تقرير PDF / طباعة</button>
+        <button class="btn btn-accent" formaction="{% url 'invoices:export_pdf' %}?date_from={{ request.GET.date_from }}&date_to={{ request.GET.date_to }}" type="submit">تحميل PDF</button>
+        <button class="btn btn-light" formaction="{% url 'invoices:report_print' %}?date_from={{ request.GET.date_from }}&date_to={{ request.GET.date_to }}" formtarget="_blank" type="submit">عرض للطباعة</button>
     </div>
     <div class="table-wrap">
         <table>
