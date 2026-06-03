@@ -1,11 +1,11 @@
 {% if is_paginated %}
 <div class="pagination">
     {% if page_obj.has_previous %}
-        <a class="btn btn-light" href="?page={{ page_obj.previous_page_number }}">السابق</a>
+        <a class="btn btn-light" href="?{% if pagination_query %}{{ pagination_query }}&{% endif %}page={{ page_obj.previous_page_number }}">السابق</a>
     {% endif %}
     <span>صفحة {{ page_obj.number }} من {{ page_obj.paginator.num_pages }}</span>
     {% if page_obj.has_next %}
-        <a class="btn btn-light" href="?page={{ page_obj.next_page_number }}">التالي</a>
+        <a class="btn btn-light" href="?{% if pagination_query %}{{ pagination_query }}&{% endif %}page={{ page_obj.next_page_number }}">التالي</a>
     {% endif %}
 </div>
 {% endif %}

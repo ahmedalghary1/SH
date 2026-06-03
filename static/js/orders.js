@@ -224,7 +224,11 @@
         option.textContent = `${data.data.name} - ${data.data.phone}`;
         option.selected = true;
         customerSelect.appendChild(option);
-        document.getElementById("customer-modal").hidden = true;
+        if (typeof closeModal === "function") {
+            closeModal(document.getElementById("customer-modal"));
+        } else {
+            document.getElementById("customer-modal").hidden = true;
+        }
     });
 
     renderItems();

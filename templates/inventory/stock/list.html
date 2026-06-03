@@ -2,9 +2,71 @@
 {% block title %}المخزون{% endblock %}
 {% block content %}
 <div class="page-head"><h1>المخزون</h1></div>
-<form class="filters"><input name="q" placeholder="بحث باسم المنتج أو كوده" value="{{ request.GET.q }}"><label class="inline-check"><input type="checkbox" name="low" value="1"> منخفض فقط</label><button class="btn btn-primary">بحث</button></form>
-<div class="table-wrap"><table><thead><tr><th>المخزن</th><th>المنتج</th><th>اللون</th><th>المقاس</th><th>الكمية</th><th>الحد الأدنى</th><th>تنبيه</th></tr></thead><tbody>
-{% for stock in stocks %}<tr><td>{{ stock.warehouse }}</td><td>{{ stock.variant.product.name }}</td><td>{{ stock.variant.color|default:'-' }}</td><td>{{ stock.variant.size|default:'-' }}</td><td>{{ stock.quantity }}</td><td>{{ stock.min_quantity }}</td><td>{% if stock.is_low %}<span class="badge warning">منخفض</span>{% else %}<span class="badge success">جيد</span>{% endif %}</td></tr>{% empty %}<tr><td colspan="7">لا توجد كميات</td></tr>{% endfor %}
-</tbody></table></div>
+<form class="filters" method="get">
+    <label>
+        <span>بحث</span>
+        <input name="q" placeholder="اسم المنتج، الكود، الباركود أو التصنيف" value="{{ search_query }}">
+    </label>
+    <label>
+        <span>المخزن</span>
+        <select name="warehouse">
+            <option value="">كل المخازن</option>
+            {% for warehouse in warehouses %}
+                <option value="{{ warehouse.id }}" {% if warehouse.id|stringformat:'s' == selected_warehouse_id %}selected{% endif %}>{{ warehouse.name }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label class="inline-check">
+        <input type="checkbox" name="low" value="1" {% if low_only %}checked{% endif %}>
+        منخفض فقط
+    </label>
+    <button class="btn btn-primary">بحث</button>
+</form>
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>المخزن</th>
+                <th>المنتج</th>
+                <th>كود المنتج</th>
+                <th>كود المتغير</th>
+                <th>التصنيف</th>
+                <th>اللون</th>
+                <th>المقاس</th>
+                <th>سعر القطاعي</th>
+                <th>سعر الجملة</th>
+                <th>الكمية</th>
+                <th>الحد الأدنى</th>
+                <th>تنبيه</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for stock in stocks %}
+                <tr>
+                    <td>{{ stock.warehouse.name }}</td>
+                    <td>{{ stock.variant.product.name }}</td>
+                    <td>{{ stock.variant.product.sku }}</td>
+                    <td>{{ stock.variant.variant_sku }}</td>
+                    <td>{{ stock.variant.product.category|default:'-' }}</td>
+                    <td>{{ stock.variant.color|default:'-' }}</td>
+                    <td>{{ stock.variant.size|default:'-' }}</td>
+                    <td>{{ stock.variant.product.retail_price }}</td>
+                    <td>{{ stock.variant.product.wholesale_price }}</td>
+                    <td>{{ stock.quantity }}</td>
+                    <td>{{ stock.min_quantity }}</td>
+                    <td>
+                        {% if stock.is_low %}
+                            <span class="badge warning">منخفض</span>
+                        {% else %}
+                            <span class="badge success">جيد</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="12">لا توجد كميات مطابقة للفلاتر الحالية</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 {% include 'partials/pagination.html' %}
 {% endblock %}

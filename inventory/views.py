@@ -40,17 +40,55 @@ class StockListView(RoleRequiredMixin, ListView):
     context_object_name = 'stocks'
     paginate_by = 30
 
-    def get_queryset(self):
-        qs = Stock.objects.select_related('warehouse', 'variant__product', 'variant__color', 'variant__size')
+    def get_allowed_warehouses(self):
+        qs = Warehouse.objects.filter(is_active=True)
         if self.request.user.role == 'sales' and not self.request.user.is_superuser:
-            qs = qs.filter(warehouse__assigned_user=self.request.user, warehouse__warehouse_type=Warehouse.TYPE_REPRESENTATIVE)
+            qs = qs.filter(
+                assigned_user=self.request.user,
+                warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
+            )
+        return qs.order_by('warehouse_type', 'name')
+
+    def get_queryset(self):
+        qs = Stock.objects.select_related(
+            'warehouse',
+            'variant__product',
+            'variant__product__category',
+            'variant__color',
+            'variant__size',
+        )
+        if self.request.user.role == 'sales' and not self.request.user.is_superuser:
+            qs = qs.filter(warehouse__in=self.get_allowed_warehouses())
+        warehouse_id = self.request.GET.get('warehouse')
+        if warehouse_id:
+            if warehouse_id.isdigit() and self.get_allowed_warehouses().filter(pk=warehouse_id).exists():
+                qs = qs.filter(warehouse_id=warehouse_id)
+            else:
+                qs = qs.none()
         q = self.request.GET.get('q')
         if q:
-            qs = qs.filter(Q(variant__product__name__icontains=q) | Q(variant__variant_sku__icontains=q))
+            qs = qs.filter(
+                Q(variant__product__name__icontains=q)
+                | Q(variant__product__sku__icontains=q)
+                | Q(variant__product__category__name__icontains=q)
+                | Q(variant__variant_sku__icontains=q)
+                | Q(variant__barcode__icontains=q)
+            )
         low = self.request.GET.get('low')
         if low:
             qs = qs.filter(quantity__lte=F('min_quantity'))
-        return qs.order_by('warehouse__name', 'variant__product__name')
+        return qs.order_by('warehouse__name', 'variant__product__name', 'variant__color__name', 'variant__size__sort_order')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        pagination_params = self.request.GET.copy()
+        pagination_params.pop('page', None)
+        context['warehouses'] = self.get_allowed_warehouses()
+        context['selected_warehouse_id'] = self.request.GET.get('warehouse', '')
+        context['search_query'] = self.request.GET.get('q', '')
+        context['low_only'] = self.request.GET.get('low', '')
+        context['pagination_query'] = pagination_params.urlencode()
+        return context
 
 
 class StockMovementListView(RoleRequiredMixin, ListView):

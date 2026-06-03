@@ -21,14 +21,35 @@ document.addEventListener("submit", (event) => {
     }
 });
 
+function openModal(modal) {
+    if (!modal) return;
+    modal.hidden = false;
+    document.body.classList.add("modal-open");
+    const firstField = modal.querySelector("input, select, textarea, button, a[href]");
+    firstField?.focus({ preventScroll: true });
+}
+
+function closeModal(modal) {
+    if (!modal) return;
+    modal.hidden = true;
+    if (!document.querySelector(".modal:not([hidden])")) {
+        document.body.classList.remove("modal-open");
+    }
+}
+
 document.addEventListener("click", (event) => {
     const opener = event.target.closest("[data-open-modal]");
     if (opener) {
-        const modal = document.getElementById(opener.dataset.openModal);
-        if (modal) modal.hidden = false;
+        openModal(document.getElementById(opener.dataset.openModal));
     }
-    if (event.target.closest("[data-close-modal]")) {
-        event.target.closest(".modal").hidden = true;
+
+    const closeButton = event.target.closest("[data-close-modal]");
+    if (closeButton) {
+        closeModal(closeButton.closest(".modal"));
+    }
+
+    if (event.target.classList?.contains("modal")) {
+        closeModal(event.target);
     }
 });
 
@@ -50,4 +71,10 @@ document.addEventListener("click", (event) => {
     if (event.target.closest("[data-sidebar-close]") || event.target.closest(".side-nav a")) {
         document.body.classList.remove("sidebar-open");
     }
+});
+
+document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    closeModal(document.querySelector(".modal:not([hidden])"));
+    document.body.classList.remove("sidebar-open");
 });
