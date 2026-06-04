@@ -11,12 +11,23 @@
         <div><span>محفظة العميل</span><strong>{{ order.wallet_from_number|default:'-' }}</strong></div>
         <div><span>محفظة الشركة</span><strong>{{ order.wallet_to_number|default:'-' }}</strong></div>
     {% endif %}
+    <div><span>قبل الخصم</span><strong>{{ order.subtotal }}</strong></div>
+    <div><span>خصم الطلب</span><strong>{{ order.discount }}</strong></div>
+    <div><span>سبب الخصم</span><strong>{{ order.discount_reason|default:'-' }}</strong></div>
+    <div><span>موافقة الخصم</span><strong>{{ order.discount_approved_by|default:'-' }}</strong></div>
     <div><span>الإجمالي</span><strong>{{ order.total }}</strong></div>
     <div><span>المتبقي</span><strong>{{ order.remaining_amount }}</strong></div>
 </section>
-<div class="table-wrap"><table><thead><tr><th>المنتج</th><th>اللون</th><th>المقاس</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>الإجمالي</th></tr></thead><tbody>
-{% for item in order.items.all %}<tr><td>{{ item.variant.product.name }}</td><td>{{ item.variant.color|default:'-' }}</td><td>{{ item.variant.size|default:'-' }}</td><td>{{ item.quantity }}</td><td>{{ item.unit_price }}</td><td>{{ item.discount }}</td><td>{{ item.total }}</td></tr>{% endfor %}
-</tbody></table></div>
+<div class="table-wrap">
+    <table>
+        <thead><tr><th>المنتج</th><th>اللون</th><th>المقاس</th><th>الكمية</th><th>السعر الأصلي</th><th>السعر النهائي</th><th>الخصم</th><th>خصم %</th><th>الإجمالي</th></tr></thead>
+        <tbody>
+            {% for item in order.items.all %}
+                <tr><td>{{ item.variant.product.name }}</td><td>{{ item.variant.color|default:'-' }}</td><td>{{ item.variant.size|default:'-' }}</td><td>{{ item.quantity }}</td><td>{{ item.original_unit_price|default:item.unit_price }}</td><td>{{ item.final_unit_price|default:item.unit_price }}</td><td>{{ item.discount }}</td><td>{{ item.discount_percentage }}</td><td>{{ item.total }}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 <div class="button-row">
     {% if request.user.is_manager or request.user.role == 'warehouse' %}
         <form method="post" action="{% url 'orders:status_update' order.pk %}" class="inline-form">

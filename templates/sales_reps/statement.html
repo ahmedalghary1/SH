@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block title %}كشف عهدة مندوب{% endblock %}
+{% block content %}
+<div class="page-head"><h1>كشف عهدة مندوب</h1></div>
+{% include 'partials/model_form.html' with button_text='عرض الكشف' %}
+
+{% if statement %}
+<div class="stats-grid">
+    <div class="stat-card"><span>إجمالي المسلم</span><strong>{{ statement.assigned_quantity }}</strong></div>
+    <div class="stat-card"><span>المباع</span><strong>{{ statement.sold_quantity }}</strong></div>
+    <div class="stat-card"><span>الراجع</span><strong>{{ statement.returned_quantity }}</strong></div>
+    <div class="stat-card"><span>المتبقي</span><strong>{{ statement.remaining_quantity }}</strong></div>
+    <div class="stat-card"><span>التحصيلات</span><strong>{{ statement.collected_amount }}</strong></div>
+    <div class="stat-card"><span>غير مسلم</span><strong>{{ statement.unhanded_amount }}</strong></div>
+</div>
+
+<section class="card">
+    <div class="section-title"><h2>العهد</h2></div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>الصنف</th><th>المخزن</th><th>المسلم</th><th>المباع</th><th>الراجع</th><th>المتبقي</th></tr></thead>
+            <tbody>
+                {% for assignment in statement.assignments %}
+                    <tr><td>{{ assignment.product_variant }}</td><td>{{ assignment.source_warehouse }}</td><td>{{ assignment.quantity_assigned }}</td><td>{{ assignment.quantity_sold }}</td><td>{{ assignment.quantity_returned }}</td><td>{{ assignment.quantity_remaining }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="6">لا توجد عهد</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card">
+    <div class="section-title"><h2>التحصيلات</h2></div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>العميل</th><th>الطلب</th><th>المبلغ</th><th>المسلم</th><th>الحساب</th><th>التاريخ</th></tr></thead>
+            <tbody>
+                {% for collection in statement.collections %}
+                    <tr><td>{{ collection.customer|default:'-' }}</td><td>{{ collection.order|default:'-' }}</td><td>{{ collection.amount }}</td><td>{{ collection.handed_over_amount }}</td><td>{{ collection.cash_account }}</td><td>{{ collection.collection_date }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="6">لا توجد تحصيلات</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+{% endblock %}

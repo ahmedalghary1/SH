@@ -5,6 +5,7 @@ from django.views.generic import TemplateView
 
 from accounts.permissions import RoleRequiredMixin
 from customers.models import Customer
+from finance.models import CashAccount, PaymentTransaction
 from inventory.models import Stock, StockMovement
 from orders.models import Order, OrderItem
 
@@ -28,6 +29,13 @@ class DashboardView(RoleRequiredMixin, TemplateView):
             orders = Order.objects.filter(created_at__date=today).exclude(status__in=[Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
             context.update({
                 'today_sales': orders.aggregate(v=Sum('total'))['v'] or 0,
+                'today_cost': orders.aggregate(v=Sum('total_cost'))['v'] or 0,
+                'today_gross_profit': orders.aggregate(v=Sum('gross_profit'))['v'] or 0,
+                'cash_balance': CashAccount.objects.filter(is_active=True).aggregate(v=Sum('balance'))['v'] or 0,
+                'today_expenses': PaymentTransaction.objects.filter(
+                    transaction_type=PaymentTransaction.TYPE_EXPENSE,
+                    created_at__date=today,
+                ).aggregate(v=Sum('amount'))['v'] or 0,
                 'today_orders': orders.count(),
                 'paid_total': orders.aggregate(v=Sum('paid_amount'))['v'] or 0,
                 'remaining_total': orders.aggregate(v=Sum('remaining_amount'))['v'] or 0,

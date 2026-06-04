@@ -1,0 +1,158 @@
+from decimal import Decimal
+from uuid import uuid4
+
+from django.core.exceptions import ValidationError
+from django.db import transaction
+
+from .models import CashAccount, PaymentTransaction
+
+
+def _as_decimal(amount):
+    amount = Decimal(str(amount or 0))
+    if amount <= 0:
+        raise ValidationError('المبلغ يجب أن يكون أكبر من صفر')
+    return amount
+
+
+def _locked_account(account):
+    if account is None:
+        account = CashAccount.get_default()
+    return CashAccount.objects.select_for_update().get(pk=account.pk)
+
+
+@transaction.atomic
+def record_transaction(
+    *,
+    transaction_type,
+    direction,
+    amount,
+    cash_account=None,
+    related_order=None,
+    related_customer=None,
+    related_sales_rep=None,
+    related_supplier=None,
+    related_supplier_name='',
+    notes='',
+    created_by=None,
+    reference='',
+):
+    amount = _as_decimal(amount)
+    account = _locked_account(cash_account)
+    if direction == PaymentTransaction.DIRECTION_IN:
+        account.balance += amount
+    elif direction == PaymentTransaction.DIRECTION_OUT:
+        if not account.allow_overdraft and account.balance < amount:
+            raise ValidationError('رصيد الخزنة غير كاف لتنفيذ الحركة')
+        account.balance -= amount
+    else:
+        raise ValidationError('اتجاه الحركة المالية غير صحيح')
+    account.save(update_fields=['balance'])
+    return PaymentTransaction.objects.create(
+        transaction_type=transaction_type,
+        direction=direction,
+        amount=amount,
+        cash_account=account,
+        related_order=related_order,
+        related_customer=related_customer,
+        related_sales_rep=related_sales_rep,
+        related_supplier=related_supplier,
+        related_supplier_name=related_supplier_name or '',
+        notes=notes,
+        created_by=created_by,
+        reference=reference or '',
+    )
+
+
+def record_customer_payment(*, order, customer, amount, user, cash_account=None, notes=''):
+    amount = _as_decimal(amount)
+    if order and amount > order.remaining_amount + order.paid_amount:
+        raise ValidationError('مبلغ التحصيل أكبر من قيمة الطلب')
+    return record_transaction(
+        transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+        direction=PaymentTransaction.DIRECTION_IN,
+        amount=amount,
+        cash_account=cash_account,
+        related_order=order,
+        related_customer=customer,
+        notes=notes,
+        created_by=user,
+    )
+
+
+@transaction.atomic
+def collect_order_payment(*, order, amount, user, cash_account=None, notes=''):
+    from orders.models import Order
+
+    amount = _as_decimal(amount)
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    if amount > order.remaining_amount:
+        raise ValidationError('مبلغ التحصيل أكبر من المتبقي على الطلب')
+    tx = record_customer_payment(
+        order=order,
+        customer=order.customer,
+        amount=amount,
+        user=user,
+        cash_account=cash_account,
+        notes=notes,
+    )
+    order.paid_amount += amount
+    order.remaining_amount = max(order.total - order.paid_amount, Decimal('0'))
+    if order.paid_amount <= 0:
+        order.payment_status = Order.PAYMENT_UNPAID
+    elif order.paid_amount >= order.total:
+        order.payment_status = Order.PAYMENT_PAID
+    else:
+        order.payment_status = Order.PAYMENT_PARTIAL
+    order.save(update_fields=['paid_amount', 'remaining_amount', 'payment_status'])
+    return tx
+
+
+def add_expense(*, amount, cash_account, user, notes=''):
+    return record_transaction(
+        transaction_type=PaymentTransaction.TYPE_EXPENSE,
+        direction=PaymentTransaction.DIRECTION_OUT,
+        amount=amount,
+        cash_account=cash_account,
+        notes=notes,
+        created_by=user,
+    )
+
+
+@transaction.atomic
+def transfer_between_accounts(*, from_account, to_account, amount, user, notes=''):
+    if from_account == to_account:
+        raise ValidationError('لا يمكن التحويل إلى نفس الخزنة')
+    reference = f'TRF-{uuid4().hex[:12].upper()}'
+    out_tx = record_transaction(
+        transaction_type=PaymentTransaction.TYPE_TRANSFER,
+        direction=PaymentTransaction.DIRECTION_OUT,
+        amount=amount,
+        cash_account=from_account,
+        notes=notes,
+        created_by=user,
+        reference=reference,
+    )
+    in_tx = record_transaction(
+        transaction_type=PaymentTransaction.TYPE_TRANSFER,
+        direction=PaymentTransaction.DIRECTION_IN,
+        amount=amount,
+        cash_account=to_account,
+        notes=notes,
+        created_by=user,
+        reference=reference,
+    )
+    return out_tx, in_tx
+
+
+def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, order=None, customer=None, notes=''):
+    return record_transaction(
+        transaction_type=PaymentTransaction.TYPE_SALES_REP_COLLECTION,
+        direction=PaymentTransaction.DIRECTION_IN,
+        amount=amount,
+        cash_account=cash_account,
+        related_order=order,
+        related_customer=customer,
+        related_sales_rep=sales_rep,
+        notes=notes,
+        created_by=user,
+    )

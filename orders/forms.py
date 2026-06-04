@@ -12,7 +12,8 @@ class OrderForm(forms.ModelForm):
         fields = (
             'order_type', 'customer', 'warehouse', 'payment_method',
             'wallet_from_number', 'wallet_to_number',
-            'payment_status', 'paid_amount', 'discount', 'notes',
+            'payment_status', 'paid_amount', 'discount_amount',
+            'discount_percentage', 'discount_reason', 'notes',
         )
         labels = {
             'order_type': 'نوع الطلب',
@@ -23,12 +24,15 @@ class OrderForm(forms.ModelForm):
             'wallet_to_number': 'رقم المحفظة المحول إليها',
             'payment_status': 'حالة الدفع',
             'paid_amount': 'المبلغ المدفوع',
-            'discount': 'الخصم العام',
+            'discount_amount': 'خصم عام بالقيمة',
+            'discount_percentage': 'خصم عام بالنسبة',
+            'discount_reason': 'سبب الخصم',
             'notes': 'ملاحظات',
         }
         widgets = {
             'wallet_from_number': forms.TextInput(attrs={'placeholder': 'رقم محفظة العميل'}),
             'wallet_to_number': forms.TextInput(attrs={'placeholder': 'رقم محفظة الشركة'}),
+            'discount_reason': forms.Textarea(attrs={'placeholder': 'سبب الخصم ومن وافق عليه إن وجد', 'rows': 3}),
             'notes': forms.Textarea(attrs={'placeholder': 'أي ملاحظات خاصة بالطلب'}),
         }
 

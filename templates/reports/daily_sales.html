@@ -5,6 +5,9 @@
 {% include 'reports/report_links.html' %}
 <div class="stats-grid">
     <div class="stat-card"><span>إجمالي اليوم</span><strong>{{ total_sales }}</strong></div>
+    <div class="stat-card"><span>إجمالي التكلفة</span><strong>{{ total_cost }}</strong></div>
+    <div class="stat-card"><span>مجمل الربح</span><strong>{{ gross_profit }}</strong></div>
+    <div class="stat-card"><span>صافي الربح</span><strong>{{ net_profit }}</strong></div>
     <div class="stat-card"><span>عدد الطلبات</span><strong>{{ orders_count }}</strong></div>
     <div class="stat-card"><span>المدفوع</span><strong>{{ paid_total }}</strong></div>
     <div class="stat-card"><span>المتبقي</span><strong>{{ remaining_total }}</strong></div>

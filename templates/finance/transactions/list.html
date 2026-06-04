@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}الحركات المالية{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>الحركات المالية</h1>
+    <div class="actions">
+        <a class="btn btn-primary" href="{% url 'finance:collection_create' %}">تحصيل</a>
+        <a class="btn btn-light" href="{% url 'finance:expense_create' %}">مصروف</a>
+        <a class="btn btn-light" href="{% url 'finance:transfer' %}">تحويل</a>
+    </div>
+</div>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>النوع</th><th>الاتجاه</th><th>الحساب</th><th>المبلغ</th><th>الطلب</th><th>العميل</th><th>المورد</th><th>المندوب</th><th>التاريخ</th></tr></thead>
+        <tbody>
+        {% for tx in transactions %}
+            <tr>
+                <td>{{ tx.get_transaction_type_display }}</td>
+                <td>{{ tx.get_direction_display }}</td>
+                <td>{{ tx.cash_account }}</td>
+                <td>{{ tx.amount }}</td>
+                <td>{{ tx.related_order|default:'-' }}</td>
+                <td>{{ tx.related_customer|default:'-' }}</td>
+                <td>{% if tx.related_supplier %}{{ tx.related_supplier }}{% elif tx.related_supplier_name %}{{ tx.related_supplier_name }}{% else %}-{% endif %}</td>
+                <td>{{ tx.related_sales_rep|default:'-' }}</td>
+                <td>{{ tx.created_at }}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="9">لا توجد حركات مالية</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include 'partials/pagination.html' %}
+{% endblock %}

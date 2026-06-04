@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}تقرير المصروفات{% endblock %}
+{% block content %}
+<div class="page-head"><h1>تقرير المصروفات</h1></div>
+<div class="stats-grid"><div class="stat-card"><span>إجمالي المصروفات</span><strong>{{ total }}</strong></div></div>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>الخزنة</th><th>المبلغ</th><th>المستخدم</th><th>البيان</th><th>التاريخ</th></tr></thead>
+        <tbody>
+        {% for tx in transactions %}
+            <tr><td>{{ tx.cash_account }}</td><td>{{ tx.amount }}</td><td>{{ tx.created_by|default:'-' }}</td><td>{{ tx.notes|default:'-' }}</td><td>{{ tx.created_at }}</td></tr>
+        {% empty %}
+            <tr><td colspan="5">لا توجد مصروفات</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

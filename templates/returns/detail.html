@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}تفاصيل مرتجع{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>مرتجع #{{ sales_return.pk }}</h1>
+    <div class="actions">
+        {% if sales_return.status == 'draft' %}
+            <a class="btn btn-primary" href="{% url 'returns:add_item' sales_return.pk %}">إضافة صنف</a>
+            {% if sales_return.return_type == 'exchange' %}
+                <a class="btn btn-light" href="{% url 'returns:add_exchange' sales_return.pk %}">إضافة استبدال</a>
+            {% endif %}
+        {% endif %}
+        {% if request.user.is_manager and sales_return.status == 'approved' %}
+            <a class="btn btn-primary" href="{% url 'returns:complete' sales_return.pk %}">إكمال</a>
+        {% endif %}
+    </div>
+</div>
+<div class="stats-grid">
+    <div class="stat-card"><span>الطلب</span><strong>{{ sales_return.order }}</strong></div>
+    <div class="stat-card"><span>النوع</span><strong>{{ sales_return.get_return_type_display }}</strong></div>
+    <div class="stat-card"><span>الحالة</span><strong>{{ sales_return.get_status_display }}</strong></div>
+    <div class="stat-card"><span>مبلغ الاسترداد</span><strong>{{ sales_return.refund_amount }}</strong></div>
+</div>
+<section class="card">
+    <h2>الأصناف المرتجعة</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>الصنف</th><th>الكمية</th><th>الحالة</th><th>تعود للمخزون</th><th>مبلغ الاسترداد</th></tr></thead>
+            <tbody>
+            {% for item in sales_return.items.all %}
+                <tr><td>{{ item.product_variant }}</td><td>{{ item.quantity }}</td><td>{{ item.get_condition_display }}</td><td>{{ item.return_to_stock|yesno:'نعم,لا' }}</td><td>{{ item.refund_amount }}</td></tr>
+            {% empty %}
+                <tr><td colspan="5">لا توجد أصناف</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% if sales_return.exchange_items.exists %}
+<section class="card">
+    <h2>أصناف الاستبدال</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>الصنف الجديد</th><th>الكمية</th><th>السعر القديم</th><th>السعر الجديد</th><th>فرق السعر</th></tr></thead>
+            <tbody>
+            {% for item in sales_return.exchange_items.all %}
+                <tr><td>{{ item.new_product_variant }}</td><td>{{ item.quantity }}</td><td>{{ item.old_unit_price }}</td><td>{{ item.new_unit_price }}</td><td>{{ item.price_difference }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+{% if request.user.is_manager and sales_return.status == 'draft' %}
+<div class="order-layout">
+    <form class="card" method="post" action="{% url 'returns:approve' sales_return.pk %}">
+        {% csrf_token %}
+        <button class="btn btn-primary" type="submit">اعتماد المرتجع</button>
+    </form>
+    <form class="card" method="post" action="{% url 'returns:reject' sales_return.pk %}">
+        {% csrf_token %}
+        <button class="btn btn-light" type="submit">رفض المرتجع</button>
+    </form>
+</div>
+{% endif %}
+{% endblock %}

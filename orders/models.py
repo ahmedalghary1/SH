@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from customers.models import Customer
@@ -20,6 +21,7 @@ class Order(models.Model):
     STATUS_READY = 'ready'
     STATUS_COMPLETED = 'completed'
     STATUS_CANCELLED = 'cancelled'
+    STATUS_PARTIALLY_RETURNED = 'partially_returned'
     STATUS_RETURNED = 'returned'
     STATUS_CHOICES = [
         (STATUS_DRAFT, 'مسودة'),
@@ -28,6 +30,7 @@ class Order(models.Model):
         (STATUS_READY, 'جاهز'),
         (STATUS_COMPLETED, 'مكتمل'),
         (STATUS_CANCELLED, 'ملغي'),
+        (STATUS_PARTIALLY_RETURNED, 'مرتجع جزئيا'),
         (STATUS_RETURNED, 'مرتجع'),
     ]
 
@@ -36,7 +39,7 @@ class Order(models.Model):
     PAYMENT_PAID = 'paid'
     PAYMENT_STATUS_CHOICES = [
         (PAYMENT_UNPAID, 'غير مدفوع'),
-        (PAYMENT_PARTIAL, 'مدفوع جزئيًا'),
+        (PAYMENT_PARTIAL, 'مدفوع جزئيا'),
         (PAYMENT_PAID, 'مدفوع بالكامل'),
     ]
 
@@ -47,8 +50,8 @@ class Order(models.Model):
     PAYMENT_METHOD_CHOICES = [
         (METHOD_CASH, 'نقدي'),
         (METHOD_COD, 'الدفع عند الاستلام'),
-        (METHOD_BANK, 'تحويل بنكي مسجل يدويًا'),
-        (METHOD_WALLET, 'تحويل محفظة مسجل يدويًا'),
+        (METHOD_BANK, 'تحويل بنكي مسجل يدويا'),
+        (METHOD_WALLET, 'تحويل محفظة مسجل يدويا'),
     ]
 
     order_number = models.CharField(max_length=50, unique=True, db_index=True)
@@ -62,7 +65,19 @@ class Order(models.Model):
     wallet_to_number = models.CharField(max_length=50, blank=True, null=True)
     subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     discount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0), MaxValueValidator(100)])
+    discount_reason = models.TextField(blank=True, null=True)
+    discount_approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_order_discounts',
+    )
     total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    total_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    gross_profit = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     remaining_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     notes = models.TextField(blank=True, null=True)
@@ -80,16 +95,47 @@ class Order(models.Model):
     def __str__(self):
         return self.order_number
 
+    @property
+    def order_total_cost(self):
+        return self.total_cost
+
+    @property
+    def order_gross_profit(self):
+        return self.gross_profit
+
+    @property
+    def profit_margin_percentage(self):
+        if self.total <= 0:
+            return 0
+        return (self.gross_profit / self.total) * 100
+
 
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
     variant = models.ForeignKey(ProductVariant, on_delete=models.SET_NULL, null=True)
     quantity = models.PositiveIntegerField()
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    original_unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0), MaxValueValidator(100)])
+    final_unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    unit_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=12, decimal_places=2)
+    cost_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    profit_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
     def __str__(self):
         return f'{self.order.order_number} - {self.variant}'
 
-# Create your models here.
+    @property
+    def item_total(self):
+        return self.total
+
+    @property
+    def item_cost_total(self):
+        return self.cost_total
+
+    @property
+    def item_profit(self):
+        return self.profit_total

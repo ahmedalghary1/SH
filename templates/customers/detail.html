@@ -1,13 +1,43 @@
 {% extends 'base.html' %}
 {% block title %}تفاصيل العميل{% endblock %}
 {% block content %}
-<div class="page-head"><h1>{{ customer.name }}</h1></div>
+<div class="page-head">
+    <h1>{{ customer.name }}</h1>
+    <div class="button-row">
+        <a class="btn btn-light" href="{% url 'customers:interaction_create' customer.pk %}">إضافة تفاعل</a>
+        <a class="btn btn-accent" href="{% url 'customers:crm_detail' customer.pk %}">ملف CRM</a>
+    </div>
+</div>
 <section class="card detail-grid">
     <div><span>النوع</span><strong>{{ customer.get_customer_type_display }}</strong></div>
+    <div><span>الحالة</span><strong>{% if customer.is_active %}نشط{% else %}غير نشط{% endif %}</strong></div>
     <div><span>الهاتف</span><strong>{{ customer.phone }}</strong></div>
     <div><span>واتساب</span><strong>{{ customer.whatsapp|default:'-' }}</strong></div>
     <div><span>الشركة</span><strong>{{ customer.company_name|default:'-' }}</strong></div>
     <div><span>الرقم الضريبي</span><strong>{{ customer.tax_number|default:'-' }}</strong></div>
+    <div><span>حد الائتمان</span><strong>{{ customer.credit_limit }}</strong></div>
+    <div><span>رصيد افتتاحي</span><strong>{{ customer.opening_balance }}</strong></div>
     <div><span>العنوان</span><strong>{{ customer.address|default:'-' }}</strong></div>
+</section>
+<div class="stats-grid">
+    <div class="stat-card"><span>إجمالي المشتريات</span><strong>{{ summary.total_purchases }}</strong></div>
+    <div class="stat-card"><span>إجمالي المدفوع</span><strong>{{ summary.total_paid }}</strong></div>
+    <div class="stat-card"><span>إجمالي المتبقي</span><strong>{{ summary.total_remaining }}</strong></div>
+    <div class="stat-card"><span>الشكاوى المفتوحة</span><strong>{{ summary.complaints_count }}</strong></div>
+</div>
+<section class="card">
+    <div class="section-title"><h2>آخر التفاعلات</h2></div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>النوع</th><th>العنوان</th><th>المتابعة القادمة</th><th>الحالة</th></tr></thead>
+            <tbody>
+                {% for interaction in recent_interactions %}
+                    <tr><td>{{ interaction.get_interaction_type_display }}</td><td>{{ interaction.title }}</td><td>{{ interaction.next_follow_up_date|default:'-' }}</td><td>{% if interaction.is_completed %}مكتمل{% else %}مفتوح{% endif %}</td></tr>
+                {% empty %}
+                    <tr><td colspan="4">لا توجد تفاعلات</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </section>
 {% endblock %}

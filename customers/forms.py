@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import Customer
+from .models import Customer, CustomerInteraction
 
 
 class CustomerForm(forms.ModelForm):
@@ -8,7 +8,8 @@ class CustomerForm(forms.ModelForm):
         model = Customer
         fields = (
             'name', 'customer_type', 'phone', 'whatsapp', 'email',
-            'company_name', 'tax_number', 'address', 'notes', 'is_active',
+            'company_name', 'tax_number', 'address', 'credit_limit',
+            'opening_balance', 'notes', 'is_active',
         )
         labels = {
             'name': 'اسم العميل',
@@ -19,6 +20,8 @@ class CustomerForm(forms.ModelForm):
             'company_name': 'اسم الشركة',
             'tax_number': 'الرقم الضريبي',
             'address': 'العنوان',
+            'credit_limit': 'حد الائتمان',
+            'opening_balance': 'رصيد افتتاحي',
             'notes': 'ملاحظات',
             'is_active': 'نشط',
         }
@@ -35,9 +38,26 @@ class CustomerForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
-        if cleaned.get('customer_type') == Customer.TYPE_B2B:
+        if cleaned.get('customer_type') in {Customer.TYPE_B2B, Customer.TYPE_WHOLESALE}:
             if not cleaned.get('company_name'):
                 self.add_error('company_name', 'اسم الشركة مطلوب لعميل الجملة')
             if not cleaned.get('address'):
                 self.add_error('address', 'عنوان الشركة مطلوب لعميل الجملة')
         return cleaned
+
+
+class CustomerInteractionForm(forms.ModelForm):
+    class Meta:
+        model = CustomerInteraction
+        fields = ('interaction_type', 'title', 'description', 'next_follow_up_date', 'is_completed')
+        labels = {
+            'interaction_type': 'نوع التفاعل',
+            'title': 'العنوان',
+            'description': 'الوصف',
+            'next_follow_up_date': 'تاريخ المتابعة القادم',
+            'is_completed': 'مكتمل',
+        }
+        widgets = {
+            'next_follow_up_date': forms.DateInput(attrs={'type': 'date'}),
+            'description': forms.Textarea(attrs={'rows': 4}),
+        }

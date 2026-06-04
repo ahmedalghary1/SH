@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block title %}CRM العملاء{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>CRM العملاء</h1>
+    <div class="button-row">
+        <a class="btn btn-light" href="{% url 'customers:interactions_today' %}">متابعات اليوم</a>
+        <a class="btn btn-light" href="{% url 'customers:report_debtors' %}">المديونيات</a>
+        <a class="btn btn-accent" href="{% url 'customers:create' %}">إضافة عميل</a>
+    </div>
+</div>
+<div class="stats-grid">
+    <div class="stat-card"><span>كل العملاء</span><strong>{{ customers_count }}</strong></div>
+    <div class="stat-card"><span>عملاء نشطون</span><strong>{{ active_customers_count }}</strong></div>
+    <div class="stat-card"><span>غير نشطين 90 يوم</span><strong>{{ inactive_customers_count }}</strong></div>
+    <div class="stat-card"><span>مديونيات</span><strong>{{ debtors_count }}</strong></div>
+    <div class="stat-card"><span>متابعات مستحقة</span><strong>{{ due_followups_count }}</strong></div>
+    <div class="stat-card"><span>شكاوى مفتوحة</span><strong>{{ open_complaints_count }}</strong></div>
+</div>
+<section class="card">
+    <div class="section-title"><h2>أفضل العملاء شراء</h2></div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>العميل</th><th>الهاتف</th><th>إجمالي الشراء</th><th>إجراء</th></tr></thead>
+            <tbody>
+                {% for customer in top_customers %}
+                    <tr><td>{{ customer.name }}</td><td>{{ customer.phone }}</td><td>{{ customer.purchases_total }}</td><td><a class="btn btn-light" href="{% url 'customers:crm_detail' customer.pk %}">فتح</a></td></tr>
+                {% empty %}
+                    <tr><td colspan="4">لا توجد بيانات شراء</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+<section class="card">
+    <div class="section-title"><h2>المتابعات المستحقة</h2></div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>العميل</th><th>العنوان</th><th>التاريخ</th><th>الموظف</th></tr></thead>
+            <tbody>
+                {% for interaction in due_followups %}
+                    <tr><td>{{ interaction.customer }}</td><td>{{ interaction.title }}</td><td>{{ interaction.next_follow_up_date }}</td><td>{{ interaction.created_by|default:'-' }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="4">لا توجد متابعات مستحقة</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+<section class="card">
+    <div class="section-title"><h2>آخر التفاعلات</h2></div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>العميل</th><th>النوع</th><th>العنوان</th><th>الموظف</th><th>التاريخ</th></tr></thead>
+            <tbody>
+                {% for interaction in recent_interactions %}
+                    <tr><td>{{ interaction.customer }}</td><td>{{ interaction.get_interaction_type_display }}</td><td>{{ interaction.title }}</td><td>{{ interaction.created_by|default:'-' }}</td><td>{{ interaction.created_at }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="5">لا توجد تفاعلات</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

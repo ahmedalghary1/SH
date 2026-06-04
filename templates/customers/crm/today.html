@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}متابعات اليوم{% endblock %}
+{% block content %}
+<div class="page-head"><h1>متابعات اليوم</h1></div>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>العميل</th><th>النوع</th><th>العنوان</th><th>تاريخ المتابعة</th><th>الموظف</th><th>إجراء</th></tr></thead>
+        <tbody>
+            {% for interaction in interactions %}
+                <tr><td>{{ interaction.customer }}</td><td>{{ interaction.get_interaction_type_display }}</td><td>{{ interaction.title }}</td><td>{{ interaction.next_follow_up_date }}</td><td>{{ interaction.created_by|default:'-' }}</td><td><a class="btn btn-light" href="{% url 'customers:crm_detail' interaction.customer.pk %}">فتح</a></td></tr>
+            {% empty %}
+                <tr><td colspan="6">لا توجد متابعات مستحقة</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include 'partials/pagination.html' %}
+{% endblock %}

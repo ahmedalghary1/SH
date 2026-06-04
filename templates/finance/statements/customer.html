@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block title %}كشف حساب عميل{% endblock %}
+{% block content %}
+<div class="page-head"><h1>كشف حساب عميل</h1></div>
+<form class="card filter-form" method="get">
+    <label><span>رقم العميل</span><input type="number" name="customer" value="{{ customer_id }}"></label>
+    <button class="btn btn-primary" type="submit">عرض</button>
+</form>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>العميل</th><th>الطلب</th><th>النوع</th><th>الاتجاه</th><th>المبلغ</th><th>الخزنة</th><th>التاريخ</th></tr></thead>
+        <tbody>
+        {% for tx in transactions %}
+            <tr><td>{{ tx.related_customer|default:'-' }}</td><td>{{ tx.related_order|default:'-' }}</td><td>{{ tx.get_transaction_type_display }}</td><td>{{ tx.get_direction_display }}</td><td>{{ tx.amount }}</td><td>{{ tx.cash_account }}</td><td>{{ tx.created_at }}</td></tr>
+        {% empty %}
+            <tr><td colspan="7">لا توجد حركات لهذا الاختيار</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block title %}تفاصيل المورد{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>{{ supplier }}</h1>
+    <div class="actions">
+        <a class="btn btn-primary" href="{% url 'purchases:order_create' %}">أمر شراء</a>
+        <a class="btn btn-light" href="{% url 'purchases:supplier_statement' supplier.pk %}">كشف الحساب</a>
+    </div>
+</div>
+<div class="stats-grid">
+    <div class="stat-card"><span>الرصيد الافتتاحي</span><strong>{{ supplier.opening_balance }}</strong></div>
+    <div class="stat-card"><span>الرصيد الحالي</span><strong>{{ supplier.current_balance }}</strong></div>
+    <div class="stat-card"><span>الهاتف</span><strong>{{ supplier.phone|default:'-' }}</strong></div>
+    <div class="stat-card"><span>الشركة</span><strong>{{ supplier.company_name|default:'-' }}</strong></div>
+</div>
+<div class="order-layout">
+    <section class="card">
+        <h2>آخر أوامر الشراء</h2>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>الرقم</th><th>الحالة</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th></tr></thead>
+                <tbody>
+                {% for po in purchase_orders %}
+                    <tr><td><a href="{% url 'purchases:order_detail' po.pk %}">{{ po.purchase_number }}</a></td><td>{{ po.get_status_display }}</td><td>{{ po.total_amount }}</td><td>{{ po.paid_amount }}</td><td>{{ po.remaining_amount }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="5">لا توجد أوامر شراء</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="card">
+        <h2>آخر المدفوعات</h2>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>الخزنة</th><th>المبلغ</th><th>التاريخ</th></tr></thead>
+                <tbody>
+                {% for tx in transactions %}
+                    <tr><td>{{ tx.cash_account }}</td><td>{{ tx.amount }}</td><td>{{ tx.created_at }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="3">لا توجد مدفوعات</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{% block title %}CRM {{ customer.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>{{ customer.name }}</h1>
+    <div class="button-row">
+        <a class="btn btn-light" href="{% url 'customers:interactions' customer.pk %}">كل التفاعلات</a>
+        <a class="btn btn-accent" href="{% url 'customers:interaction_create' customer.pk %}">إضافة تفاعل</a>
+    </div>
+</div>
+<div class="stats-grid">
+    <div class="stat-card"><span>إجمالي المشتريات</span><strong>{{ summary.total_purchases }}</strong></div>
+    <div class="stat-card"><span>إجمالي المدفوع</span><strong>{{ summary.total_paid }}</strong></div>
+    <div class="stat-card"><span>إجمالي المتبقي</span><strong>{{ summary.total_remaining }}</strong></div>
+    <div class="stat-card"><span>معدل المرتجعات</span><strong>{{ summary.return_rate|floatformat:1 }}%</strong></div>
+    <div class="stat-card"><span>حد الائتمان</span><strong>{{ customer.credit_limit }}</strong></div>
+    <div class="stat-card"><span>الشكاوى المفتوحة</span><strong>{{ summary.complaints_count }}</strong></div>
+</div>
+<section class="card detail-grid">
+    <div><span>نوع العميل</span><strong>{{ customer.get_customer_type_display }}</strong></div>
+    <div><span>الحالة</span><strong>{% if customer.is_active %}نشط{% else %}غير نشط{% endif %}</strong></div>
+    <div><span>آخر طلب</span><strong>{{ summary.last_order|default:'-' }}</strong></div>
+    <div><span>آخر تواصل</span><strong>{{ summary.last_interaction|default:'-' }}</strong></div>
+    <div><span>المتابعة القادمة</span><strong>{{ summary.next_follow_up.next_follow_up_date|default:'-' }}</strong></div>
+    <div><span>رصيد افتتاحي</span><strong>{{ customer.opening_balance }}</strong></div>
+</section>
+<section class="card">
+    <div class="section-title"><h2>التفاعلات</h2></div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>النوع</th><th>العنوان</th><th>المتابعة</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+            <tbody>
+                {% for interaction in interactions %}
+                    <tr>
+                        <td>{{ interaction.get_interaction_type_display }}</td>
+                        <td>{{ interaction.title }}</td>
+                        <td>{{ interaction.next_follow_up_date|default:'-' }}</td>
+                        <td>{% if interaction.is_completed %}مكتمل{% else %}مفتوح{% endif %}</td>
+                        <td>
+                            <a class="btn btn-light" href="{% url 'customers:interaction_edit' customer.pk interaction.pk %}">تعديل</a>
+                            {% if not interaction.is_completed %}
+                                <form method="post" action="{% url 'customers:interaction_complete' customer.pk interaction.pk %}" style="display:inline">{% csrf_token %}<button class="btn btn-light">إكمال</button></form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="5">لا توجد تفاعلات</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+<section class="card">
+    <div class="section-title"><h2>الطلبات</h2></div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>رقم الطلب</th><th>الحالة</th><th>الدفع</th><th>الإجمالي</th><th>المتبقي</th></tr></thead>
+            <tbody>
+                {% for order in orders %}
+                    <tr><td>{{ order.order_number }}</td><td>{{ order.get_status_display }}</td><td>{{ order.get_payment_status_display }}</td><td>{{ order.total }}</td><td>{{ order.remaining_amount }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="5">لا توجد طلبات</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+<section class="card">
+    <div class="section-title"><h2>المدفوعات والمرتجعات</h2></div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>النوع</th><th>القيمة</th><th>الحالة/الحساب</th><th>التاريخ</th></tr></thead>
+            <tbody>
+                {% for payment in payments %}
+                    <tr><td>{{ payment.get_transaction_type_display }}</td><td>{{ payment.amount }}</td><td>{{ payment.cash_account }}</td><td>{{ payment.created_at }}</td></tr>
+                {% endfor %}
+                {% for sales_return in returns %}
+                    <tr><td>مرتجع</td><td>{{ sales_return.refund_amount }}</td><td>{{ sales_return.get_status_display }}</td><td>{{ sales_return.created_at }}</td></tr>
+                {% empty %}
+                    {% if not payments %}<tr><td colspan="4">لا توجد مدفوعات أو مرتجعات</td></tr>{% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

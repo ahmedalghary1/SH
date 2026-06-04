@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block title %}الخزن والحسابات المالية{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>الخزن والحسابات المالية</h1>
+    <a class="btn btn-primary" href="{% url 'finance:account_create' %}">إضافة حساب</a>
+</div>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>الحساب</th><th>النوع</th><th>المندوب</th><th>الرصيد</th><th>الحالة</th><th></th></tr></thead>
+        <tbody>
+        {% for account in accounts %}
+            <tr>
+                <td>{{ account.name }}</td>
+                <td>{{ account.get_account_type_display }}</td>
+                <td>{{ account.assigned_user|default:'-' }}</td>
+                <td>{{ account.balance }}</td>
+                <td><span class="badge">{{ account.is_active|yesno:'نشط,متوقف' }}</span></td>
+                <td><a class="btn btn-light" href="{% url 'finance:account_detail' account.pk %}">التفاصيل</a></td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="6">لا توجد حسابات مالية بعد</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include 'partials/pagination.html' %}
+{% endblock %}

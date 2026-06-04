@@ -28,6 +28,10 @@ urlpatterns = [
     path('customers/', include('customers.urls')),
     path('orders/', include('orders.urls')),
     path('invoices/', include('invoices.urls')),
+    path('finance/', include('finance.urls')),
+    path('purchases/', include('purchases.urls')),
+    path('returns/', include('returns.urls')),
+    path('sales-reps/', include('sales_reps.urls')),
     path('reports/', include('reports.urls')),
     path('settings/', include('settings_app.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

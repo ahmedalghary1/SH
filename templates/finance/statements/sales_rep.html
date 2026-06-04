@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}كشف حساب مندوب{% endblock %}
+{% block content %}
+<div class="page-head"><h1>كشف حساب مندوب</h1></div>
+{% include 'partials/model_form.html' with button_text='عرض الكشف' %}
+{% if sales_rep %}
+<section class="card">
+    <h2>{{ sales_rep }}</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>النوع</th><th>الاتجاه</th><th>المبلغ</th><th>الخزنة</th><th>الطلب</th><th>التاريخ</th></tr></thead>
+            <tbody>
+            {% for tx in transactions %}
+                <tr><td>{{ tx.get_transaction_type_display }}</td><td>{{ tx.get_direction_display }}</td><td>{{ tx.amount }}</td><td>{{ tx.cash_account }}</td><td>{{ tx.related_order|default:'-' }}</td><td>{{ tx.created_at }}</td></tr>
+            {% empty %}
+                <tr><td colspan="6">لا توجد حركات لهذا المندوب</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+{% endblock %}

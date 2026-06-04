@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}مديونيات العملاء{% endblock %}
+{% block content %}
+<div class="page-head"><h1>مديونيات العملاء</h1></div>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>العميل</th><th>الهاتف</th><th>رصيد افتتاحي</th><th>حد الائتمان</th><th>إجراء</th></tr></thead>
+        <tbody>
+            {% for customer in customers %}
+                <tr><td>{{ customer.name }}</td><td>{{ customer.phone }}</td><td>{{ customer.opening_balance }}</td><td>{{ customer.credit_limit }}</td><td><a class="btn btn-light" href="{% url 'customers:crm_detail' customer.pk %}">فتح</a></td></tr>
+            {% empty %}
+                <tr><td colspan="5">لا توجد مديونيات</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include 'partials/pagination.html' %}
+{% endblock %}

@@ -58,6 +58,13 @@ class StockMovement(models.Model):
     TYPE_SALE = 'sale'
     TYPE_RETURN = 'return'
     TYPE_ADJUSTMENT = 'adjustment'
+    TYPE_PURCHASE_RECEIVE = 'purchase_receive'
+    TYPE_SALES_RETURN = 'sales_return'
+    TYPE_DAMAGED_RETURN = 'damaged_return'
+    TYPE_EXCHANGE_OUT = 'exchange_out'
+    TYPE_SALES_REP_ASSIGNMENT = 'sales_rep_assignment'
+    TYPE_SALES_REP_RETURN = 'sales_rep_return'
+    TYPE_SALES_REP_SALE = 'sales_rep_sale'
 
     MOVEMENT_TYPE_CHOICES = [
         (TYPE_IN, 'دخول مخزون'),
@@ -67,6 +74,14 @@ class StockMovement(models.Model):
         (TYPE_RETURN, 'مرتجع'),
         (TYPE_ADJUSTMENT, 'تسوية'),
     ]
+
+    MOVEMENT_TYPE_CHOICES.append((TYPE_PURCHASE_RECEIVE, 'Purchase receive'))
+    MOVEMENT_TYPE_CHOICES.append((TYPE_SALES_RETURN, 'Sales return'))
+    MOVEMENT_TYPE_CHOICES.append((TYPE_DAMAGED_RETURN, 'Damaged return'))
+    MOVEMENT_TYPE_CHOICES.append((TYPE_EXCHANGE_OUT, 'Exchange out'))
+    MOVEMENT_TYPE_CHOICES.append((TYPE_SALES_REP_ASSIGNMENT, 'Sales rep assignment'))
+    MOVEMENT_TYPE_CHOICES.append((TYPE_SALES_REP_RETURN, 'Sales rep return'))
+    MOVEMENT_TYPE_CHOICES.append((TYPE_SALES_REP_SALE, 'Sales rep sale'))
 
     movement_type = models.CharField(max_length=20, choices=MOVEMENT_TYPE_CHOICES, db_index=True)
     variant = models.ForeignKey(ProductVariant, on_delete=models.CASCADE)

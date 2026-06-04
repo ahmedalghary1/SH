@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}مستحقات الموردين{% endblock %}
+{% block content %}
+<div class="page-head"><h1>مستحقات الموردين</h1></div>
+<div class="stats-grid"><div class="stat-card"><span>إجمالي المستحق</span><strong>{{ total_due }}</strong></div></div>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>المورد</th><th>الرصيد المستحق</th><th>الهاتف</th></tr></thead>
+        <tbody>
+        {% for supplier in suppliers %}
+            <tr><td>{{ supplier }}</td><td>{{ supplier.current_balance }}</td><td>{{ supplier.phone|default:'-' }}</td></tr>
+        {% empty %}
+            <tr><td colspan="3">لا توجد مستحقات</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

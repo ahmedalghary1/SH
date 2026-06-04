@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block title %}عهدة المناديب{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>عهدة المناديب</h1>
+    <div class="button-row">
+        <a class="btn btn-light" href="{% url 'sales_reps:assignments' %}">كل العهد</a>
+        <a class="btn btn-light" href="{% url 'sales_reps:statement' %}">كشف مندوب</a>
+        {% if request.user.is_manager %}
+            <a class="btn btn-light" href="{% url 'sales_reps:collection' %}">تسجيل تحصيل</a>
+            <a class="btn btn-accent" href="{% url 'sales_reps:handover' %}">تسليم نقدية</a>
+        {% endif %}
+        {% if request.user.is_warehouse or request.user.is_manager %}
+            <a class="btn btn-light" href="{% url 'sales_reps:return_stock' %}">استلام رجوع</a>
+            <a class="btn btn-light" href="{% url 'sales_reps:record_sale' %}">تسجيل بيع</a>
+            <a class="btn btn-accent" href="{% url 'sales_reps:assign_stock' %}">تسليم بضاعة</a>
+        {% endif %}
+    </div>
+</div>
+
+<section class="card">
+    <div class="section-title"><h2>آخر العهد</h2></div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>المندوب</th><th>الصنف</th><th>المخزن</th><th>المسلم</th><th>المباع</th><th>الراجع</th><th>المتبقي</th><th>الحالة</th></tr>
+            </thead>
+            <tbody>
+                {% for assignment in assignments %}
+                    <tr>
+                        <td>{{ assignment.sales_rep.get_full_name|default:assignment.sales_rep.username }}</td>
+                        <td>{{ assignment.product_variant }}</td>
+                        <td>{{ assignment.source_warehouse }}</td>
+                        <td>{{ assignment.quantity_assigned }}</td>
+                        <td>{{ assignment.quantity_sold }}</td>
+                        <td>{{ assignment.quantity_returned }}</td>
+                        <td>{{ assignment.quantity_remaining }}</td>
+                        <td>{% if assignment.is_active %}<span class="badge status-confirmed">نشطة</span>{% else %}<span class="badge status-cancelled">مغلقة</span>{% endif %}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="8">لا توجد عهد مسجلة</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card">
+    <div class="section-title"><h2>آخر التحصيلات</h2></div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>المندوب</th><th>العميل</th><th>الطلب</th><th>المبلغ</th><th>المسلم</th><th>الحساب</th><th>التاريخ</th></tr>
+            </thead>
+            <tbody>
+                {% for collection in collections %}
+                    <tr>
+                        <td>{{ collection.sales_rep.get_full_name|default:collection.sales_rep.username }}</td>
+                        <td>{{ collection.customer|default:'-' }}</td>
+                        <td>{{ collection.order|default:'-' }}</td>
+                        <td>{{ collection.amount }}</td>
+                        <td>{{ collection.handed_over_amount }}</td>
+                        <td>{{ collection.cash_account }}</td>
+                        <td>{{ collection.collection_date }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="7">لا توجد تحصيلات مسجلة</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

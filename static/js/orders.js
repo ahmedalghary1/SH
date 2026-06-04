@@ -9,13 +9,15 @@
     const priceInput = document.getElementById("unit-price");
     const qtyInput = document.getElementById("item-quantity");
     const discountInput = document.getElementById("item-discount");
+    const discountPercentageInput = document.getElementById("item-discount-percentage");
     const addButton = document.getElementById("add-item");
     const body = document.getElementById("order-items-body");
     const itemsJson = document.getElementById("items-json");
     const orderType = document.getElementById("id_order_type");
     const warehouse = document.getElementById("id_warehouse");
     const paidAmount = document.getElementById("id_paid_amount");
-    const generalDiscount = document.getElementById("id_discount");
+    const generalDiscount = document.getElementById("id_discount_amount");
+    const generalDiscountPercentage = document.getElementById("id_discount_percentage");
     const customerSelect = document.getElementById("id_customer");
     const customerSearch = document.getElementById("customer-search");
     const customerResults = document.getElementById("customer-results");
@@ -26,10 +28,19 @@
         return Number(value || 0).toFixed(2);
     }
 
+    function lineDiscount(item) {
+        const base = Number(item.unit_price) * Number(item.quantity);
+        const amount = Number(item.discount_amount || 0);
+        const percentage = Number(item.discount_percentage || 0);
+        return Math.min(base, amount + (base * percentage / 100));
+    }
+
     function updateSummary() {
         const subtotal = items.reduce((sum, item) => sum + (Number(item.unit_price) * Number(item.quantity)), 0);
-        const lineDiscount = items.reduce((sum, item) => sum + Number(item.discount || 0), 0);
-        const discount = lineDiscount + Number(generalDiscount.value || 0);
+        const itemDiscount = items.reduce((sum, item) => sum + lineDiscount(item), 0);
+        const afterItems = Math.max(subtotal - itemDiscount, 0);
+        const orderDiscount = Math.min(afterItems, Number(generalDiscount.value || 0) + (afterItems * Number(generalDiscountPercentage.value || 0) / 100));
+        const discount = itemDiscount + orderDiscount;
         const total = Math.max(subtotal - discount, 0);
         const paid = Number(paidAmount.value || 0);
         const remaining = Math.max(total - paid, 0);
@@ -44,12 +55,12 @@
     function renderItems() {
         body.innerHTML = "";
         if (!items.length) {
-            body.innerHTML = '<tr class="empty-row"><td colspan="8">لم تتم إضافة منتجات بعد</td></tr>';
+            body.innerHTML = '<tr class="empty-row"><td colspan="9">لم تتم إضافة منتجات بعد</td></tr>';
             updateSummary();
             return;
         }
         items.forEach((item, index) => {
-            const total = Math.max((Number(item.unit_price) * Number(item.quantity)) - Number(item.discount || 0), 0);
+            const total = Math.max((Number(item.unit_price) * Number(item.quantity)) - lineDiscount(item), 0);
             const row = document.createElement("tr");
             row.innerHTML = `
                 <td>${item.product_name}</td>
@@ -57,7 +68,8 @@
                 <td>${item.size || "-"}</td>
                 <td>${item.quantity}</td>
                 <td>${money(item.unit_price)}</td>
-                <td>${money(item.discount)}</td>
+                <td>${money(item.discount_amount)}</td>
+                <td>${money(item.discount_percentage)}</td>
                 <td>${money(total)}</td>
                 <td><button type="button" class="btn btn-danger" data-remove="${index}">حذف</button></td>
             `;
@@ -143,6 +155,7 @@
         option.selected = true;
         customerSearch.value = option.textContent;
         customerResults.classList.remove("is-open");
+        refreshVariantMeta();
     });
 
     async function refreshVariantMeta() {
@@ -150,22 +163,24 @@
         if (!variantId || !warehouse.value) return;
         const stock = await fetchJson(`/orders/ajax/variants/${variantId}/stock/?warehouse_id=${warehouse.value}`);
         stockInput.value = stock.data.quantity;
-        const price = await fetchJson(`/orders/ajax/variants/${variantId}/price/?order_type=${orderType.value}`);
+        const price = await fetchJson(`/orders/ajax/variants/${variantId}/price/?order_type=${orderType.value}&customer_id=${customerSelect.value || ""}`);
         priceInput.value = price.data.price;
     }
 
     variantSelect.addEventListener("change", refreshVariantMeta);
     warehouse.addEventListener("change", refreshVariantMeta);
     orderType.addEventListener("change", refreshVariantMeta);
+    customerSelect.addEventListener("change", refreshVariantMeta);
     paidAmount.addEventListener("input", updateSummary);
     generalDiscount.addEventListener("input", updateSummary);
+    generalDiscountPercentage.addEventListener("input", updateSummary);
 
     addButton.addEventListener("click", () => {
         const selected = variantSelect.options[variantSelect.selectedIndex];
         const quantity = Number(qtyInput.value || 0);
         const available = Number(stockInput.value || 0);
         if (!selectedProduct || !variantSelect.value) {
-            window.alert("اختر المنتج والمتغير أولًا");
+            window.alert("اختر المنتج والمتغير أولا");
             return;
         }
         if (quantity <= 0 || quantity > available) {
@@ -179,11 +194,13 @@
             size: selected.dataset.size,
             quantity,
             unit_price: Number(priceInput.value || 0),
-            discount: Number(discountInput.value || 0),
+            discount_amount: Number(discountInput.value || 0),
+            discount_percentage: Number(discountPercentageInput.value || 0),
         });
         renderItems();
         qtyInput.value = 1;
         discountInput.value = 0;
+        discountPercentageInput.value = 0;
     });
 
     body.addEventListener("click", (event) => {
@@ -196,7 +213,7 @@
     form.addEventListener("submit", (event) => {
         if (!items.length) {
             event.preventDefault();
-            window.alert("أضف منتجًا واحدًا على الأقل");
+            window.alert("أضف منتجا واحدا على الأقل");
         }
     });
 
@@ -209,6 +226,8 @@
         payload.append("company_name", document.getElementById("quick-customer-company").value);
         payload.append("tax_number", document.getElementById("quick-customer-tax").value);
         payload.append("address", document.getElementById("quick-customer-address").value);
+        payload.append("credit_limit", "0");
+        payload.append("opening_balance", "0");
         payload.append("is_active", "on");
         const data = await fetchJson("/customers/ajax/quick-create/", {
             method: "POST",
@@ -229,6 +248,7 @@
         } else {
             document.getElementById("customer-modal").hidden = true;
         }
+        refreshVariantMeta();
     });
 
     renderItems();

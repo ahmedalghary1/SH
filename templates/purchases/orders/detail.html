@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}تفاصيل أمر شراء{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>{{ purchase_order.purchase_number }}</h1>
+    <div class="actions">
+        {% if purchase_order.status != 'received' and purchase_order.status != 'cancelled' %}
+            <a class="btn btn-primary" href="{% url 'purchases:order_receive' purchase_order.pk %}">استلام</a>
+        {% endif %}
+        {% if request.user.is_manager %}
+            <a class="btn btn-light" href="{% url 'purchases:order_pay' purchase_order.pk %}">دفع للمورد</a>
+        {% endif %}
+    </div>
+</div>
+<div class="stats-grid">
+    <div class="stat-card"><span>المورد</span><strong>{{ purchase_order.supplier }}</strong></div>
+    <div class="stat-card"><span>الحالة</span><strong>{{ purchase_order.get_status_display }}</strong></div>
+    <div class="stat-card"><span>الإجمالي</span><strong>{{ purchase_order.total_amount }}</strong></div>
+    <div class="stat-card"><span>المتبقي</span><strong>{{ purchase_order.remaining_amount }}</strong></div>
+</div>
+<section class="card">
+    <h2>الأصناف</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>الصنف</th><th>الكمية</th><th>المستلم</th><th>المتبقي</th>{% if request.user.is_manager %}<th>التكلفة</th><th>الإجمالي</th>{% endif %}</tr></thead>
+            <tbody>
+            {% for item in purchase_order.items.all %}
+                <tr>
+                    <td>{{ item.product_variant }}</td><td>{{ item.quantity }}</td><td>{{ item.received_quantity }}</td><td>{{ item.remaining_quantity }}</td>
+                    {% if request.user.is_manager %}<td>{{ item.unit_cost }}</td><td>{{ item.total_cost }}</td>{% endif %}
+                </tr>
+            {% empty %}
+                <tr><td colspan="6">لا توجد أصناف</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% if request.user.is_manager and purchase_order.status != 'cancelled' %}
+<form method="post" action="{% url 'purchases:order_cancel' purchase_order.pk %}" class="card">
+    {% csrf_token %}
+    <button class="btn btn-light" type="submit">إلغاء أمر الشراء</button>
+</form>
+{% endif %}
+{% endblock %}

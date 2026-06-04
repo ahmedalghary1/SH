@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}تقرير مرتجعات المنتجات{% endblock %}
+{% block content %}
+<div class="page-head"><h1>تقرير مرتجعات المنتجات</h1></div>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>المنتج</th><th>الكمية</th><th>إجمالي الاسترداد</th></tr></thead>
+        <tbody>
+        {% for row in items %}
+            <tr><td>{{ row.product_variant__product__name }}</td><td>{{ row.qty }}</td><td>{{ row.total }}</td></tr>
+        {% empty %}
+            <tr><td colspan="3">لا توجد بيانات</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

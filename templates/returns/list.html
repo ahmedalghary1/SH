@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}المرتجعات{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>المرتجعات</h1>
+    <a class="btn btn-primary" href="{% url 'returns:create' %}">إنشاء مرتجع</a>
+</div>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>رقم</th><th>الطلب</th><th>العميل</th><th>النوع</th><th>الحالة</th><th>المبلغ</th><th>التاريخ</th><th></th></tr></thead>
+        <tbody>
+        {% for ret in returns %}
+            <tr>
+                <td>#{{ ret.pk }}</td>
+                <td>{{ ret.order }}</td>
+                <td>{{ ret.customer|default:'-' }}</td>
+                <td>{{ ret.get_return_type_display }}</td>
+                <td><span class="badge">{{ ret.get_status_display }}</span></td>
+                <td>{{ ret.refund_amount }}</td>
+                <td>{{ ret.created_at }}</td>
+                <td><a class="btn btn-light" href="{% url 'returns:detail' ret.pk %}">التفاصيل</a></td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="8">لا توجد مرتجعات</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include 'partials/pagination.html' %}
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}تقرير المشتريات{% endblock %}
+{% block content %}
+<div class="page-head"><h1>تقرير المشتريات</h1></div>
+<div class="stats-grid">
+    <div class="stat-card"><span>إجمالي المشتريات</span><strong>{{ total_amount }}</strong></div>
+    <div class="stat-card"><span>المدفوع</span><strong>{{ paid_amount }}</strong></div>
+    <div class="stat-card"><span>المتبقي</span><strong>{{ remaining_amount }}</strong></div>
+</div>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>الرقم</th><th>المورد</th><th>الحالة</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th></tr></thead>
+        <tbody>
+        {% for po in orders %}
+            <tr><td>{{ po.purchase_number }}</td><td>{{ po.supplier }}</td><td>{{ po.get_status_display }}</td><td>{{ po.total_amount }}</td><td>{{ po.paid_amount }}</td><td>{{ po.remaining_amount }}</td></tr>
+        {% empty %}
+            <tr><td colspan="6">لا توجد بيانات</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -18,7 +18,15 @@ from products.models import Product, ProductVariant
 
 from .forms import OrderForm
 from .models import Order
-from .services import cancel_order, confirm_order, create_order, return_order
+from .services import (
+    calculate_discount_amount,
+    cancel_order,
+    confirm_order,
+    create_order,
+    get_price_for_customer,
+    prepare_order_item_pricing,
+    return_order,
+)
 
 
 class OrderListView(RoleRequiredMixin, ListView):
@@ -60,8 +68,9 @@ class OrderCreateView(SalesRequiredMixin, FormView):
                 items.append({
                     'variant': variant,
                     'quantity': int(posted['quantity']),
-                    'unit_price': Decimal(str(posted['unit_price'])),
-                    'discount': Decimal(str(posted.get('discount', 0))),
+                    'unit_price': Decimal(str(posted.get('unit_price', 0))),
+                    'discount_amount': Decimal(str(posted.get('discount_amount', posted.get('discount', 0)))),
+                    'discount_percentage': Decimal(str(posted.get('discount_percentage', 0))),
                 })
             confirm = self.request.POST.get('action') == 'confirm'
             order = create_order(order_data=form.cleaned_data, items=items, user=self.request.user, confirm=confirm)
@@ -83,7 +92,9 @@ class OrderDetailView(RoleRequiredMixin, DetailView):
     context_object_name = 'order'
 
     def get_queryset(self):
-        qs = Order.objects.select_related('customer', 'warehouse', 'created_by').prefetch_related('items__variant__product', 'items__variant__color', 'items__variant__size')
+        qs = Order.objects.select_related('customer', 'warehouse', 'created_by', 'discount_approved_by').prefetch_related(
+            'items__variant__product', 'items__variant__color', 'items__variant__size',
+        )
         if self.request.user.role == 'sales' and not self.request.user.is_superuser:
             qs = qs.filter(created_by=self.request.user)
         return qs
@@ -178,9 +189,11 @@ def ajax_get_variant_stock(request, variant_id):
 @require_GET
 @sales_required
 def ajax_get_variant_price(request, variant_id):
-    order_type = request.GET.get('order_type', 'b2c')
+    order_type = request.GET.get('order_type', Order.TYPE_B2C)
+    customer_id = request.GET.get('customer_id')
     variant = get_object_or_404(ProductVariant.objects.select_related('product'), pk=variant_id)
-    price = variant.product.wholesale_price if order_type == 'b2b' else variant.product.retail_price
+    customer = Customer.objects.filter(pk=customer_id).first() if customer_id else None
+    price = get_price_for_customer(variant, customer=customer, order_type=order_type)
     return JsonResponse({'success': True, 'message': 'تم جلب السعر', 'data': {'price': str(price)}})
 
 
@@ -202,18 +215,49 @@ def ajax_calculate_order_totals(request):
         payload = json.loads(request.body.decode('utf-8'))
         items = payload.get('items', [])
         paid_amount = Decimal(str(payload.get('paid_amount', 0)))
+        order_discount_amount = Decimal(str(payload.get('discount_amount', payload.get('discount', 0))))
+        order_discount_percentage = Decimal(str(payload.get('discount_percentage', 0)))
+        customer = Customer.objects.filter(pk=payload.get('customer_id')).first()
+        order_type = payload.get('order_type', Order.TYPE_B2C)
     except (json.JSONDecodeError, ValueError):
         return JsonResponse({'success': False, 'message': 'بيانات غير صحيحة', 'errors': {}}, status=400)
+
     subtotal = Decimal('0')
     discount = Decimal('0')
-    for item in items:
-        qty = Decimal(str(item.get('quantity', 0)))
-        price = Decimal(str(item.get('unit_price', 0)))
-        item_discount = Decimal(str(item.get('discount', 0)))
-        subtotal += qty * price
-        discount += item_discount
-    total = max(subtotal - discount, Decimal('0'))
-    remaining = max(total - paid_amount, Decimal('0'))
-    return JsonResponse({'success': True, 'message': 'تم الحساب', 'data': {'subtotal': str(subtotal), 'discount': str(discount), 'total': str(total), 'remaining_amount': str(remaining)}})
+    try:
+        for item in items:
+            variant = ProductVariant.objects.select_related('product').get(pk=item.get('variant_id'), is_active=True)
+            quantity = Decimal(str(item.get('quantity', 0)))
+            pricing = prepare_order_item_pricing(
+                variant=variant,
+                quantity=item.get('quantity', 0),
+                user=request.user,
+                customer=customer,
+                order_type=order_type,
+                unit_price=item.get('unit_price'),
+                discount_amount=item.get('discount_amount', item.get('discount', 0)),
+                discount_percentage=item.get('discount_percentage', 0),
+            )
+            subtotal += pricing['original_unit_price'] * quantity
+            discount += pricing['line_discount']
+        order_discount = calculate_discount_amount(
+            base_amount=max(subtotal - discount, Decimal('0')),
+            discount_amount=order_discount_amount,
+            discount_percentage=order_discount_percentage,
+        )
+    except (ProductVariant.DoesNotExist, ValidationError, ValueError) as exc:
+        return JsonResponse({'success': False, 'message': getattr(exc, 'message', 'بيانات الخصم غير صحيحة'), 'errors': {}}, status=400)
 
-# Create your views here.
+    total_discount = discount + order_discount
+    total = max(subtotal - total_discount, Decimal('0'))
+    remaining = max(total - paid_amount, Decimal('0'))
+    return JsonResponse({
+        'success': True,
+        'message': 'تم الحساب',
+        'data': {
+            'subtotal': str(subtotal),
+            'discount': str(total_discount),
+            'total': str(total),
+            'remaining_amount': str(remaining),
+        },
+    })

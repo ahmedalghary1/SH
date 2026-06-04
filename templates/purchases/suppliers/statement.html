@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}كشف حساب مورد{% endblock %}
+{% block content %}
+<div class="page-head"><h1>كشف حساب {{ supplier }}</h1></div>
+<div class="stats-grid">
+    <div class="stat-card"><span>الرصيد الحالي</span><strong>{{ supplier.current_balance }}</strong></div>
+    <div class="stat-card"><span>الرصيد الافتتاحي</span><strong>{{ supplier.opening_balance }}</strong></div>
+</div>
+<div class="order-layout">
+    <section class="card">
+        <h2>أوامر الشراء</h2>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>الرقم</th><th>الحالة</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th></tr></thead>
+                <tbody>
+                {% for po in purchase_orders %}
+                    <tr><td>{{ po.purchase_number }}</td><td>{{ po.get_status_display }}</td><td>{{ po.total_amount }}</td><td>{{ po.paid_amount }}</td><td>{{ po.remaining_amount }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="5">لا توجد أوامر</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="card">
+        <h2>الحركات المالية</h2>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>النوع</th><th>الخزنة</th><th>المبلغ</th><th>التاريخ</th></tr></thead>
+                <tbody>
+                {% for tx in transactions %}
+                    <tr><td>{{ tx.get_transaction_type_display }}</td><td>{{ tx.cash_account }}</td><td>{{ tx.amount }}</td><td>{{ tx.created_at }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="4">لا توجد حركات</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

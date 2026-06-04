@@ -67,13 +67,14 @@ class ProductForm(forms.ModelForm):
 class ProductVariantForm(forms.ModelForm):
     class Meta:
         model = ProductVariant
-        fields = ('product', 'color', 'size', 'variant_sku', 'barcode', 'is_active')
+        fields = ('product', 'color', 'size', 'variant_sku', 'barcode', 'cost_price', 'is_active')
         labels = {
             'product': 'المنتج',
             'color': 'اللون',
             'size': 'المقاس',
             'variant_sku': 'كود المتغير',
             'barcode': 'الباركود',
+            'cost_price': 'تكلفة القطعة',
             'is_active': 'نشط',
         }
 
@@ -85,10 +86,11 @@ class InitialProductVariantForm(forms.ModelForm):
     new_size_name = forms.CharField(label='مقاس جديد', required=False)
     variant_sku = forms.CharField(label='كود المتغير', required=False)
     barcode = forms.CharField(label='الباركود', required=False)
+    cost_price = forms.DecimalField(label='تكلفة القطعة', min_value=0, required=False, initial=0)
 
     class Meta:
         model = ProductVariant
-        fields = ('color', 'new_color_name', 'size', 'new_size_name', 'variant_sku', 'barcode')
+        fields = ('color', 'new_color_name', 'size', 'new_size_name', 'variant_sku', 'barcode', 'cost_price')
         widgets = {
             'new_color_name': forms.TextInput(attrs={'placeholder': 'اكتب لونًا جديدًا'}),
             'new_size_name': forms.TextInput(attrs={'placeholder': 'اكتب مقاسًا جديدًا'}),
@@ -101,7 +103,7 @@ class InitialProductVariantForm(forms.ModelForm):
             return False
         return any(
             self.cleaned_data.get(field)
-            for field in ('color', 'new_color_name', 'size', 'new_size_name', 'variant_sku', 'barcode')
+            for field in ('color', 'new_color_name', 'size', 'new_size_name', 'variant_sku', 'barcode', 'cost_price')
         )
 
 

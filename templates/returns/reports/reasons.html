@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}تقرير أسباب المرتجعات{% endblock %}
+{% block content %}
+<div class="page-head"><h1>تقرير أسباب المرتجعات</h1></div>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>السبب</th><th>العدد</th><th>إجمالي الاسترداد</th></tr></thead>
+        <tbody>
+        {% for row in reasons %}
+            <tr><td>{{ row.reason|default:'-' }}</td><td>{{ row.count }}</td><td>{{ row.total|default:0 }}</td></tr>
+        {% empty %}
+            <tr><td colspan="3">لا توجد بيانات</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

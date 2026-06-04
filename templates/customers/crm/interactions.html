@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block title %}تفاعلات {{ customer.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>تفاعلات {{ customer.name }}</h1>
+    <a class="btn btn-accent" href="{% url 'customers:interaction_create' customer.pk %}">إضافة تفاعل</a>
+</div>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>النوع</th><th>العنوان</th><th>الوصف</th><th>المتابعة</th><th>الحالة</th><th>الموظف</th><th>إجراءات</th></tr></thead>
+        <tbody>
+            {% for interaction in interactions %}
+                <tr>
+                    <td>{{ interaction.get_interaction_type_display }}</td>
+                    <td>{{ interaction.title }}</td>
+                    <td>{{ interaction.description|default:'-' }}</td>
+                    <td>{{ interaction.next_follow_up_date|default:'-' }}</td>
+                    <td>{% if interaction.is_completed %}مكتمل{% else %}مفتوح{% endif %}</td>
+                    <td>{{ interaction.created_by|default:'-' }}</td>
+                    <td><a class="btn btn-light" href="{% url 'customers:interaction_edit' customer.pk interaction.pk %}">تعديل</a></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7">لا توجد تفاعلات</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include 'partials/pagination.html' %}
+{% endblock %}

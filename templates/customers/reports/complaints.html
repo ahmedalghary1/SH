@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}الشكاوى المفتوحة{% endblock %}
+{% block content %}
+<div class="page-head"><h1>الشكاوى المفتوحة</h1></div>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>العميل</th><th>العنوان</th><th>المتابعة القادمة</th><th>الموظف</th><th>إجراء</th></tr></thead>
+        <tbody>
+            {% for complaint in complaints %}
+                <tr><td>{{ complaint.customer }}</td><td>{{ complaint.title }}</td><td>{{ complaint.next_follow_up_date|default:'-' }}</td><td>{{ complaint.created_by|default:'-' }}</td><td><a class="btn btn-light" href="{% url 'customers:crm_detail' complaint.customer.pk %}">فتح</a></td></tr>
+            {% empty %}
+                <tr><td colspan="5">لا توجد شكاوى مفتوحة</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include 'partials/pagination.html' %}
+{% endblock %}

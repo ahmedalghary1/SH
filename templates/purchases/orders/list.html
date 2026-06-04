@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block title %}أوامر الشراء{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>أوامر الشراء</h1>
+    <a class="btn btn-primary" href="{% url 'purchases:order_create' %}">إنشاء أمر شراء</a>
+</div>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>الرقم</th><th>المورد</th><th>الحالة</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th></th></tr></thead>
+        <tbody>
+        {% for po in purchase_orders %}
+            <tr>
+                <td>{{ po.purchase_number }}</td><td>{{ po.supplier }}</td><td>{{ po.get_status_display }}</td>
+                <td>{{ po.total_amount }}</td><td>{{ po.paid_amount }}</td><td>{{ po.remaining_amount }}</td>
+                <td><a class="btn btn-light" href="{% url 'purchases:order_detail' po.pk %}">التفاصيل</a></td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="7">لا توجد أوامر شراء</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include 'partials/pagination.html' %}
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}أفضل العملاء{% endblock %}
+{% block content %}
+<div class="page-head"><h1>أفضل العملاء شراء</h1></div>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>العميل</th><th>الهاتف</th><th>النوع</th><th>إجمالي الشراء</th><th>إجراء</th></tr></thead>
+        <tbody>
+            {% for customer in customers %}
+                <tr><td>{{ customer.name }}</td><td>{{ customer.phone }}</td><td>{{ customer.get_customer_type_display }}</td><td>{{ customer.purchases_total }}</td><td><a class="btn btn-light" href="{% url 'customers:crm_detail' customer.pk %}">فتح</a></td></tr>
+            {% empty %}
+                <tr><td colspan="5">لا توجد بيانات</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

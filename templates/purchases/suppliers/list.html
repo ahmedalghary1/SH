@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}الموردون{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>الموردون</h1>
+    <a class="btn btn-primary" href="{% url 'purchases:supplier_create' %}">إضافة مورد</a>
+</div>
+<form class="card filter-form" method="get">
+    <label><span>بحث</span><input type="search" name="q" value="{{ request.GET.q }}" placeholder="اسم المورد"></label>
+    <button class="btn btn-primary" type="submit">بحث</button>
+</form>
+<div class="table-wrap card">
+    <table>
+        <thead><tr><th>المورد</th><th>الشركة</th><th>الهاتف</th><th>الرصيد</th><th>الحالة</th><th></th></tr></thead>
+        <tbody>
+        {% for supplier in suppliers %}
+            <tr>
+                <td>{{ supplier.name }}</td>
+                <td>{{ supplier.company_name|default:'-' }}</td>
+                <td>{{ supplier.phone|default:'-' }}</td>
+                <td>{{ supplier.current_balance }}</td>
+                <td><span class="badge">{{ supplier.is_active|yesno:'نشط,متوقف' }}</span></td>
+                <td>
+                    <a class="btn btn-light" href="{% url 'purchases:supplier_detail' supplier.pk %}">التفاصيل</a>
+                    <a class="btn btn-light" href="{% url 'purchases:supplier_update' supplier.pk %}">تعديل</a>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="6">لا توجد موردون</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% include 'partials/pagination.html' %}
+{% endblock %}

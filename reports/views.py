@@ -5,6 +5,7 @@ from django.views.generic import TemplateView
 
 from accounts.permissions import ManagerRequiredMixin
 from customers.models import Customer
+from finance.models import PaymentTransaction
 from inventory.models import Stock
 from orders.models import Order, OrderItem
 
@@ -18,6 +19,13 @@ class DailySalesReportView(ManagerRequiredMixin, TemplateView):
         orders = Order.objects.filter(created_at__date=today).exclude(status__in=[Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
         context['orders_count'] = orders.count()
         context['total_sales'] = orders.aggregate(v=Sum('total'))['v'] or 0
+        context['total_cost'] = orders.aggregate(v=Sum('total_cost'))['v'] or 0
+        context['gross_profit'] = orders.aggregate(v=Sum('gross_profit'))['v'] or 0
+        context['expenses_total'] = PaymentTransaction.objects.filter(
+            transaction_type=PaymentTransaction.TYPE_EXPENSE,
+            created_at__date=today,
+        ).aggregate(v=Sum('amount'))['v'] or 0
+        context['net_profit'] = context['gross_profit'] - context['expenses_total']
         context['paid_total'] = orders.aggregate(v=Sum('paid_amount'))['v'] or 0
         context['remaining_total'] = orders.aggregate(v=Sum('remaining_amount'))['v'] or 0
         context['top_products'] = OrderItem.objects.filter(order__in=orders).values('variant__product__name').annotate(qty=Sum('quantity')).order_by('-qty')[:10]
@@ -31,7 +39,12 @@ class MonthlySalesReportView(ManagerRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         orders = Order.objects.exclude(status__in=[Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
-        context['months'] = orders.annotate(month=TruncMonth('created_at')).values('month').annotate(total=Sum('total'), count=Count('id')).order_by('-month')
+        context['months'] = orders.annotate(month=TruncMonth('created_at')).values('month').annotate(
+            total=Sum('total'),
+            cost=Sum('total_cost'),
+            profit=Sum('gross_profit'),
+            count=Count('id'),
+        ).order_by('-month')
         context['b2b_total'] = orders.filter(order_type=Order.TYPE_B2B).aggregate(v=Sum('total'))['v'] or 0
         context['b2c_total'] = orders.filter(order_type=Order.TYPE_B2C).aggregate(v=Sum('total'))['v'] or 0
         return context
@@ -66,6 +79,8 @@ class EmployeeSalesReportView(ManagerRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context['employees'] = Order.objects.values('created_by__username').annotate(
             sales_total=Sum('total'),
+            total_cost=Sum('total_cost'),
+            gross_profit=Sum('gross_profit'),
             paid=Sum('paid_amount'),
             count=Count('id'),
             avg_order=Avg('total'),
@@ -81,6 +96,8 @@ class YearlySalesReportView(ManagerRequiredMixin, TemplateView):
         orders = Order.objects.exclude(status__in=[Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
         context['years'] = orders.annotate(year=ExtractYear('created_at')).values('year').annotate(
             total=Sum('total'),
+            cost=Sum('total_cost'),
+            profit=Sum('gross_profit'),
             paid=Sum('paid_amount'),
             remaining=Sum('remaining_amount'),
             count=Count('id'),

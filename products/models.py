@@ -62,6 +62,7 @@ class ProductVariant(models.Model):
     size = models.ForeignKey(Size, on_delete=models.SET_NULL, null=True)
     variant_sku = models.CharField(max_length=120, unique=True, db_index=True)
     barcode = models.CharField(max_length=120, blank=True, null=True, db_index=True)
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True, db_index=True)
 
     class Meta:
@@ -73,5 +74,25 @@ class ProductVariant(models.Model):
 
     def __str__(self):
         return f'{self.product.name} - {self.color} - {self.size}'
+
+    @property
+    def retail_profit_per_piece(self):
+        return self.product.retail_price - self.cost_price
+
+    @property
+    def wholesale_profit_per_piece(self):
+        return self.product.wholesale_price - self.cost_price
+
+    @property
+    def retail_profit_margin_percentage(self):
+        if self.product.retail_price <= 0:
+            return 0
+        return (self.retail_profit_per_piece / self.product.retail_price) * 100
+
+    @property
+    def wholesale_profit_margin_percentage(self):
+        if self.product.wholesale_price <= 0:
+            return 0
+        return (self.wholesale_profit_per_piece / self.product.wholesale_price) * 100
 
 # Create your models here.
