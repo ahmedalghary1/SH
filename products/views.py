@@ -8,7 +8,7 @@ from django.urls import reverse_lazy
 from django.views.decorators.http import require_GET
 from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
 
-from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin
+from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, role_required
 from inventory.models import Stock, Warehouse
 from inventory.services import adjust_stock, stock_in, transfer_stock
 
@@ -350,6 +350,7 @@ class ProductVariantDeactivateView(ManagerRequiredMixin, View):
 
 
 @require_GET
+@role_required('manager', 'sales', 'warehouse')
 def ajax_search_products(request):
     q = request.GET.get('q', '').strip()
     products = Product.objects.filter(is_active=True)
@@ -363,6 +364,7 @@ def ajax_search_products(request):
 
 
 @require_GET
+@role_required('manager', 'sales', 'warehouse')
 def ajax_get_product_variants(request, product_id):
     variants = ProductVariant.objects.filter(product_id=product_id, is_active=True).select_related('color', 'size')
     data = [
@@ -378,6 +380,7 @@ def ajax_get_product_variants(request, product_id):
 
 
 @require_GET
+@role_required('manager', 'sales', 'warehouse')
 def ajax_get_variant_price(request, variant_id):
     order_type = request.GET.get('order_type', 'b2c')
     variant = get_object_or_404(ProductVariant.objects.select_related('product'), pk=variant_id, is_active=True)
@@ -386,6 +389,7 @@ def ajax_get_variant_price(request, variant_id):
 
 
 @require_GET
+@role_required('manager', 'sales', 'warehouse')
 def api_categories(request):
     categories = Category.objects.filter(is_active=True).select_related('parent').order_by('name')
     data = [
@@ -400,6 +404,7 @@ def api_categories(request):
 
 
 @require_GET
+@role_required('manager', 'sales', 'warehouse')
 def api_products(request):
     qs = Product.objects.filter(is_active=True).select_related('category').prefetch_related('variants__color', 'variants__size')
     q = request.GET.get('q')

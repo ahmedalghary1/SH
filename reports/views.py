@@ -1,13 +1,178 @@
+import csv
+
 from django.db.models import Avg, Count, F, Sum
 from django.db.models.functions import ExtractYear, TruncMonth
+from django.http import HttpResponse
 from django.utils import timezone
-from django.views.generic import TemplateView
+from django.views.generic import TemplateView, View
 
-from accounts.permissions import ManagerRequiredMixin
+from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin
 from customers.models import Customer
 from finance.models import PaymentTransaction
 from inventory.models import Stock
 from orders.models import Order, OrderItem
+from . import services
+
+
+class GenericReportMixin:
+    template_name = 'reports/generic_report.html'
+    report_title = 'Report'
+
+    def get_report(self):
+        raise NotImplementedError
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        report = self.get_report()
+        context.update(report)
+        context.setdefault('title', self.report_title)
+        context['filters'] = self.request.GET
+        context['summary_pairs'] = list(report.get('summary', {}).items())
+        context['table'] = prepare_table(report.get('rows', []))
+        context['prepared_sections'] = [
+            (title, prepare_table(rows))
+            for title, rows in report.get('sections', {}).items()
+        ]
+        return context
+
+
+class SalesReportView(RoleRequiredMixin, GenericReportMixin, TemplateView):
+    allowed_roles = ('manager', 'sales')
+    report_title = 'Sales report'
+
+    def get_report(self):
+        return services.sales_report(self.request)
+
+
+class SalesReportExportView(RoleRequiredMixin, View):
+    allowed_roles = ('manager', 'sales')
+
+    def get(self, request):
+        report = services.sales_report(request)
+        return export_rows('sales-report.csv', report['rows'])
+
+
+class ProfitabilityReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
+    report_title = 'Profitability report'
+
+    def get_report(self):
+        return services.profitability_report(self.request)
+
+
+class ProfitabilityReportExportView(ManagerRequiredMixin, View):
+    def get(self, request):
+        report = services.profitability_report(request)
+        rows = report['sections']['profit_by_product']
+        return export_rows('profitability-report.csv', rows)
+
+
+class NetProfitReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
+    report_title = 'Net profit report'
+
+    def get_report(self):
+        return services.net_profit_report(self.request)
+
+
+class CustomerDebtReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
+    report_title = 'Customer debt report'
+
+    def get_report(self):
+        return services.customer_debt_report()
+
+
+class InactiveCustomerReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
+    report_title = 'Inactive customer report'
+
+    def get_report(self):
+        days = int(self.request.GET.get('days') or 90)
+        return services.inactive_customer_report(days=days)
+
+
+class DiscountReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
+    report_title = 'Discount report'
+
+    def get_report(self):
+        return services.discount_report(self.request)
+
+
+class SalesRepCustodyReportView(RoleRequiredMixin, GenericReportMixin, TemplateView):
+    allowed_roles = ('manager', 'sales', 'warehouse')
+    report_title = 'Sales rep custody report'
+
+    def get_report(self):
+        return services.sales_rep_custody_report(self.request)
+
+
+class SalesRepCollectionsReportView(RoleRequiredMixin, GenericReportMixin, TemplateView):
+    allowed_roles = ('manager', 'sales')
+    report_title = 'Sales rep collections report'
+
+    def get_report(self):
+        return services.sales_rep_collections_report(self.request)
+
+
+class LowStockReportView(RoleRequiredMixin, GenericReportMixin, TemplateView):
+    allowed_roles = ('manager', 'warehouse')
+    report_title = 'Low stock report'
+
+    def get_report(self):
+        return services.low_stock_report()
+
+
+class StaleProductsReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
+    report_title = 'Stale products report'
+
+    def get_report(self):
+        days = int(self.request.GET.get('days') or 90)
+        return services.stale_products_report(days=days)
+
+
+class ReturnsReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
+    report_title = 'Returns report'
+
+    def get_report(self):
+        return services.returns_report(self.request)
+
+
+class PurchaseReportAdvancedView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
+    report_title = 'Purchase report'
+
+    def get_report(self):
+        return services.purchase_report(self.request)
+
+
+class SupplierDuesReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
+    report_title = 'Supplier dues report'
+
+    def get_report(self):
+        return services.supplier_dues_report()
+
+
+def export_rows(filename, rows):
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response.write('\ufeff')
+    writer = csv.writer(response)
+    rows = list(rows)
+    if not rows:
+        writer.writerow(['empty'])
+        return response
+    headers = list(rows[0].keys())
+    writer.writerow(headers)
+    for row in rows:
+        writer.writerow([row.get(header, '') for header in headers])
+    return response
+
+
+def prepare_table(rows):
+    rows = list(rows)
+    if not rows:
+        return {'headers': [], 'rows': []}
+    headers = list(rows[0].keys())
+    return {
+        'headers': headers,
+        'rows': [[row.get(header, '') for header in headers] for row in rows],
+    }
 
 
 class DailySalesReportView(ManagerRequiredMixin, TemplateView):

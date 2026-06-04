@@ -1,8 +1,11 @@
 __pycache__/
 *.py[cod]
 *.sqlite3-journal
+db.sqlite3
 .env
 .venv/
 venv/
 staticfiles/
+media/
+logs/
 media/products/

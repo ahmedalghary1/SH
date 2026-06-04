@@ -7,7 +7,7 @@ from django.urls import reverse_lazy
 from django.views.decorators.http import require_GET
 from django.views.generic import CreateView, FormView, ListView
 
-from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin
+from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin, role_required
 from products.models import ProductVariant
 
 from .forms import RepresentativeIssueForm, RepresentativeReturnForm, StockAdjustmentForm, StockMovementForm, StockTransferForm, WarehouseForm
@@ -221,6 +221,7 @@ class StockAdjustmentView(ManagerRequiredMixin, FormView):
 
 
 @require_GET
+@role_required('manager', 'sales', 'warehouse')
 def ajax_check_stock(request):
     variant_id = request.GET.get('variant_id')
     warehouse_id = request.GET.get('warehouse_id')

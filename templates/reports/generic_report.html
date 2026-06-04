@@ -1,0 +1,110 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>{{ title }}</h1>
+    <div class="button-row">
+        <a class="btn btn-light" href="{% url 'reports:sales_export' %}?{{ request.GET.urlencode }}">Export sales CSV</a>
+        {% if request.user.is_manager %}
+            <a class="btn btn-light" href="{% url 'reports:profitability_export' %}?{{ request.GET.urlencode }}">Export profit CSV</a>
+        {% endif %}
+    </div>
+</div>
+
+<section class="card">
+    <form method="get" class="filters-form">
+        <div class="form-grid">
+            <div class="form-group">
+                <label>From</label>
+                <input type="date" name="date_from" value="{{ filters.date_from }}">
+            </div>
+            <div class="form-group">
+                <label>To</label>
+                <input type="date" name="date_to" value="{{ filters.date_to }}">
+            </div>
+            <div class="form-group">
+                <label>Status</label>
+                <input type="text" name="status" value="{{ filters.status }}" placeholder="status">
+            </div>
+            <div class="form-group">
+                <label>Payment</label>
+                <input type="text" name="payment_status" value="{{ filters.payment_status }}" placeholder="payment_status">
+            </div>
+        </div>
+        <div class="button-row">
+            <button class="btn btn-accent" type="submit">Apply</button>
+            <a class="btn btn-light" href="{{ request.path }}">Reset</a>
+        </div>
+    </form>
+</section>
+
+{% if summary_pairs %}
+<div class="stats-grid">
+    {% for key, value in summary_pairs %}
+        <div class="stat-card">
+            <span>{{ key }}</span>
+            <strong>{{ value }}</strong>
+        </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if table.rows %}
+<section class="card">
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    {% for header in table.headers %}
+                        <th>{{ header }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table.rows %}
+                    <tr>
+                        {% for value in row %}
+                            <td>{{ value|default:"-" }}</td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% else %}
+<section class="card"><p>No rows found.</p></section>
+{% endif %}
+
+{% if prepared_sections %}
+    {% for section_title, section_table in prepared_sections %}
+        <section class="card">
+            <h2>{{ section_title }}</h2>
+            {% if section_table.rows %}
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                {% for header in section_table.headers %}
+                                    <th>{{ header }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in section_table.rows %}
+                                <tr>
+                                    {% for value in row %}
+                                        <td>{{ value|default:"-" }}</td>
+                                    {% endfor %}
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p>No rows found.</p>
+            {% endif %}
+        </section>
+    {% endfor %}
+{% endif %}
+{% endblock %}
