@@ -24,14 +24,7 @@ def generate_order_number():
 
 
 def get_price_for_customer(variant, customer=None, order_type=None):
-    customer_type = getattr(customer, 'customer_type', '') if customer else ''
-    wholesale_types = {Customer.TYPE_B2B, Customer.TYPE_WHOLESALE, Customer.TYPE_VIP}
-    retail_types = {Customer.TYPE_B2C, Customer.TYPE_RETAIL, Customer.TYPE_POTENTIAL, Customer.TYPE_INACTIVE, Customer.TYPE_PROBLEM}
-    if customer_type in wholesale_types or order_type == Order.TYPE_B2B:
-        return variant.product.wholesale_price
-    if customer_type in retail_types:
-        return variant.product.retail_price
-    return variant.product.retail_price
+    return getattr(variant, 'sale_price', None) or Decimal('0')
 
 
 def get_discount_limits(user, customer=None):
@@ -159,10 +152,19 @@ def calculate_order_totals(order):
     return order
 
 
+def get_order_item_warehouse(item, order=None):
+    warehouse = getattr(item, 'warehouse', None) or getattr(order or item.order, 'warehouse', None)
+    if not warehouse:
+        raise ValidationError('يجب تحديد مخزن لكل صنف في الفاتورة')
+    return warehouse
+
+
 @transaction.atomic
 def create_order(*, order_data, items, user, confirm=False):
     order_data = dict(order_data)
     customer = order_data.get('customer')
+    if not order_data.get('warehouse') and items:
+        order_data['warehouse'] = items[0].get('warehouse')
     order_discount_amount = _as_decimal(order_data.get('discount_amount', order_data.get('discount', 0)))
     order_discount_percentage = _as_decimal(order_data.get('discount_percentage', 0))
     order_data['discount_amount'] = order_discount_amount
@@ -181,6 +183,9 @@ def create_order(*, order_data, items, user, confirm=False):
     max_discount, _ = get_discount_limits(user, customer=customer)
     for item in items:
         variant = item['variant']
+        warehouse = item.get('warehouse') or order.warehouse
+        if not warehouse:
+            raise ValidationError('يجب تحديد مخزن لكل صنف في الفاتورة')
         quantity = int(item['quantity'])
         pricing = prepare_order_item_pricing(
             variant=variant,
@@ -198,6 +203,7 @@ def create_order(*, order_data, items, user, confirm=False):
         OrderItem.objects.create(
             order=order,
             variant=variant,
+            warehouse=warehouse,
             quantity=quantity,
             unit_price=pricing['final_unit_price'],
             original_unit_price=pricing['original_unit_price'],
@@ -228,6 +234,10 @@ def create_order(*, order_data, items, user, confirm=False):
         max_percentage=max_discount,
     )
     calculate_order_totals(order)
+    order.paid_amount = order.total
+    order.remaining_amount = Decimal('0')
+    order.payment_status = Order.PAYMENT_PAID
+    order.save(update_fields=['paid_amount', 'remaining_amount', 'payment_status'])
     if order.paid_amount > 0:
         from finance.services import record_customer_payment
 
@@ -250,14 +260,16 @@ def confirm_order(*, order, user):
         raise ValidationError('يمكن تأكيد الطلبات المسودة فقط')
     if not order.items.exists():
         raise ValidationError('لا يمكن تأكيد طلب بدون منتجات')
-    for item in order.items.select_related('variant'):
-        stock = Stock.objects.select_for_update().filter(warehouse=order.warehouse, variant=item.variant).first()
+    for item in order.items.select_related('variant', 'warehouse'):
+        warehouse = get_order_item_warehouse(item, order=order)
+        stock = Stock.objects.select_for_update().filter(warehouse=warehouse, variant=item.variant).first()
         if not stock or stock.quantity < item.quantity:
             raise ValidationError(f'الكمية غير متاحة: {item.variant}')
-    for item in order.items.select_related('variant'):
+    for item in order.items.select_related('variant', 'warehouse'):
+        warehouse = get_order_item_warehouse(item, order=order)
         sale_stock(
             variant=item.variant,
-            warehouse=order.warehouse,
+            warehouse=warehouse,
             quantity=item.quantity,
             user=user,
             note=f'بيع من الطلب {order.order_number}',
@@ -276,10 +288,11 @@ def cancel_order(*, order, user):
         return order
     if order.status not in {Order.STATUS_CONFIRMED, Order.STATUS_PREPARING, Order.STATUS_READY, Order.STATUS_COMPLETED}:
         raise ValidationError('لا يمكن إلغاء هذا الطلب')
-    for item in order.items.select_related('variant'):
+    for item in order.items.select_related('variant', 'warehouse'):
+        warehouse = get_order_item_warehouse(item, order=order)
         return_stock(
             variant=item.variant,
-            warehouse=order.warehouse,
+            warehouse=warehouse,
             quantity=item.quantity,
             user=user,
             note=f'إلغاء الطلب {order.order_number}',
@@ -294,10 +307,11 @@ def return_order(*, order, user):
     order = Order.objects.select_for_update().get(pk=order.pk)
     if order.status not in {Order.STATUS_CONFIRMED, Order.STATUS_PREPARING, Order.STATUS_READY, Order.STATUS_COMPLETED}:
         raise ValidationError('لا يمكن عمل مرتجع لهذا الطلب')
-    for item in order.items.select_related('variant'):
+    for item in order.items.select_related('variant', 'warehouse'):
+        warehouse = get_order_item_warehouse(item, order=order)
         return_stock(
             variant=item.variant,
-            warehouse=order.warehouse,
+            warehouse=warehouse,
             quantity=item.quantity,
             user=user,
             note=f'مرتجع الطلب {order.order_number}',

@@ -10,16 +10,14 @@ from .models import PurchaseOrder, Supplier
 class SupplierForm(forms.ModelForm):
     class Meta:
         model = Supplier
-        fields = ('name', 'phone', 'email', 'address', 'company_name', 'opening_balance', 'notes', 'is_active')
+        fields = ('name', 'phone', 'email', 'address', 'company_name', 'notes')
         labels = {
             'name': 'اسم المورد',
             'phone': 'الهاتف',
             'email': 'البريد الإلكتروني',
             'address': 'العنوان',
             'company_name': 'اسم الشركة',
-            'opening_balance': 'الرصيد الافتتاحي',
             'notes': 'ملاحظات',
-            'is_active': 'نشط',
         }
 
 

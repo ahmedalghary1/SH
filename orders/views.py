@@ -13,7 +13,7 @@ from django.views.generic import DetailView, FormView, ListView, UpdateView, Vie
 from accounts.permissions import RoleRequiredMixin, SalesRequiredMixin, sales_required
 from customers.models import Customer
 from invoices.services import generate_invoice
-from inventory.models import Stock
+from inventory.models import Stock, Warehouse
 from products.models import Product, ProductVariant
 
 from .forms import OrderForm
@@ -58,6 +58,12 @@ class OrderCreateView(SalesRequiredMixin, FormView):
         kwargs['user'] = self.request.user
         return kwargs
 
+    def get_item_warehouse(self, warehouse_id):
+        warehouses = Warehouse.objects.filter(is_active=True)
+        if self.request.user.role == 'sales' and not self.request.user.is_superuser:
+            warehouses = warehouses.filter(assigned_user=self.request.user, warehouse_type=Warehouse.TYPE_REPRESENTATIVE)
+        return warehouses.get(pk=warehouse_id)
+
     def form_valid(self, form):
         raw_items = self.request.POST.get('items_json', '[]')
         try:
@@ -65,8 +71,10 @@ class OrderCreateView(SalesRequiredMixin, FormView):
             items = []
             for posted in posted_items:
                 variant = ProductVariant.objects.select_related('product').get(pk=posted['variant_id'], is_active=True)
+                warehouse = self.get_item_warehouse(posted['warehouse_id'])
                 items.append({
                     'variant': variant,
+                    'warehouse': warehouse,
                     'quantity': int(posted['quantity']),
                     'unit_price': Decimal(str(posted.get('unit_price', 0))),
                     'discount_amount': Decimal(str(posted.get('discount_amount', posted.get('discount', 0)))),
@@ -80,7 +88,7 @@ class OrderCreateView(SalesRequiredMixin, FormView):
                 return redirect('invoices:detail', pk=invoice.pk)
             messages.success(self.request, 'تم حفظ الطلب' + (' وتأكيده' if confirm else ' كمسودة'))
             return redirect('orders:detail', pk=order.pk)
-        except (ValidationError, ProductVariant.DoesNotExist, KeyError, ValueError, json.JSONDecodeError) as exc:
+        except (ValidationError, ProductVariant.DoesNotExist, Warehouse.DoesNotExist, KeyError, ValueError, json.JSONDecodeError) as exc:
             form.add_error(None, getattr(exc, 'message', 'بيانات الطلب غير صحيحة'))
             return self.form_invalid(form)
 
@@ -93,7 +101,7 @@ class OrderDetailView(RoleRequiredMixin, DetailView):
 
     def get_queryset(self):
         qs = Order.objects.select_related('customer', 'warehouse', 'created_by', 'discount_approved_by').prefetch_related(
-            'items__variant__product', 'items__variant__color', 'items__variant__size',
+            'items__warehouse', 'items__variant__product', 'items__variant__color', 'items__variant__size',
         )
         if self.request.user.role == 'sales' and not self.request.user.is_superuser:
             qs = qs.filter(created_by=self.request.user)
@@ -182,8 +190,25 @@ def ajax_get_product_variants(request, product_id):
 @sales_required
 def ajax_get_variant_stock(request, variant_id):
     warehouse_id = request.GET.get('warehouse_id')
-    stock = Stock.objects.filter(variant_id=variant_id, warehouse_id=warehouse_id).first()
-    return JsonResponse({'success': True, 'message': 'تم جلب المخزون', 'data': {'quantity': stock.quantity if stock else 0}})
+    stocks = Stock.objects.filter(
+        variant_id=variant_id,
+        quantity__gt=0,
+        warehouse__is_active=True,
+    ).select_related('warehouse')
+    if request.user.role == 'sales' and not request.user.is_superuser:
+        stocks = stocks.filter(warehouse__assigned_user=request.user, warehouse__warehouse_type=Warehouse.TYPE_REPRESENTATIVE)
+    if warehouse_id:
+        stock = stocks.filter(warehouse_id=warehouse_id).first()
+        return JsonResponse({'success': True, 'message': 'تم جلب المخزون', 'data': {'quantity': stock.quantity if stock else 0}})
+    data = [
+        {
+            'warehouse_id': stock.warehouse_id,
+            'warehouse_name': stock.warehouse.name,
+            'quantity': stock.quantity,
+        }
+        for stock in stocks.order_by('warehouse__name')
+    ]
+    return JsonResponse({'success': True, 'message': 'تم جلب المخزون', 'data': {'warehouses': data}})
 
 
 @require_GET

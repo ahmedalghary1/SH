@@ -194,6 +194,8 @@ class Command(BaseCommand):
                             'color': colors[color_name],
                             'size': sizes[size_name],
                             'barcode': f'622{abs(hash(variant_sku)) % 1000000000:09d}',
+                            'cost_price': wholesale,
+                            'sale_price': retail,
                             'is_active': True,
                         },
                     )
@@ -337,7 +339,7 @@ class Command(BaseCommand):
             item_count = 1 + (index % 3)
             for item_index in range(item_count):
                 variant = variants[(index * 3 + item_index * 5) % len(variants)]
-                unit_price = variant.product.wholesale_price if order_type == Order.TYPE_B2B else variant.product.retail_price
+                unit_price = variant.sale_price
                 quantity = rng.randint(1, 4 if order_type == Order.TYPE_B2C else 9)
                 line_discount = Decimal(str(10 * item_index))
                 OrderItem.objects.create(

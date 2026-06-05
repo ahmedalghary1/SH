@@ -26,7 +26,7 @@
         </div>
         <div class="table-wrap">
             <table>
-                <thead><tr><th>المتغير</th><th>اللون</th><th>المقاس</th><th>المخزن</th><th>الكمية</th><th>حد التنبيه</th></tr></thead>
+                <thead><tr><th>الكود</th><th>اللون</th><th>المقاس</th><th>المخزن</th><th>الكمية</th><th>حد التنبيه</th></tr></thead>
                 <tbody>
                 {% for stock in stock_rows %}
                     <tr>
@@ -45,7 +45,7 @@
                         <td><input type="number" min="0" name="stock_{{ stock.pk }}_min_quantity" value="{{ stock.min_quantity }}"></td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="6">لا توجد كميات مخزون لهذا المنتج بعد. أضف متغيرًا ثم أدخل الكمية من شاشة دخول المخزون.</td></tr>
+                    <tr><td colspan="6">لا توجد كميات مخزون لهذا المنتج بعد. أضف لونًا ومقاسًا ثم أدخل الكمية.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>

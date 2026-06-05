@@ -4,37 +4,79 @@
 <div class="page-head">
     <h1>{{ customer.name }}</h1>
     <div class="button-row">
-        <a class="btn btn-light" href="{% url 'customers:interaction_create' customer.pk %}">إضافة تفاعل</a>
-        <a class="btn btn-accent" href="{% url 'customers:crm_detail' customer.pk %}">ملف CRM</a>
+        <a class="btn btn-accent" href="{% url 'orders:create' %}">إضافة فاتورة</a>
+        <a class="btn btn-light" href="{% url 'customers:update' customer.pk %}">تعديل</a>
+        <a class="btn btn-light" href="{% url 'customers:list' %}">رجوع</a>
     </div>
 </div>
+
 <section class="card detail-grid">
-    <div><span>النوع</span><strong>{{ customer.get_customer_type_display }}</strong></div>
-    <div><span>الحالة</span><strong>{% if customer.is_active %}نشط{% else %}غير نشط{% endif %}</strong></div>
+    <div><span>نوع العميل</span><strong>{{ customer.get_customer_type_display }}</strong></div>
     <div><span>الهاتف</span><strong>{{ customer.phone }}</strong></div>
-    <div><span>واتساب</span><strong>{{ customer.whatsapp|default:'-' }}</strong></div>
-    <div><span>الشركة</span><strong>{{ customer.company_name|default:'-' }}</strong></div>
-    <div><span>الرقم الضريبي</span><strong>{{ customer.tax_number|default:'-' }}</strong></div>
-    <div><span>حد الائتمان</span><strong>{{ customer.credit_limit }}</strong></div>
-    <div><span>رصيد افتتاحي</span><strong>{{ customer.opening_balance }}</strong></div>
     <div><span>العنوان</span><strong>{{ customer.address|default:'-' }}</strong></div>
+    <div><span>الحالة</span><strong>{% if customer.is_active %}نشط{% else %}متوقف{% endif %}</strong></div>
 </section>
+
 <div class="stats-grid">
-    <div class="stat-card"><span>إجمالي المشتريات</span><strong>{{ summary.total_purchases }}</strong></div>
-    <div class="stat-card"><span>إجمالي المدفوع</span><strong>{{ summary.total_paid }}</strong></div>
-    <div class="stat-card"><span>إجمالي المتبقي</span><strong>{{ summary.total_remaining }}</strong></div>
-    <div class="stat-card"><span>الشكاوى المفتوحة</span><strong>{{ summary.complaints_count }}</strong></div>
+    <div class="stat-card"><span>إجمالي مشتريات العميل</span><strong>{{ summary.total_purchases }}</strong></div>
+    <div class="stat-card"><span>عدد الفواتير</span><strong>{{ orders|length }}</strong></div>
+    <div class="stat-card"><span>آخر عملية شراء</span><strong>{{ summary.last_order.created_at|default:'-' }}</strong></div>
+    <div class="stat-card"><span>إجمالي الخصومات</span><strong>{{ total_discounts }}</strong></div>
 </div>
+
 <section class="card">
-    <div class="section-title"><h2>آخر التفاعلات</h2></div>
+    <h2>سجل الفواتير</h2>
     <div class="table-wrap">
         <table>
-            <thead><tr><th>النوع</th><th>العنوان</th><th>المتابعة القادمة</th><th>الحالة</th></tr></thead>
+            <thead><tr><th>التاريخ والوقت</th><th>رقم الفاتورة</th><th>الإجمالي</th><th>الخصم</th><th>طريقة الدفع</th><th>الموظف</th></tr></thead>
             <tbody>
-                {% for interaction in recent_interactions %}
-                    <tr><td>{{ interaction.get_interaction_type_display }}</td><td>{{ interaction.title }}</td><td>{{ interaction.next_follow_up_date|default:'-' }}</td><td>{% if interaction.is_completed %}مكتمل{% else %}مفتوح{% endif %}</td></tr>
+                {% for order in orders %}
+                    <tr>
+                        <td>{{ order.created_at }}</td>
+                        <td>{{ order.order_number }}</td>
+                        <td>{{ order.total }}</td>
+                        <td>{{ order.discount }}</td>
+                        <td>{{ order.get_payment_method_display }}</td>
+                        <td>{{ order.created_by|default:'-' }}</td>
+                    </tr>
                 {% empty %}
-                    <tr><td colspan="4">لا توجد تفاعلات</td></tr>
+                    <tr><td colspan="6">لا توجد فواتير لهذا العميل</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card">
+    <h2>حركة العميل</h2>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>تاريخ الشراء</th><th>رقم الفاتورة</th><th>المنتج</th><th>كود المنتج</th>
+                    <th>اللون</th><th>المقاس</th><th>الكمية</th><th>السعر قبل الخصم</th>
+                    <th>الخصم</th><th>السعر بعد الخصم</th><th>الإجمالي</th><th>الموظف</th><th>طريقة الدفع</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in movement_rows %}
+                    <tr>
+                        <td>{{ item.order.created_at }}</td>
+                        <td>{{ item.order.order_number }}</td>
+                        <td>{{ item.variant.product.name|default:'-' }}</td>
+                        <td>{{ item.variant.product.sku|default:'-' }}</td>
+                        <td>{{ item.variant.color|default:'-' }}</td>
+                        <td>{{ item.variant.size|default:'-' }}</td>
+                        <td>{{ item.quantity }}</td>
+                        <td>{{ item.original_unit_price }}</td>
+                        <td>{{ item.discount }}</td>
+                        <td>{{ item.final_unit_price }}</td>
+                        <td>{{ item.total }}</td>
+                        <td>{{ item.order.created_by|default:'-' }}</td>
+                        <td>{{ item.order.get_payment_method_display }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="13">لا توجد حركة مبيعات لهذا العميل</td></tr>
                 {% endfor %}
             </tbody>
         </table>

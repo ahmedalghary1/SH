@@ -89,7 +89,6 @@ class OrderStockServiceTests(TestCase):
                 'customer': self.customer,
                 'warehouse': self.warehouse,
                 'payment_method': Order.METHOD_CASH,
-                'paid_amount': Decimal('300.00'),
                 'discount': Decimal('20.00'),
             },
             items=[{
@@ -107,7 +106,47 @@ class OrderStockServiceTests(TestCase):
         self.assertEqual(item.profit_total, Decimal('350.00'))
         self.assertEqual(order.total_cost, Decimal('240.00'))
         self.assertEqual(order.gross_profit, Decimal('330.00'))
-        self.assertTrue(PaymentTransaction.objects.filter(related_order=order, amount=Decimal('300.00')).exists())
+        self.assertEqual(order.paid_amount, order.total)
+        self.assertEqual(order.remaining_amount, Decimal('0'))
+        self.assertTrue(PaymentTransaction.objects.filter(related_order=order, amount=Decimal('570.00')).exists())
+
+    def test_confirm_order_can_deduct_items_from_different_warehouses(self):
+        CashAccount.objects.create(name='Multi Warehouse Cash', balance=Decimal('0.00'))
+        second_warehouse = Warehouse.objects.create(name='فرع ثاني', warehouse_type=Warehouse.TYPE_MAIN)
+        Stock.objects.create(warehouse=second_warehouse, variant=self.variant, quantity=4, min_quantity=1)
+
+        order = create_order(
+            order_data={
+                'order_type': Order.TYPE_B2C,
+                'customer': self.customer,
+                'payment_method': Order.METHOD_CASH,
+                'discount': Decimal('0.00'),
+            },
+            items=[
+                {
+                    'variant': self.variant,
+                    'warehouse': self.warehouse,
+                    'quantity': 2,
+                    'unit_price': Decimal('300.00'),
+                    'discount': Decimal('0.00'),
+                },
+                {
+                    'variant': self.variant,
+                    'warehouse': second_warehouse,
+                    'quantity': 2,
+                    'unit_price': Decimal('300.00'),
+                    'discount': Decimal('0.00'),
+                },
+            ],
+            user=self.user,
+            confirm=True,
+        )
+
+        self.assertEqual(order.items.filter(warehouse=self.warehouse).count(), 1)
+        self.assertEqual(order.items.filter(warehouse=second_warehouse).count(), 1)
+        self.assertEqual(Stock.objects.get(warehouse=self.warehouse, variant=self.variant).quantity, 3)
+        self.assertEqual(Stock.objects.get(warehouse=second_warehouse, variant=self.variant).quantity, 2)
+        self.assertEqual(order.warehouse, self.warehouse)
 
 
 class OrderDiscountPolicyTests(TestCase):
@@ -121,7 +160,12 @@ class OrderDiscountPolicyTests(TestCase):
             retail_price=Decimal('300.00'),
             wholesale_price=Decimal('220.00'),
         )
-        self.variant = ProductVariant.objects.create(product=product, variant_sku='DISC-001-BLK-M', cost_price=Decimal('200.00'))
+        self.variant = ProductVariant.objects.create(
+            product=product,
+            variant_sku='DISC-001-BLK-M',
+            cost_price=Decimal('200.00'),
+            sale_price=Decimal('300.00'),
+        )
         Stock.objects.create(warehouse=self.warehouse, variant=self.variant, quantity=20, min_quantity=1)
         self.retail_customer = Customer.objects.create(name='Retail Customer', customer_type=Customer.TYPE_RETAIL, phone='01010000001')
         self.b2c_customer = Customer.objects.create(name='B2C Customer', customer_type=Customer.TYPE_B2C, phone='01010000002')
@@ -156,9 +200,9 @@ class OrderDiscountPolicyTests(TestCase):
     def test_price_selection_by_customer_type(self):
         self.assertEqual(get_price_for_customer(self.variant, customer=self.retail_customer), Decimal('300.00'))
         self.assertEqual(get_price_for_customer(self.variant, customer=self.b2c_customer), Decimal('300.00'))
-        self.assertEqual(get_price_for_customer(self.variant, customer=self.wholesale_customer), Decimal('220.00'))
-        self.assertEqual(get_price_for_customer(self.variant, customer=self.b2b_customer), Decimal('220.00'))
-        self.assertEqual(get_price_for_customer(self.variant, customer=self.vip_customer), Decimal('220.00'))
+        self.assertEqual(get_price_for_customer(self.variant, customer=self.wholesale_customer), Decimal('300.00'))
+        self.assertEqual(get_price_for_customer(self.variant, customer=self.b2b_customer), Decimal('300.00'))
+        self.assertEqual(get_price_for_customer(self.variant, customer=self.vip_customer), Decimal('300.00'))
 
     def test_item_and_order_discounts_update_totals_and_profit(self):
         order = self._create(

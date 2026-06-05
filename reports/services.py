@@ -258,7 +258,7 @@ def stale_products_report(days=90):
     return {
         'title': 'Stale products report',
         'summary': {'days': days, 'variants': qs.count()},
-        'rows': list(qs.values('product__name', 'variant_sku', 'barcode', 'product__sku', 'product__retail_price', 'product__wholesale_price')[:300]),
+        'rows': list(qs.values('product__name', 'variant_sku', 'barcode', 'product__sku', 'cost_price', 'sale_price')[:300]),
     }
 
 

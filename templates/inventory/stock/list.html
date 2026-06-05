@@ -29,12 +29,12 @@
                 <th>المخزن</th>
                 <th>المنتج</th>
                 <th>كود المنتج</th>
-                <th>كود المتغير</th>
+                <th>كود اللون/المقاس</th>
                 <th>التصنيف</th>
                 <th>اللون</th>
                 <th>المقاس</th>
-                <th>سعر القطاعي</th>
-                <th>سعر الجملة</th>
+                <th>سعر الشراء</th>
+                <th>سعر البيع</th>
                 <th>الكمية</th>
                 <th>الحد الأدنى</th>
                 <th>تنبيه</th>
@@ -50,8 +50,8 @@
                     <td>{{ stock.variant.product.category|default:'-' }}</td>
                     <td>{{ stock.variant.color|default:'-' }}</td>
                     <td>{{ stock.variant.size|default:'-' }}</td>
-                    <td>{{ stock.variant.product.retail_price }}</td>
-                    <td>{{ stock.variant.product.wholesale_price }}</td>
+                    <td>{{ stock.variant.cost_price }}</td>
+                    <td>{{ stock.variant.sale_price }}</td>
                     <td>{{ stock.quantity }}</td>
                     <td>{{ stock.min_quantity }}</td>
                     <td>

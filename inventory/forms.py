@@ -13,7 +13,7 @@ class WarehouseForm(forms.ModelForm):
         labels = {
             'name': 'اسم المخزن',
             'warehouse_type': 'نوع المخزن',
-            'assigned_user': 'المندوب المسؤول',
+            'assigned_user': 'المسؤول عن المخزن',
             'address': 'العنوان',
             'is_active': 'نشط',
         }
@@ -24,29 +24,23 @@ class WarehouseForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['assigned_user'].queryset = User.objects.filter(role=User.ROLE_SALES, is_active=True)
+        self.fields['warehouse_type'].choices = (
+            (Warehouse.TYPE_MAIN, 'مخزن رئيسي'),
+            (Warehouse.TYPE_STORE, 'مخزن فرعي'),
+        )
+        self.fields['assigned_user'].queryset = User.objects.filter(is_active=True).order_by('role', 'username')
         self.fields['assigned_user'].required = False
-
-    def clean(self):
-        cleaned = super().clean()
-        warehouse_type = cleaned.get('warehouse_type')
-        assigned_user = cleaned.get('assigned_user')
-        if warehouse_type == Warehouse.TYPE_REPRESENTATIVE and not assigned_user:
-            self.add_error('assigned_user', 'اختر المندوب عند إنشاء عهدة مندوب')
-        if warehouse_type != Warehouse.TYPE_REPRESENTATIVE and assigned_user:
-            self.add_error('assigned_user', 'ربط المندوب متاح فقط مع نوع عهدة مندوب')
-        return cleaned
 
 
 class StockMovementForm(forms.Form):
-    variant = forms.ModelChoiceField(queryset=ProductVariant.objects.select_related('product', 'color', 'size'), label='المتغير')
+    variant = forms.ModelChoiceField(queryset=ProductVariant.objects.select_related('product', 'color', 'size'), label='المنتج')
     warehouse = forms.ModelChoiceField(queryset=Warehouse.objects.filter(is_active=True), label='المخزن')
     quantity = forms.IntegerField(min_value=1, label='الكمية')
     note = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظة')
 
 
 class StockTransferForm(forms.Form):
-    variant = forms.ModelChoiceField(queryset=ProductVariant.objects.select_related('product', 'color', 'size'), label='المتغير')
+    variant = forms.ModelChoiceField(queryset=ProductVariant.objects.select_related('product', 'color', 'size'), label='المنتج')
     from_warehouse = forms.ModelChoiceField(queryset=Warehouse.objects.filter(is_active=True), label='من مخزن')
     to_warehouse = forms.ModelChoiceField(queryset=Warehouse.objects.filter(is_active=True), label='إلى مخزن')
     quantity = forms.IntegerField(min_value=1, label='الكمية')
@@ -70,7 +64,7 @@ class RepresentativeReturnForm(forms.Form):
 
 
 class StockAdjustmentForm(forms.Form):
-    variant = forms.ModelChoiceField(queryset=ProductVariant.objects.select_related('product', 'color', 'size'), label='المتغير')
+    variant = forms.ModelChoiceField(queryset=ProductVariant.objects.select_related('product', 'color', 'size'), label='المنتج')
     warehouse = forms.ModelChoiceField(queryset=Warehouse.objects.filter(is_active=True), label='المخزن')
     new_quantity = forms.IntegerField(min_value=0, label='الكمية الجديدة')
     note = forms.CharField(widget=forms.Textarea, required=False, label='سبب التسوية')

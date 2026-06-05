@@ -5,38 +5,124 @@
     <h1>{{ product.name }}</h1>
     <div class="button-row">
         {% if request.user.is_manager %}
-            <a class="btn btn-accent" href="{% url 'products:variant_create' %}?product={{ product.pk }}">إضافة متغير</a>
+            <a class="btn btn-accent" href="{% url 'products:variant_create' %}?product={{ product.pk }}">إضافة لون / مقاس</a>
             <a class="btn btn-light" href="{% url 'products:update' product.pk %}">تعديل المنتج</a>
         {% endif %}
         <a class="btn btn-light" href="{% url 'products:list' %}">رجوع</a>
     </div>
 </div>
+
 <section class="card detail-grid">
     <div><span>كود المنتج</span><strong>{{ product.sku }}</strong></div>
     <div><span>التصنيف</span><strong>{{ product.category|default:'-' }}</strong></div>
-    <div><span>سعر القطاعي</span><strong>{{ product.retail_price }}</strong></div>
-    <div><span>سعر الجملة</span><strong>{{ product.wholesale_price }}</strong></div>
     <div><span>الخامة</span><strong>{{ product.material|default:'-' }}</strong></div>
     <div><span>الموسم</span><strong>{{ product.season|default:'-' }}</strong></div>
 </section>
-<h2>المتغيرات</h2>
-<div class="table-wrap">
-    <table><thead><tr><th>كود المتغير</th><th>اللون</th><th>المقاس</th><th>الباركود</th><th>الحالة</th>{% if request.user.is_manager %}<th>إجراءات</th>{% endif %}</tr></thead><tbody>
-        {% for variant in product.variants.all %}
-            <tr>
-                <td>{{ variant.variant_sku }}</td>
-                <td>{{ variant.color|default:'-' }}</td>
-                <td>{{ variant.size|default:'-' }}</td>
-                <td>{{ variant.barcode|default:'-' }}</td>
-                <td><span class="badge {% if variant.is_active %}success{% else %}danger{% endif %}">{% if variant.is_active %}نشط{% else %}متوقف{% endif %}</span></td>
-                {% if request.user.is_manager %}
-                    <td class="actions">
-                        <a class="btn btn-light" href="{% url 'products:variant_update' variant.pk %}">تعديل</a>
-                        <form method="post" action="{% url 'products:variant_deactivate' variant.pk %}" data-confirm="إيقاف هذا المتغير؟">{% csrf_token %}<button class="btn btn-danger">إيقاف</button></form>
-                    </td>
-                {% endif %}
-            </tr>
-        {% empty %}<tr><td colspan="{% if request.user.is_manager %}6{% else %}5{% endif %}">لا توجد متغيرات</td></tr>{% endfor %}
-    </tbody></table>
+
+<div class="stats-grid">
+    <div class="stat-card"><span>الكمية الحالية</span><strong>{{ current_quantity }}</strong></div>
+    <div class="stat-card"><span>إجمالي الكمية المباعة</span><strong>{{ sold_quantity }}</strong></div>
+    <div class="stat-card"><span>عدد مرات البيع</span><strong>{{ sales_count }}</strong></div>
+    <div class="stat-card"><span>إجمالي المبيعات</span><strong>{{ product_sales_total }}</strong></div>
+    {% if request.user.is_manager %}
+        <div class="stat-card"><span>إجمالي الربح</span><strong>{{ product_profit_total }}</strong></div>
+    {% endif %}
 </div>
+
+<section class="card">
+    <h2>الألوان والمقاسات</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>الكود</th><th>اللون</th><th>المقاس</th><th>سعر الشراء</th><th>سعر البيع</th><th>الحالة</th>{% if request.user.is_manager %}<th>إجراءات</th>{% endif %}</tr></thead>
+            <tbody>
+                {% for variant in variants %}
+                    <tr>
+                        <td>{{ variant.variant_sku }}</td>
+                        <td>{{ variant.color|default:'-' }}</td>
+                        <td>{{ variant.size|default:'-' }}</td>
+                        <td>{% if request.user.is_manager or request.user.is_warehouse %}{{ variant.cost_price }}{% else %}-{% endif %}</td>
+                        <td>{{ variant.sale_price }}</td>
+                        <td><span class="badge {% if variant.is_active %}success{% else %}danger{% endif %}">{% if variant.is_active %}نشط{% else %}متوقف{% endif %}</span></td>
+                        {% if request.user.is_manager %}
+                            <td class="actions">
+                                <a class="btn btn-light" href="{% url 'products:variant_update' variant.pk %}">تعديل</a>
+                                <form method="post" action="{% url 'products:variant_deactivate' variant.pk %}" data-confirm="إيقاف هذا اللون/المقاس؟">{% csrf_token %}<button class="btn btn-danger">إيقاف</button></form>
+                            </td>
+                        {% endif %}
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="{% if request.user.is_manager %}7{% else %}6{% endif %}">لا توجد ألوان أو مقاسات</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card">
+    <h2>المخازن التي يوجد بها المنتج</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>المخزن</th><th>اللون</th><th>المقاس</th><th>الكمية</th><th>حد التنبيه</th></tr></thead>
+            <tbody>
+                {% for stock in stock_rows %}
+                    <tr><td>{{ stock.warehouse.name }}</td><td>{{ stock.variant.color|default:'-' }}</td><td>{{ stock.variant.size|default:'-' }}</td><td>{{ stock.quantity }}</td><td>{{ stock.min_quantity }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="5">لا توجد كمية حالية لهذا المنتج</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card">
+    <h2>الفواتير التي ظهر فيها المنتج</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>التاريخ والوقت</th><th>رقم الفاتورة</th><th>العميل</th><th>اللون</th><th>المقاس</th><th>الكمية</th><th>سعر البيع</th><th>الخصم</th>{% if request.user.is_manager %}<th>الربح</th>{% endif %}<th>الموظف</th></tr></thead>
+            <tbody>
+                {% for item in order_items %}
+                    <tr>
+                        <td>{{ item.order.created_at }}</td>
+                        <td>{{ item.order.order_number }}</td>
+                        <td>{{ item.order.customer|default:'-' }}</td>
+                        <td>{{ item.variant.color|default:'-' }}</td>
+                        <td>{{ item.variant.size|default:'-' }}</td>
+                        <td>{{ item.quantity }}</td>
+                        <td>{{ item.final_unit_price }}</td>
+                        <td>{{ item.discount }}</td>
+                        {% if request.user.is_manager %}<td>{{ item.profit_total }}</td>{% endif %}
+                        <td>{{ item.order.created_by|default:'-' }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="{% if request.user.is_manager %}10{% else %}9{% endif %}">لم يتم بيع هذا المنتج بعد</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card">
+    <h2>حركة المنتج</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>التاريخ والوقت</th><th>نوع الحركة</th><th>المخزن</th><th>اللون</th><th>المقاس</th><th>الكمية</th><th>الموظف المسؤول</th><th>ملاحظات</th></tr></thead>
+            <tbody>
+                {% for movement in movement_rows %}
+                    <tr>
+                        <td>{{ movement.created_at }}</td>
+                        <td>{{ movement.get_movement_type_display }}</td>
+                        <td>{{ movement.from_warehouse|default:movement.to_warehouse|default:'-' }}</td>
+                        <td>{{ movement.variant.color|default:'-' }}</td>
+                        <td>{{ movement.variant.size|default:'-' }}</td>
+                        <td>{{ movement.quantity }}</td>
+                        <td>{{ movement.created_by|default:'-' }}</td>
+                        <td>{{ movement.note|default:'-' }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="8">لا توجد حركات مخزنية لهذا المنتج</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
 {% endblock %}

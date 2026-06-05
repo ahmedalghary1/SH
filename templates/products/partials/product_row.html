@@ -1,6 +1,5 @@
 <tr>
     <td>{{ product.name }}</td>
     <td>{{ product.sku }}</td>
-    <td>{{ product.retail_price }}</td>
-    <td>{{ product.wholesale_price }}</td>
+    <td>{{ product.category|default:'-' }}</td>
 </tr>

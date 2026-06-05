@@ -1,5 +1,5 @@
 from django.contrib import messages
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
@@ -8,7 +8,7 @@ from django.views.generic import CreateView, DetailView, ListView, TemplateView,
 
 from accounts.permissions import SalesRequiredMixin, sales_required
 from finance.models import PaymentTransaction
-from orders.models import Order
+from orders.models import Order, OrderItem
 from returns.models import SalesReturn
 
 from .forms import CustomerForm, CustomerInteractionForm
@@ -72,8 +72,16 @@ class CustomerDetailView(SalesRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        orders = Order.objects.filter(customer=self.object).exclude(
+            status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED],
+        ).select_related('created_by').prefetch_related('items__variant__product', 'items__variant__color', 'items__variant__size')
+        order_items = OrderItem.objects.filter(order__customer=self.object).exclude(
+            order__status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED],
+        ).select_related('order__created_by', 'variant__product', 'variant__color', 'variant__size').order_by('-order__created_at')
         context['summary'] = get_customer_summary(self.object)
-        context['recent_interactions'] = self.object.interactions.select_related('created_by')[:5]
+        context['orders'] = orders.order_by('-created_at')
+        context['movement_rows'] = order_items[:100]
+        context['total_discounts'] = orders.aggregate(total=Sum('discount'))['total'] or 0
         return context
 
 

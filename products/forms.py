@@ -8,10 +8,9 @@ from .models import Category, Color, Product, ProductVariant, Size
 class CategoryForm(forms.ModelForm):
     class Meta:
         model = Category
-        fields = ('name', 'parent', 'is_active')
+        fields = ('name', 'is_active')
         labels = {
             'name': 'اسم التصنيف',
-            'parent': 'التصنيف الأب',
             'is_active': 'نشط',
         }
 
@@ -39,103 +38,88 @@ class SizeForm(forms.ModelForm):
 class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
-        fields = (
-            'name', 'sku', 'category', 'description', 'material', 'season',
-            'retail_price', 'wholesale_price', 'image', 'is_active',
-        )
+        fields = ('name', 'sku', 'category', 'material', 'image')
         labels = {
             'name': 'اسم المنتج',
             'sku': 'كود المنتج',
             'category': 'التصنيف',
-            'description': 'الوصف',
             'material': 'الخامة',
-            'season': 'الموسم',
-            'retail_price': 'سعر القطاعي',
-            'wholesale_price': 'سعر الجملة',
             'image': 'صورة المنتج',
-            'is_active': 'نشط',
         }
         widgets = {
-            'name': forms.TextInput(attrs={'placeholder': 'اسم واضح للمنتج'}),
+            'name': forms.TextInput(attrs={'placeholder': 'اكتب اسم المنتج', 'list': 'product-name-options'}),
             'sku': forms.TextInput(attrs={'placeholder': 'مثال: 001'}),
-            'description': forms.Textarea(attrs={'placeholder': 'تفاصيل مختصرة عن المنتج'}),
-            'material': forms.TextInput(attrs={'placeholder': 'قطن، بوليستر...'}),
-            'season': forms.TextInput(attrs={'placeholder': 'صيفي، شتوي، طوال العام'}),
+            'category': forms.Select(attrs={'data-filterable-select': 'true'}),
+            'material': forms.TextInput(attrs={'placeholder': 'مثال: قطن'}),
         }
+
+    def save(self, commit=True):
+        product = super().save(commit=False)
+        product.retail_price = product.retail_price or 0
+        product.wholesale_price = product.wholesale_price or 0
+        if commit:
+            product.save()
+            self.save_m2m()
+        return product
 
 
 class ProductVariantForm(forms.ModelForm):
     class Meta:
         model = ProductVariant
-        fields = ('product', 'color', 'size', 'variant_sku', 'barcode', 'cost_price', 'is_active')
+        fields = ('product', 'color', 'size', 'cost_price', 'sale_price', 'is_active')
         labels = {
             'product': 'المنتج',
             'color': 'اللون',
             'size': 'المقاس',
-            'variant_sku': 'كود المتغير',
-            'barcode': 'الباركود',
-            'cost_price': 'تكلفة القطعة',
+            'cost_price': 'سعر الشراء',
+            'sale_price': 'سعر البيع',
             'is_active': 'نشط',
+        }
+        widgets = {
+            'cost_price': forms.NumberInput(attrs={'min': '0', 'step': '0.01', 'placeholder': 'اكتب سعر الشراء'}),
+            'sale_price': forms.NumberInput(attrs={'min': '0', 'step': '0.01', 'placeholder': 'اكتب سعر البيع'}),
         }
 
 
 class InitialProductVariantForm(forms.ModelForm):
-    color = forms.ModelChoiceField(queryset=Color.objects.all(), label='اللون', required=False)
-    new_color_name = forms.CharField(label='لون جديد', required=False)
-    size = forms.ModelChoiceField(queryset=Size.objects.all(), label='المقاس', required=False)
-    new_size_name = forms.CharField(label='مقاس جديد', required=False)
-    variant_sku = forms.CharField(label='كود المتغير', required=False)
-    barcode = forms.CharField(label='الباركود', required=False)
-    cost_price = forms.DecimalField(label='تكلفة القطعة', min_value=0, required=False, initial=0)
+    color = forms.ModelChoiceField(queryset=Color.objects.all().order_by('name'), label='اللون')
+    size = forms.ModelChoiceField(queryset=Size.objects.all().order_by('sort_order', 'name'), label='المقاس')
+    cost_price = forms.DecimalField(label='سعر الشراء', min_value=0)
+    sale_price = forms.DecimalField(label='سعر البيع', min_value=0)
 
     class Meta:
         model = ProductVariant
-        fields = ('color', 'new_color_name', 'size', 'new_size_name', 'variant_sku', 'barcode', 'cost_price')
+        fields = ('color', 'size', 'cost_price', 'sale_price')
         widgets = {
-            'new_color_name': forms.TextInput(attrs={'placeholder': 'اكتب لونًا جديدًا'}),
-            'new_size_name': forms.TextInput(attrs={'placeholder': 'اكتب مقاسًا جديدًا'}),
-            'variant_sku': forms.TextInput(attrs={'placeholder': 'اتركه فارغًا للتوليد التلقائي'}),
-            'barcode': forms.TextInput(attrs={'placeholder': 'الباركود إن وجد'}),
+            'color': forms.Select(attrs={'data-filterable-select': 'true'}),
+            'size': forms.Select(attrs={'data-filterable-select': 'true'}),
+            'cost_price': forms.NumberInput(attrs={'min': '0', 'step': '0.01', 'placeholder': 'سعر الشراء'}),
+            'sale_price': forms.NumberInput(attrs={'min': '0', 'step': '0.01', 'placeholder': 'سعر البيع'}),
         }
 
     def has_variant_data(self):
-        if not self.is_valid():
-            return False
-        return any(
-            self.cleaned_data.get(field)
-            for field in ('color', 'new_color_name', 'size', 'new_size_name', 'variant_sku', 'barcode', 'cost_price')
-        )
+        return self.is_valid()
 
 
 class InitialStockForm(forms.Form):
     warehouse = forms.ModelChoiceField(
         queryset=Warehouse.objects.filter(is_active=True),
         label='المخزن',
-        required=False,
+        widget=forms.Select(attrs={'data-filterable-select': 'true'}),
     )
     quantity = forms.IntegerField(
-        min_value=0,
-        label='الكمية الأولية',
-        required=False,
-        initial=0,
-    )
-    min_quantity = forms.IntegerField(
-        min_value=0,
-        label='حد التنبيه الأدنى',
-        required=False,
-        initial=0,
+        min_value=1,
+        label='الكمية',
+        initial=1,
     )
 
     def clean(self):
         cleaned = super().clean()
         warehouse = cleaned.get('warehouse')
         quantity = cleaned.get('quantity') or 0
-        min_quantity = cleaned.get('min_quantity') or 0
-        if (quantity > 0 or min_quantity > 0) and not warehouse:
-            self.add_error('warehouse', 'اختر المخزن لإضافة الكمية')
+        if quantity > 0 and not warehouse:
+            self.add_error('warehouse', 'اختر المخزن')
         return cleaned
 
     def has_stock_data(self):
-        if not self.is_valid():
-            return False
-        return bool(self.cleaned_data.get('warehouse'))
+        return self.is_valid() and bool(self.cleaned_data.get('warehouse'))

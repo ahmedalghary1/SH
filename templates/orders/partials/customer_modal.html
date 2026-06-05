@@ -1,14 +1,14 @@
 <div class="modal" id="customer-modal" hidden>
     <div class="modal-box">
-        <div class="modal-head"><h2>إضافة عميل سريع</h2><button class="icon-btn" type="button" data-close-modal aria-label="إغلاق">×</button></div>
+        <div class="modal-head">
+            <h2>إضافة عميل سريع</h2>
+            <button class="icon-btn" type="button" data-close-modal aria-label="إغلاق">×</button>
+        </div>
         <div class="form-grid">
-            <label><span>الاسم</span><input id="quick-customer-name"></label>
-            <label><span>النوع</span><select id="quick-customer-type"><option value="b2c">عميل فردي</option><option value="b2b">عميل جملة / شركة</option></select></label>
+            <label><span>اسم العميل</span><input id="quick-customer-name"></label>
+            <label><span>نوع العميل</span><select id="quick-customer-type"><option value="retail">قطاعي</option><option value="wholesale">جملة</option></select></label>
             <label><span>الهاتف</span><input id="quick-customer-phone"></label>
-            <label><span>واتساب</span><input id="quick-customer-whatsapp"></label>
-            <label><span>الشركة</span><input id="quick-customer-company"></label>
-            <label><span>الرقم الضريبي</span><input id="quick-customer-tax"></label>
-            <label class="span-2"><span>العنوان</span><textarea id="quick-customer-address"></textarea></label>
+            <label class="span-2"><span>العنوان</span><textarea id="quick-customer-address" rows="3"></textarea></label>
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="button" id="quick-customer-save">حفظ العميل</button></div>
     </div>

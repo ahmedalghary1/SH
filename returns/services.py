@@ -8,6 +8,7 @@ from finance.models import PaymentTransaction
 from finance.services import record_transaction
 from inventory.models import Stock, StockMovement
 from orders.models import Order
+from orders.services import get_order_item_warehouse
 
 from .models import ExchangeItem, SalesReturn, SalesReturnItem
 
@@ -120,14 +121,15 @@ def complete_sales_return(*, sales_return, user, cash_account=None):
         raise ValidationError('يجب اعتماد المرتجع قبل إكماله')
 
     order = Order.objects.select_for_update().get(pk=sales_return.order_id)
-    for item in sales_return.items.select_related('product_variant'):
+    for item in sales_return.items.select_related('product_variant', 'original_order_item__warehouse'):
+        item_warehouse = get_order_item_warehouse(item.original_order_item, order=order)
         if item.condition == SalesReturnItem.CONDITION_GOOD and item.return_to_stock:
             _increase_stock_for_return(order=order, item=item, user=user)
         elif item.condition == SalesReturnItem.CONDITION_DAMAGED:
             StockMovement.objects.create(
                 movement_type=StockMovement.TYPE_DAMAGED_RETURN,
                 variant=item.product_variant,
-                to_warehouse=order.warehouse,
+                to_warehouse=item_warehouse,
                 quantity=item.quantity,
                 note=f'Damaged return for order {order.order_number}',
                 created_by=user,
@@ -152,8 +154,9 @@ def process_exchange(*, sales_return, user, cash_account=None):
 
 
 def _increase_stock_for_return(*, order, item, user):
+    warehouse = get_order_item_warehouse(item.original_order_item, order=order)
     stock, _ = Stock.objects.select_for_update().get_or_create(
-        warehouse=order.warehouse,
+        warehouse=warehouse,
         variant=item.product_variant,
         defaults={'quantity': 0},
     )
@@ -162,7 +165,7 @@ def _increase_stock_for_return(*, order, item, user):
     StockMovement.objects.create(
         movement_type=StockMovement.TYPE_SALES_RETURN,
         variant=item.product_variant,
-        to_warehouse=order.warehouse,
+        to_warehouse=warehouse,
         quantity=item.quantity,
         note=f'Sales return for order {order.order_number}',
         created_by=user,
@@ -188,9 +191,10 @@ def _process_refund(*, sales_return, order, user, cash_account):
 
 
 def _process_exchange_stock_and_money(*, sales_return, order, user, cash_account):
-    for exchange in sales_return.exchange_items.select_related('new_product_variant'):
+    for exchange in sales_return.exchange_items.select_related('new_product_variant', 'old_order_item__warehouse'):
+        warehouse = get_order_item_warehouse(exchange.old_order_item, order=order)
         stock = Stock.objects.select_for_update().filter(
-            warehouse=order.warehouse,
+            warehouse=warehouse,
             variant=exchange.new_product_variant,
         ).first()
         if not stock or stock.quantity < exchange.quantity:
@@ -200,7 +204,7 @@ def _process_exchange_stock_and_money(*, sales_return, order, user, cash_account
         StockMovement.objects.create(
             movement_type=StockMovement.TYPE_EXCHANGE_OUT,
             variant=exchange.new_product_variant,
-            from_warehouse=order.warehouse,
+            from_warehouse=warehouse,
             quantity=exchange.quantity,
             note=f'Exchange out for order {order.order_number}',
             created_by=user,

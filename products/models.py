@@ -39,8 +39,8 @@ class Product(models.Model):
     description = models.TextField(blank=True, null=True)
     material = models.CharField(max_length=100, blank=True, null=True)
     season = models.CharField(max_length=100, blank=True, null=True)
-    retail_price = models.DecimalField(max_digits=10, decimal_places=2)
-    wholesale_price = models.DecimalField(max_digits=10, decimal_places=2)
+    retail_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    wholesale_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     image = models.ImageField(upload_to='products/', blank=True, null=True)
     is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
@@ -63,6 +63,7 @@ class ProductVariant(models.Model):
     variant_sku = models.CharField(max_length=120, unique=True, db_index=True)
     barcode = models.CharField(max_length=120, blank=True, null=True, db_index=True)
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    sale_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True, db_index=True)
 
     class Meta:
@@ -77,22 +78,26 @@ class ProductVariant(models.Model):
 
     @property
     def retail_profit_per_piece(self):
-        return self.product.retail_price - self.cost_price
+        return self.effective_sale_price - self.cost_price
 
     @property
     def wholesale_profit_per_piece(self):
-        return self.product.wholesale_price - self.cost_price
+        return self.effective_sale_price - self.cost_price
+
+    @property
+    def effective_sale_price(self):
+        return self.sale_price
 
     @property
     def retail_profit_margin_percentage(self):
-        if self.product.retail_price <= 0:
+        if self.effective_sale_price <= 0:
             return 0
-        return (self.retail_profit_per_piece / self.product.retail_price) * 100
+        return (self.retail_profit_per_piece / self.effective_sale_price) * 100
 
     @property
     def wholesale_profit_margin_percentage(self):
-        if self.product.wholesale_price <= 0:
+        if self.effective_sale_price <= 0:
             return 0
-        return (self.wholesale_profit_per_piece / self.product.wholesale_price) * 100
+        return (self.wholesale_profit_per_piece / self.effective_sale_price) * 100
 
 # Create your models here.

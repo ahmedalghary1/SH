@@ -1,7 +1,7 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
@@ -10,10 +10,28 @@ from django.views.generic import CreateView, DetailView, ListView, UpdateView, V
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, role_required
 from inventory.models import Stock, Warehouse
+from inventory.models import StockMovement
 from inventory.services import adjust_stock, stock_in, transfer_stock
+from orders.models import Order, OrderItem
 
 from .forms import CategoryForm, ColorForm, InitialProductVariantForm, InitialStockForm, ProductForm, ProductVariantForm, SizeForm
 from .models import Category, Color, Product, ProductVariant, Size
+
+
+def generate_variant_sku(product, color_id=None, size_id=None, current_pk=None):
+    base = f'{product.sku}-{color_id or "0"}-{size_id or "0"}'
+    sku = base
+    counter = 2
+    qs = ProductVariant.objects.filter(variant_sku=sku)
+    if current_pk:
+        qs = qs.exclude(pk=current_pk)
+    while qs.exists():
+        sku = f'{base}-{counter}'
+        qs = ProductVariant.objects.filter(variant_sku=sku)
+        if current_pk:
+            qs = qs.exclude(pk=current_pk)
+        counter += 1
+    return sku
 
 
 class ProductListView(RoleRequiredMixin, ListView):
@@ -24,7 +42,10 @@ class ProductListView(RoleRequiredMixin, ListView):
     paginate_by = 20
 
     def get_queryset(self):
-        qs = Product.objects.select_related('category').prefetch_related('variants').annotate(variant_count=Count('variants'))
+        qs = Product.objects.select_related('category').prefetch_related('variants').annotate(
+            variant_count=Count('variants', distinct=True),
+            total_quantity=Sum('variants__stock__quantity'),
+        )
         q = self.request.GET.get('q')
         category = self.request.GET.get('category')
         status = self.request.GET.get('status')
@@ -51,6 +72,27 @@ class ProductDetailView(RoleRequiredMixin, DetailView):
     def get_queryset(self):
         return Product.objects.select_related('category').prefetch_related('variants__color', 'variants__size')
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        variants = self.object.variants.all()
+        stocks = Stock.objects.filter(variant__product=self.object).select_related('warehouse', 'variant__color', 'variant__size')
+        order_items = OrderItem.objects.filter(variant__product=self.object).exclude(
+            order__status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED],
+        ).select_related('order__customer', 'order__created_by', 'variant__color', 'variant__size').order_by('-order__created_at')
+        movements = StockMovement.objects.filter(variant__product=self.object).select_related(
+            'variant__color', 'variant__size', 'from_warehouse', 'to_warehouse', 'created_by',
+        ).order_by('-created_at')[:100]
+        context['stock_rows'] = stocks
+        context['movement_rows'] = movements
+        context['sold_quantity'] = order_items.aggregate(total=Sum('quantity'))['total'] or 0
+        context['sales_count'] = order_items.values('order_id').distinct().count()
+        context['product_sales_total'] = order_items.aggregate(total=Sum('total'))['total'] or 0
+        context['product_profit_total'] = order_items.aggregate(total=Sum('profit_total'))['total'] or 0
+        context['order_items'] = order_items[:50]
+        context['current_quantity'] = stocks.aggregate(total=Sum('quantity'))['total'] or 0
+        context['variants'] = variants
+        return context
+
 
 class ProductCreateView(ManagerRequiredMixin, View):
     template_name = 'products/create.html'
@@ -60,6 +102,7 @@ class ProductCreateView(ManagerRequiredMixin, View):
             'product_form': ProductForm(),
             'variant_form': InitialProductVariantForm(),
             'stock_form': InitialStockForm(),
+            'product_names': Product.objects.filter(is_active=True).order_by('name').values_list('name', flat=True).distinct()[:200],
         })
 
     def post(self, request):
@@ -73,21 +116,12 @@ class ProductCreateView(ManagerRequiredMixin, View):
                 if variant_form.has_variant_data() or stock_form.has_stock_data():
                     variant = variant_form.save(commit=False)
                     variant.product = product
-                    new_color_name = variant_form.cleaned_data.get('new_color_name')
-                    new_size_name = variant_form.cleaned_data.get('new_size_name')
-                    if not variant.color and new_color_name:
-                        variant.color, _ = Color.objects.get_or_create(name=new_color_name.strip())
-                    if not variant.size and new_size_name:
-                        variant.size, _ = Size.objects.get_or_create(name=new_size_name.strip())
                     if not variant.variant_sku:
-                        color_id = variant.color_id or '0'
-                        size_id = variant.size_id or '0'
-                        variant.variant_sku = f'{product.sku}-{color_id}-{size_id}'
+                        variant.variant_sku = generate_variant_sku(product, variant.color_id, variant.size_id)
                     variant.save()
                 if stock_form.has_stock_data() and variant:
                     warehouse = stock_form.cleaned_data['warehouse']
                     quantity = stock_form.cleaned_data.get('quantity') or 0
-                    min_quantity = stock_form.cleaned_data.get('min_quantity') or 0
                     if quantity > 0:
                         stock_in(
                             variant=variant,
@@ -101,7 +135,7 @@ class ProductCreateView(ManagerRequiredMixin, View):
                         variant=variant,
                         defaults={'quantity': 0},
                     )
-                    stock.min_quantity = min_quantity
+                    stock.min_quantity = 0
                     stock.save(update_fields=['min_quantity'])
             messages.success(request, 'تم إضافة المنتج')
             return redirect('products:detail', pk=product.pk)
@@ -109,6 +143,7 @@ class ProductCreateView(ManagerRequiredMixin, View):
             'product_form': product_form,
             'variant_form': variant_form,
             'stock_form': stock_form,
+            'product_names': Product.objects.filter(is_active=True).order_by('name').values_list('name', flat=True).distinct()[:200],
         })
 
 
@@ -323,7 +358,13 @@ class ProductVariantCreateView(ManagerRequiredMixin, CreateView):
         return reverse_lazy('products:detail', kwargs={'pk': self.object.product_id})
 
     def form_valid(self, form):
-        messages.success(self.request, 'تم إضافة المتغير')
+        if not form.instance.variant_sku:
+            form.instance.variant_sku = generate_variant_sku(
+                form.instance.product,
+                form.instance.color_id,
+                form.instance.size_id,
+            )
+        messages.success(self.request, 'تم إضافة اللون والمقاس')
         return super().form_valid(form)
 
 
@@ -336,7 +377,13 @@ class ProductVariantUpdateView(ManagerRequiredMixin, UpdateView):
         return reverse_lazy('products:detail', kwargs={'pk': self.object.product_id})
 
     def form_valid(self, form):
-        messages.success(self.request, 'تم تحديث المتغير')
+        form.instance.variant_sku = form.instance.variant_sku or generate_variant_sku(
+            form.instance.product,
+            form.instance.color_id,
+            form.instance.size_id,
+            current_pk=form.instance.pk,
+        )
+        messages.success(self.request, 'تم تحديث اللون والمقاس')
         return super().form_valid(form)
 
 
@@ -345,7 +392,7 @@ class ProductVariantDeactivateView(ManagerRequiredMixin, View):
         variant = get_object_or_404(ProductVariant, pk=pk)
         variant.is_active = False
         variant.save(update_fields=['is_active'])
-        messages.success(request, 'تم إيقاف المتغير')
+        messages.success(request, 'تم إيقاف اللون والمقاس')
         return redirect('products:detail', pk=variant.product_id)
 
 
@@ -357,7 +404,7 @@ def ajax_search_products(request):
     if q:
         products = products.filter(Q(name__icontains=q) | Q(sku__icontains=q) | Q(variants__variant_sku__icontains=q)).distinct()
     data = [
-        {'id': p.id, 'name': p.name, 'sku': p.sku, 'retail_price': str(p.retail_price), 'wholesale_price': str(p.wholesale_price)}
+        {'id': p.id, 'name': p.name, 'sku': p.sku}
         for p in products[:12]
     ]
     return JsonResponse({'success': True, 'message': 'تم جلب المنتجات', 'data': data})
@@ -376,7 +423,7 @@ def ajax_get_product_variants(request, product_id):
         }
         for v in variants
     ]
-    return JsonResponse({'success': True, 'message': 'تم جلب المتغيرات', 'data': data})
+    return JsonResponse({'success': True, 'message': 'تم جلب الألوان والمقاسات', 'data': data})
 
 
 @require_GET
@@ -384,7 +431,7 @@ def ajax_get_product_variants(request, product_id):
 def ajax_get_variant_price(request, variant_id):
     order_type = request.GET.get('order_type', 'b2c')
     variant = get_object_or_404(ProductVariant.objects.select_related('product'), pk=variant_id, is_active=True)
-    price = variant.product.wholesale_price if order_type == 'b2b' else variant.product.retail_price
+    price = variant.sale_price
     return JsonResponse({'success': True, 'message': 'تم جلب السعر', 'data': {'price': str(price)}})
 
 
@@ -439,6 +486,7 @@ def api_products(request):
                 'barcode': variant.barcode or '',
                 'color': variant.color.name if variant.color else '',
                 'size': variant.size.name if variant.size else '',
+                'sale_price': str(variant.sale_price),
                 'quantity': quantity,
                 'is_active': variant.is_active,
             })
@@ -447,8 +495,6 @@ def api_products(request):
             'name': product.name,
             'code': product.sku,
             'category': product.category.name if product.category else '',
-            'retail_price': str(product.retail_price),
-            'wholesale_price': str(product.wholesale_price),
             'image': product.image.url if product.image else '',
             'variants': variants,
         })

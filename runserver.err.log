@@ -1,0 +1,16 @@
+INFO 2026-06-05 12:04:02,907 django.utils.autoreload Watching for file changes with StatReloader
+INFO 2026-06-05 12:32:57,548 django.utils.autoreload C:\Users\m\Desktop\projects\SH\orders\models.py changed, reloading.
+INFO 2026-06-05 12:32:58,517 django.utils.autoreload Watching for file changes with StatReloader
+INFO 2026-06-05 12:33:06,893 django.utils.autoreload C:\Users\m\Desktop\projects\SH\orders\forms.py changed, reloading.
+INFO 2026-06-05 12:33:07,892 django.utils.autoreload Watching for file changes with StatReloader
+INFO 2026-06-05 12:33:22,852 django.utils.autoreload C:\Users\m\Desktop\projects\SH\orders\views.py changed, reloading.
+INFO 2026-06-05 12:33:23,825 django.utils.autoreload Watching for file changes with StatReloader
+INFO 2026-06-05 12:33:43,236 django.utils.autoreload C:\Users\m\Desktop\projects\SH\orders\services.py changed, reloading.
+INFO 2026-06-05 12:33:44,214 django.utils.autoreload Watching for file changes with StatReloader
+INFO 2026-06-05 12:34:02,405 django.utils.autoreload C:\Users\m\Desktop\projects\SH\returns\services.py changed, reloading.
+INFO 2026-06-05 12:34:03,350 django.utils.autoreload Watching for file changes with StatReloader
+INFO 2026-06-05 12:34:57,602 django.utils.autoreload C:\Users\m\Desktop\projects\SH\orders\admin.py changed, reloading.
+INFO 2026-06-05 12:34:58,579 django.utils.autoreload Watching for file changes with StatReloader
+[05/Jun/2026 12:38:08] "GET /orders/create/ HTTP/1.1" 302 0
+[05/Jun/2026 12:38:08] "GET /accounts/login/?next=/orders/create/ HTTP/1.1" 200 1571
+[05/Jun/2026 12:38:08,460] - Broken pipe from ('127.0.0.1', 52014)

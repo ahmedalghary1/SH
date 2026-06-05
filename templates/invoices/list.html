@@ -20,18 +20,18 @@
     </div>
     <div class="table-wrap">
         <table>
-            <thead><tr><th>اختيار</th><th>رقم الفاتورة</th><th>رقم الطلب</th><th>العميل</th><th>المندوب</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>تاريخ الإصدار</th><th>إجراءات</th></tr></thead>
+            <thead><tr><th>اختيار</th><th>رقم الفاتورة</th><th>العميل</th><th>هاتف العميل</th><th>المندوب أو الفرع</th><th>الإجمالي</th><th>الخصم</th><th>طريقة الدفع</th><th>تاريخ الشراء</th><th>إجراءات</th></tr></thead>
             <tbody>
             {% for invoice in invoices %}
                 <tr>
                     <td><input type="checkbox" name="invoice_ids" value="{{ invoice.pk }}"></td>
                     <td>{{ invoice.invoice_number }}</td>
-                    <td>{{ invoice.order.order_number }}</td>
                     <td>{{ invoice.order.customer|default:'عميل فردي' }}</td>
+                    <td>{{ invoice.order.customer.phone|default:'-' }}</td>
                     <td>{{ invoice.order.created_by|default:'-' }}</td>
                     <td>{{ invoice.order.total }}</td>
-                    <td>{{ invoice.order.paid_amount }}</td>
-                    <td>{{ invoice.order.remaining_amount }}</td>
+                    <td>{{ invoice.order.discount }}</td>
+                    <td>{{ invoice.order.get_payment_method_display }}</td>
                     <td>{{ invoice.issued_at }}</td>
                     <td class="actions">
                         <a class="btn btn-light" href="{% url 'invoices:detail' invoice.pk %}">عرض</a>

@@ -99,7 +99,10 @@ class StockMovementListView(RoleRequiredMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
-        return StockMovement.objects.select_related('variant__product', 'from_warehouse', 'to_warehouse', 'created_by').order_by('-created_at')
+        allowed_types = [StockMovement.TYPE_TRANSFER]
+        return StockMovement.objects.select_related(
+            'variant__product', 'variant__color', 'variant__size', 'from_warehouse', 'to_warehouse', 'created_by',
+        ).filter(movement_type__in=allowed_types).order_by('-created_at')
 
 
 class StockInView(WarehouseRequiredMixin, FormView):

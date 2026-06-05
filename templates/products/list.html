@@ -13,7 +13,7 @@
 </form>
 <div class="table-wrap">
     <table>
-        <thead><tr><th>الصورة</th><th>الاسم</th><th>كود المنتج</th><th>التصنيف</th><th>قطاعي</th><th>جملة</th><th>المتغيرات</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+        <thead><tr><th>الصورة</th><th>اسم المنتج</th><th>كود المنتج</th><th>التصنيف</th><th>الخامة</th><th>الموسم</th><th>الكمية المتاحة</th><th>الحالة</th><th>إجراءات</th></tr></thead>
         <tbody>
         {% for product in products %}
             <tr>
@@ -21,9 +21,9 @@
                 <td>{{ product.name }}</td>
                 <td>{{ product.sku }}</td>
                 <td>{{ product.category|default:'-' }}</td>
-                <td>{{ product.retail_price }}</td>
-                <td>{{ product.wholesale_price }}</td>
-                <td>{{ product.variant_count }}</td>
+                <td>{{ product.material|default:'-' }}</td>
+                <td>{{ product.season|default:'-' }}</td>
+                <td>{{ product.total_quantity|default:0 }}</td>
                 <td><span class="badge {% if product.is_active %}success{% else %}danger{% endif %}">{% if product.is_active %}نشط{% else %}متوقف{% endif %}</span></td>
                 <td class="actions">
                     <a class="btn btn-light" href="{% url 'products:detail' product.pk %}">عرض</a>
