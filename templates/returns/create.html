@@ -2,5 +2,112 @@
 {% block title %}إنشاء مرتجع{% endblock %}
 {% block content %}
 <div class="page-head"><h1>إنشاء مرتجع</h1></div>
-{% include 'partials/model_form.html' with button_text='إنشاء المسودة' %}
+
+<form method="get" class="card form-grid">
+    <label class="span-2">
+        <span>رقم الفاتورة</span>
+        <input type="text" name="invoice_number" value="{{ searched_invoice_number }}" placeholder="مثال: INV-20260606-0001" required>
+    </label>
+    <div class="form-actions">
+        <button class="btn btn-primary" type="submit">عرض الفاتورة</button>
+        <a class="btn btn-light" href="{% url 'returns:list' %}">رجوع</a>
+    </div>
+</form>
+
+{% if form.non_field_errors %}
+    <div class="card form-errors">{{ form.non_field_errors }}</div>
+{% endif %}
+{% if form.invoice_number.errors %}
+    <div class="card form-errors">{{ form.invoice_number.errors|join:', ' }}</div>
+{% endif %}
+
+{% if order_preview %}
+    <section class="stats-grid">
+        <div class="stat-card"><span>الفاتورة</span><strong>{{ searched_invoice_number }}</strong></div>
+        <div class="stat-card"><span>الطلب</span><strong>{{ order_preview.order_number }}</strong></div>
+        <div class="stat-card"><span>العميل</span><strong>{{ order_preview.customer|default:'-' }}</strong></div>
+        <div class="stat-card"><span>إجمالي الفاتورة</span><strong>{{ order_preview.total }}</strong></div>
+    </section>
+
+    <form method="post" class="card">
+        {% csrf_token %}
+        {{ form.invoice_number.as_hidden }}
+        <div class="form-grid">
+            <label>
+                <span>{{ form.return_type.label }}</span>
+                {{ form.return_type }}
+                {% if form.return_type.errors %}<small class="error">{{ form.return_type.errors|join:', ' }}</small>{% endif %}
+            </label>
+            <label class="span-2">
+                <span>{{ form.reason.label }}</span>
+                {{ form.reason }}
+                {% if form.reason.errors %}<small class="error">{{ form.reason.errors|join:', ' }}</small>{% endif %}
+            </label>
+        </div>
+
+        <h2>أصناف الفاتورة</h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>تحديد</th>
+                        <th>المنتج</th>
+                        <th>اللون</th>
+                        <th>المقاس</th>
+                        <th>المخزن</th>
+                        <th>المباع</th>
+                        <th>المتاح للإرجاع</th>
+                        <th>كمية المرتجع</th>
+                        <th>الحالة</th>
+                        <th>تعود للمخزون</th>
+                        <th>ملاحظات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in item_rows %}
+                        <tr>
+                            <td>
+                                <label class="inline-check">
+                                    <input type="checkbox" name="selected_{{ row.item.pk }}" {% if row.selected %}checked{% endif %} {% if row.available_quantity == 0 %}disabled{% endif %}>
+                                    <span>اختيار</span>
+                                </label>
+                            </td>
+                            <td>{{ row.item.variant.product.name }}</td>
+                            <td>{{ row.item.variant.color|default:'-' }}</td>
+                            <td>{{ row.item.variant.size|default:'-' }}</td>
+                            <td>{{ row.item.warehouse|default:order_preview.warehouse|default:'-' }}</td>
+                            <td>{{ row.item.quantity }}</td>
+                            <td>{{ row.available_quantity }}</td>
+                            <td>
+                                <input type="number" name="quantity_{{ row.item.pk }}" min="0" max="{{ row.available_quantity }}" value="{{ row.quantity_value }}" {% if row.available_quantity == 0 %}disabled{% endif %}>
+                            </td>
+                            <td>
+                                <select name="condition_{{ row.item.pk }}" {% if row.available_quantity == 0 %}disabled{% endif %}>
+                                    {% for value, label in condition_choices %}
+                                        <option value="{{ value }}" {% if row.condition_value == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td>
+                                <label class="inline-check">
+                                    <input type="checkbox" name="return_to_stock_{{ row.item.pk }}" {% if row.return_to_stock %}checked{% endif %} {% if row.available_quantity == 0 %}disabled{% endif %}>
+                                    <span>نعم</span>
+                                </label>
+                            </td>
+                            <td>
+                                <input type="text" name="notes_{{ row.item.pk }}" value="{{ row.notes_value }}" {% if row.available_quantity == 0 %}disabled{% endif %}>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="11">لا توجد أصناف في هذه الفاتورة</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-primary" type="submit">تسجيل المرتجع</button>
+            <a class="btn btn-light" href="{% url 'returns:list' %}">إلغاء</a>
+        </div>
+    </form>
+{% endif %}
 {% endblock %}

@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Count, Sum
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
@@ -13,6 +14,7 @@ from .services import (
     add_exchange_item,
     add_return_item,
     approve_sales_return,
+    calculate_available_return_quantity,
     complete_sales_return,
     create_sales_return,
 )
@@ -39,16 +41,115 @@ class SalesReturnCreateView(SalesRequiredMixin, FormView):
     template_name = 'returns/create.html'
     form_class = SalesReturnCreateForm
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        if self.request.method == 'GET' and self.request.GET.get('invoice_number'):
+            data = self.request.GET.copy()
+            data.setdefault('return_type', SalesReturn.TYPE_PARTIAL_RETURN)
+            kwargs['data'] = data
+        return kwargs
+
+    def get_initial(self):
+        initial = super().get_initial()
+        initial['return_type'] = SalesReturn.TYPE_PARTIAL_RETURN
+        if self.request.GET.get('invoice_number'):
+            initial['invoice_number'] = self.request.GET.get('invoice_number')
+        return initial
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        form = context.get('form')
+        if form and form.is_bound:
+            form.is_valid()
+        order = getattr(self, 'order_preview', None) or getattr(form, 'order', None)
+        context['order_preview'] = order
+        context['item_rows'] = self._build_item_rows(order) if order else []
+        context['condition_choices'] = SalesReturnItem.CONDITION_CHOICES
+        context['searched_invoice_number'] = (
+            self.request.POST.get('invoice_number') or self.request.GET.get('invoice_number') or ''
+        )
+        return context
+
+    def _build_item_rows(self, order):
+        rows = []
+        for item in order.items.all():
+            available_quantity = calculate_available_return_quantity(item) if item.variant_id else 0
+            posted_quantity = self.request.POST.get(f'quantity_{item.pk}')
+            is_post = self.request.method == 'POST'
+            rows.append({
+                'item': item,
+                'available_quantity': available_quantity,
+                'quantity_value': posted_quantity if posted_quantity is not None else available_quantity,
+                'selected': self.request.POST.get(f'selected_{item.pk}') == 'on' if is_post else False,
+                'condition_value': self.request.POST.get(f'condition_{item.pk}', SalesReturnItem.CONDITION_GOOD),
+                'return_to_stock': self.request.POST.get(f'return_to_stock_{item.pk}', 'on') == 'on',
+                'notes_value': self.request.POST.get(f'notes_{item.pk}', ''),
+            })
+        return rows
+
+    def _selected_return_items(self, order):
+        selected_items = []
+        errors = []
+        condition_values = {choice[0] for choice in SalesReturnItem.CONDITION_CHOICES}
+        for row in self._build_item_rows(order):
+            item = row['item']
+            if self.request.POST.get(f'selected_{item.pk}') != 'on':
+                continue
+            raw_quantity = str(self.request.POST.get(f'quantity_{item.pk}', '0')).strip() or '0'
+            try:
+                quantity = int(raw_quantity)
+            except ValueError:
+                errors.append(f'كمية {item.variant} غير صحيحة')
+                continue
+            if quantity < 0:
+                errors.append(f'كمية {item.variant} لا يمكن أن تكون سالبة')
+                continue
+            if quantity == 0:
+                errors.append(f'حدد كمية أكبر من صفر للصنف {item.variant}')
+                continue
+            if not item.variant_id:
+                errors.append('لا يمكن إرجاع صنف بدون متغير منتج')
+                continue
+            if quantity > row['available_quantity']:
+                errors.append(f'كمية {item.variant} أكبر من المتاح للإرجاع')
+                continue
+            condition = self.request.POST.get(f'condition_{item.pk}', SalesReturnItem.CONDITION_GOOD)
+            if condition not in condition_values:
+                errors.append(f'حالة {item.variant} غير صحيحة')
+                continue
+            selected_items.append({
+                'original_order_item': item,
+                'quantity': quantity,
+                'condition': condition,
+                'return_to_stock': self.request.POST.get(f'return_to_stock_{item.pk}') == 'on',
+                'notes': self.request.POST.get(f'notes_{item.pk}', '').strip(),
+            })
+        if not selected_items and not errors:
+            errors.append('حدد كمية مرتجع لصنف واحد على الأقل')
+        return selected_items, errors
+
     def form_valid(self, form):
+        order = form.order
+        self.order_preview = order
+        selected_items, errors = self._selected_return_items(order)
+        if errors:
+            for error in errors:
+                form.add_error(None, error)
+            return self.form_invalid(form)
+
         try:
-            sales_return = create_sales_return(
-                order=form.cleaned_data['order'],
-                return_type=form.cleaned_data['return_type'],
-                reason=form.cleaned_data.get('reason') or '',
-                user=self.request.user,
-            )
-            messages.success(self.request, 'تم إنشاء مسودة المرتجع')
-            return redirect('returns:add_item', pk=sales_return.pk)
+            with transaction.atomic():
+                sales_return = create_sales_return(
+                    order=order,
+                    return_type=form.cleaned_data['return_type'],
+                    reason=form.cleaned_data.get('reason') or '',
+                    user=self.request.user,
+                )
+                for item_data in selected_items:
+                    add_return_item(sales_return=sales_return, **item_data)
+            messages.success(self.request, 'تم تسجيل مسودة المرتجع بالأصناف المحددة')
+            return redirect('returns:detail', pk=sales_return.pk)
         except ValidationError as exc:
             form.add_error(None, exc.message)
             return self.form_invalid(form)

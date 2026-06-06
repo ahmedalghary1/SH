@@ -1,9 +1,11 @@
 from django.contrib import messages
+from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
 from django.db.models import Sum
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView
 
 from accounts.permissions import ManagerRequiredMixin
@@ -38,12 +40,52 @@ class CashAccountDetailView(ManagerRequiredMixin, DetailView):
     model = CashAccount
     template_name = 'finance/accounts/detail.html'
     context_object_name = 'account'
+    paginate_by = 30
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['transactions'] = self.object.transactions.select_related(
-            'related_order', 'related_customer', 'related_sales_rep', 'created_by'
-        )[:50]
+        transactions = self.object.transactions.select_related(
+            'related_order',
+            'related_customer',
+            'related_sales_rep',
+            'related_supplier',
+            'created_by',
+        )
+        transaction_type = self.request.GET.get('type', '').strip()
+        direction = self.request.GET.get('direction', '').strip()
+        date_from = parse_date(self.request.GET.get('date_from', ''))
+        date_to = parse_date(self.request.GET.get('date_to', ''))
+        if transaction_type:
+            transactions = transactions.filter(transaction_type=transaction_type)
+        if direction:
+            transactions = transactions.filter(direction=direction)
+        if date_from:
+            transactions = transactions.filter(created_at__date__gte=date_from)
+        if date_to:
+            transactions = transactions.filter(created_at__date__lte=date_to)
+
+        total_in = transactions.filter(direction=PaymentTransaction.DIRECTION_IN).aggregate(v=Sum('amount'))['v'] or 0
+        total_out = transactions.filter(direction=PaymentTransaction.DIRECTION_OUT).aggregate(v=Sum('amount'))['v'] or 0
+        paginator = Paginator(transactions, self.paginate_by)
+        page_obj = paginator.get_page(self.request.GET.get('page'))
+        context['transactions'] = page_obj.object_list
+        context['page_obj'] = page_obj
+        context['paginator'] = paginator
+        context['is_paginated'] = page_obj.has_other_pages()
+        context['total_in'] = total_in
+        context['total_out'] = total_out
+        context['net_total'] = total_in - total_out
+        context['transaction_type_choices'] = PaymentTransaction.TRANSACTION_TYPE_CHOICES
+        context['direction_choices'] = PaymentTransaction.DIRECTION_CHOICES
+        context['filters'] = {
+            'type': transaction_type,
+            'direction': direction,
+            'date_from': self.request.GET.get('date_from', ''),
+            'date_to': self.request.GET.get('date_to', ''),
+        }
+        query = self.request.GET.copy()
+        query.pop('page', None)
+        context['pagination_query'] = query.urlencode()
         return context
 
 

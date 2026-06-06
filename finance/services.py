@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Sum
 
 from .models import CashAccount, PaymentTransaction
 
@@ -75,6 +76,76 @@ def record_customer_payment(*, order, customer, amount, user, cash_account=None,
         related_order=order,
         related_customer=customer,
         notes=notes,
+        created_by=user,
+    )
+
+
+@transaction.atomic
+def record_order_sale_payment(*, order, user, cash_account=None, notes=''):
+    from orders.models import Order
+
+    order = Order.objects.select_for_update().select_related('customer').get(pk=order.pk)
+    target_amount = Decimal(str(order.total or 0))
+    if target_amount <= 0:
+        return None
+
+    already_recorded = PaymentTransaction.objects.filter(
+        related_order=order,
+        transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+        direction=PaymentTransaction.DIRECTION_IN,
+    ).aggregate(v=Sum('amount'))['v'] or Decimal('0')
+    amount_to_record = target_amount - already_recorded
+    if amount_to_record <= 0:
+        if order.paid_amount < target_amount or order.remaining_amount != 0 or order.payment_status != Order.PAYMENT_PAID:
+            order.paid_amount = target_amount
+            order.remaining_amount = Decimal('0')
+            order.payment_status = Order.PAYMENT_PAID
+            order.save(update_fields=['paid_amount', 'remaining_amount', 'payment_status'])
+        return None
+
+    tx = record_transaction(
+        transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+        direction=PaymentTransaction.DIRECTION_IN,
+        amount=amount_to_record,
+        cash_account=cash_account,
+        related_order=order,
+        related_customer=order.customer,
+        notes=notes or f'قيمة بيع تلقائية للطلب {order.order_number}',
+        created_by=user,
+    )
+    order.paid_amount = target_amount
+    order.remaining_amount = Decimal('0')
+    order.payment_status = Order.PAYMENT_PAID
+    order.save(update_fields=['paid_amount', 'remaining_amount', 'payment_status'])
+    return tx
+
+
+@transaction.atomic
+def record_order_refund(*, order, user, cash_account=None, amount=None, notes=''):
+    order = order.__class__.objects.select_for_update().select_related('customer').get(pk=order.pk)
+    incoming = PaymentTransaction.objects.filter(
+        related_order=order,
+        transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+        direction=PaymentTransaction.DIRECTION_IN,
+    ).aggregate(v=Sum('amount'))['v'] or Decimal('0')
+    outgoing = PaymentTransaction.objects.filter(
+        related_order=order,
+        transaction_type=PaymentTransaction.TYPE_REFUND,
+        direction=PaymentTransaction.DIRECTION_OUT,
+    ).aggregate(v=Sum('amount'))['v'] or Decimal('0')
+    refundable = incoming - outgoing
+    amount_to_refund = Decimal(str(amount)) if amount is not None else refundable
+    amount_to_refund = min(amount_to_refund, refundable)
+    if amount_to_refund <= 0:
+        return None
+    return record_transaction(
+        transaction_type=PaymentTransaction.TYPE_REFUND,
+        direction=PaymentTransaction.DIRECTION_OUT,
+        amount=amount_to_refund,
+        cash_account=cash_account,
+        related_order=order,
+        related_customer=order.customer,
+        notes=notes or f'رد تلقائي لإلغاء الطلب {order.order_number}',
         created_by=user,
     )
 

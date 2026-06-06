@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
 
 from accounts.models import User
 from customers.models import Customer
@@ -147,6 +148,111 @@ class OrderStockServiceTests(TestCase):
         self.assertEqual(Stock.objects.get(warehouse=self.warehouse, variant=self.variant).quantity, 3)
         self.assertEqual(Stock.objects.get(warehouse=second_warehouse, variant=self.variant).quantity, 2)
         self.assertEqual(order.warehouse, self.warehouse)
+
+    def test_cancel_paid_order_refunds_cash_automatically(self):
+        cash = CashAccount.get_default()
+        order = create_order(
+            order_data={
+                'order_type': Order.TYPE_B2C,
+                'customer': self.customer,
+                'warehouse': self.warehouse,
+                'payment_method': Order.METHOD_CASH,
+            },
+            items=[{
+                'variant': self.variant,
+                'warehouse': self.warehouse,
+                'quantity': 1,
+                'unit_price': Decimal('300.00'),
+            }],
+            user=self.user,
+            confirm=True,
+        )
+        cash.refresh_from_db()
+        self.assertEqual(cash.balance, Decimal('300.00'))
+
+        cancel_order(order=order, user=self.user)
+        cash.refresh_from_db()
+
+        self.assertEqual(cash.balance, Decimal('0.00'))
+        self.assertTrue(PaymentTransaction.objects.filter(
+            related_order=order,
+            transaction_type=PaymentTransaction.TYPE_REFUND,
+            amount=Decimal('300.00'),
+        ).exists())
+
+
+class OrderSalesRepProductVisibilityTests(TestCase):
+    def setUp(self):
+        self.sales = User.objects.create_user(username='rep-order', password='pass', role=User.ROLE_SALES)
+        self.manager = User.objects.create_user(username='manager-order', password='pass', role=User.ROLE_MANAGER)
+        self.rep_warehouse = Warehouse.objects.create(
+            name='Rep Stock',
+            warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
+            assigned_user=self.sales,
+        )
+        self.main_warehouse = Warehouse.objects.create(name='Main Stock', warehouse_type=Warehouse.TYPE_MAIN)
+        self.other_rep_warehouse = Warehouse.objects.create(
+            name='Other Rep Stock',
+            warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
+        )
+        self.visible_product = Product.objects.create(name='Visible Shirt', sku='VIS-001')
+        self.hidden_product = Product.objects.create(name='Hidden Shirt', sku='HID-001')
+        self.zero_product = Product.objects.create(name='Zero Shirt', sku='ZERO-001')
+        self.visible_variant = ProductVariant.objects.create(
+            product=self.visible_product,
+            variant_sku='VIS-001-BLK-M',
+            sale_price=Decimal('300.00'),
+        )
+        self.hidden_variant = ProductVariant.objects.create(
+            product=self.hidden_product,
+            variant_sku='HID-001-BLK-M',
+            sale_price=Decimal('300.00'),
+        )
+        self.zero_variant = ProductVariant.objects.create(
+            product=self.zero_product,
+            variant_sku='ZERO-001-BLK-M',
+            sale_price=Decimal('300.00'),
+        )
+        self.same_product_hidden_variant = ProductVariant.objects.create(
+            product=self.visible_product,
+            variant_sku='VIS-001-WHT-L',
+            sale_price=Decimal('300.00'),
+        )
+        Stock.objects.create(warehouse=self.rep_warehouse, variant=self.visible_variant, quantity=4, min_quantity=1)
+        Stock.objects.create(warehouse=self.main_warehouse, variant=self.hidden_variant, quantity=8, min_quantity=1)
+        Stock.objects.create(warehouse=self.rep_warehouse, variant=self.zero_variant, quantity=0, min_quantity=1)
+        Stock.objects.create(warehouse=self.other_rep_warehouse, variant=self.same_product_hidden_variant, quantity=5, min_quantity=1)
+
+    def test_sales_rep_product_search_only_returns_products_in_their_stock(self):
+        self.client.force_login(self.sales)
+
+        response = self.client.get(reverse('orders:ajax_search_products'), {'q': 'Shirt'})
+        product_ids = {row['id'] for row in response.json()['data']}
+
+        self.assertEqual(product_ids, {self.visible_product.id})
+
+    def test_sales_rep_variants_only_returns_variants_in_their_stock(self):
+        self.client.force_login(self.sales)
+
+        response = self.client.get(reverse('orders:ajax_get_product_variants', args=[self.visible_product.id]))
+        variant_ids = {row['id'] for row in response.json()['data']}
+
+        self.assertEqual(variant_ids, {self.visible_variant.id})
+
+    def test_sales_rep_cannot_fetch_price_for_unavailable_variant(self):
+        self.client.force_login(self.sales)
+
+        response = self.client.get(reverse('orders:ajax_get_variant_price', args=[self.hidden_variant.id]))
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_manager_product_search_is_not_restricted_to_rep_stock(self):
+        self.client.force_login(self.manager)
+
+        response = self.client.get(reverse('orders:ajax_search_products'), {'q': 'Shirt'})
+        product_ids = {row['id'] for row in response.json()['data']}
+
+        self.assertEqual(product_ids, {self.visible_product.id, self.hidden_product.id, self.zero_product.id})
 
 
 class OrderDiscountPolicyTests(TestCase):

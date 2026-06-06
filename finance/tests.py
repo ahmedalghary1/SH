@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
 
 from accounts.models import User
 from customers.models import Customer
@@ -61,3 +62,32 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(self.cash.balance, Decimal('700.00'))
         self.assertEqual(self.bank.balance, Decimal('300.00'))
         self.assertEqual(PaymentTransaction.objects.filter(transaction_type=PaymentTransaction.TYPE_TRANSFER).count(), 2)
+
+    def test_cash_account_detail_shows_incoming_and_outgoing_transactions(self):
+        self.client.force_login(self.user)
+        collect_order_payment(order=self.order, amount=Decimal('200.00'), cash_account=self.cash, user=self.user)
+        add_expense(amount=Decimal('150.00'), cash_account=self.cash, user=self.user, notes='Office rent')
+
+        response = self.client.get(reverse('finance:account_detail', kwargs={'pk': self.cash.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'الحركات المالية الداخلة والخارجة')
+        self.assertContains(response, 'تحصيل من عميل')
+        self.assertContains(response, 'مصروف')
+        self.assertContains(response, 'إجمالي الداخل')
+        self.assertContains(response, 'إجمالي الخارج')
+        self.assertNotContains(response, reverse('finance:collection_create'))
+
+    def test_cash_account_detail_filters_transactions_by_direction(self):
+        self.client.force_login(self.user)
+        collect_order_payment(order=self.order, amount=Decimal('200.00'), cash_account=self.cash, user=self.user)
+        add_expense(amount=Decimal('150.00'), cash_account=self.cash, user=self.user, notes='Office rent')
+
+        response = self.client.get(reverse('finance:account_detail', kwargs={'pk': self.cash.pk}), data={
+            'direction': PaymentTransaction.DIRECTION_OUT,
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'مصروف')
+        self.assertNotContains(response, self.order.order_number)
+        self.assertTrue(all(tx.direction == PaymentTransaction.DIRECTION_OUT for tx in response.context['transactions']))

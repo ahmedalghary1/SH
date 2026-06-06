@@ -29,6 +29,35 @@ from .services import (
 )
 
 
+def _is_restricted_sales_user(user):
+    return user.role == 'sales' and not user.is_superuser
+
+
+def _available_variants_for_user(user):
+    qs = ProductVariant.objects.filter(is_active=True)
+    if _is_restricted_sales_user(user):
+        qs = qs.filter(
+            stock__quantity__gt=0,
+            stock__warehouse__is_active=True,
+            stock__warehouse__assigned_user=user,
+            stock__warehouse__warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
+        ).distinct()
+    return qs
+
+
+def _available_products_for_user(user):
+    qs = Product.objects.filter(is_active=True)
+    if _is_restricted_sales_user(user):
+        qs = qs.filter(
+            variants__is_active=True,
+            variants__stock__quantity__gt=0,
+            variants__stock__warehouse__is_active=True,
+            variants__stock__warehouse__assigned_user=user,
+            variants__stock__warehouse__warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
+        ).distinct()
+    return qs
+
+
 class OrderListView(RoleRequiredMixin, ListView):
     allowed_roles = ('manager', 'sales', 'warehouse')
     model = Order
@@ -70,12 +99,21 @@ class OrderCreateView(SalesRequiredMixin, FormView):
             posted_items = json.loads(raw_items)
             items = []
             for posted in posted_items:
-                variant = ProductVariant.objects.select_related('product').get(pk=posted['variant_id'], is_active=True)
+                variant = _available_variants_for_user(self.request.user).select_related('product').get(pk=posted['variant_id'])
                 warehouse = self.get_item_warehouse(posted['warehouse_id'])
+                quantity = int(posted['quantity'])
+                if _is_restricted_sales_user(self.request.user):
+                    available_stock = Stock.objects.filter(
+                        warehouse=warehouse,
+                        variant=variant,
+                        quantity__gte=quantity,
+                    ).exists()
+                    if not available_stock:
+                        raise ValidationError('الكمية غير متاحة في عهدة المندوب')
                 items.append({
                     'variant': variant,
                     'warehouse': warehouse,
-                    'quantity': int(posted['quantity']),
+                    'quantity': quantity,
                     'unit_price': Decimal(str(posted.get('unit_price', 0))),
                     'discount_amount': Decimal(str(posted.get('discount_amount', posted.get('discount', 0)))),
                     'discount_percentage': Decimal(str(posted.get('discount_percentage', 0))),
@@ -83,7 +121,7 @@ class OrderCreateView(SalesRequiredMixin, FormView):
             confirm = self.request.POST.get('action') == 'confirm'
             order = create_order(order_data=form.cleaned_data, items=items, user=self.request.user, confirm=confirm)
             if confirm:
-                invoice = generate_invoice(order)
+                invoice = generate_invoice(order, user=self.request.user)
                 messages.success(self.request, 'تم حفظ الفاتورة وخصم الكمية من المخزون')
                 return redirect('invoices:detail', pk=invoice.pk)
             messages.success(self.request, 'تم حفظ الطلب' + (' وتأكيده' if confirm else ' كمسودة'))
@@ -171,7 +209,7 @@ class OrderStatusUpdateView(RoleRequiredMixin, View):
 @sales_required
 def ajax_search_products(request):
     q = request.GET.get('q', '').strip()
-    qs = Product.objects.filter(is_active=True)
+    qs = _available_products_for_user(request.user)
     if q:
         qs = qs.filter(Q(name__icontains=q) | Q(sku__icontains=q) | Q(variants__variant_sku__icontains=q)).distinct()
     data = [{'id': p.id, 'name': p.name, 'sku': p.sku} for p in qs[:10]]
@@ -181,7 +219,7 @@ def ajax_search_products(request):
 @require_GET
 @sales_required
 def ajax_get_product_variants(request, product_id):
-    variants = ProductVariant.objects.filter(product_id=product_id, is_active=True).select_related('color', 'size')
+    variants = _available_variants_for_user(request.user).filter(product_id=product_id).select_related('color', 'size')
     data = [{'id': v.id, 'sku': v.variant_sku, 'color': v.color.name if v.color else '', 'size': v.size.name if v.size else ''} for v in variants]
     return JsonResponse({'success': True, 'message': 'تم جلب المتغيرات', 'data': data})
 
@@ -216,7 +254,7 @@ def ajax_get_variant_stock(request, variant_id):
 def ajax_get_variant_price(request, variant_id):
     order_type = request.GET.get('order_type', Order.TYPE_B2C)
     customer_id = request.GET.get('customer_id')
-    variant = get_object_or_404(ProductVariant.objects.select_related('product'), pk=variant_id)
+    variant = get_object_or_404(_available_variants_for_user(request.user).select_related('product'), pk=variant_id)
     customer = Customer.objects.filter(pk=customer_id).first() if customer_id else None
     price = get_price_for_customer(variant, customer=customer, order_type=order_type)
     return JsonResponse({'success': True, 'message': 'تم جلب السعر', 'data': {'price': str(price)}})
@@ -251,7 +289,7 @@ def ajax_calculate_order_totals(request):
     discount = Decimal('0')
     try:
         for item in items:
-            variant = ProductVariant.objects.select_related('product').get(pk=item.get('variant_id'), is_active=True)
+            variant = _available_variants_for_user(request.user).select_related('product').get(pk=item.get('variant_id'))
             quantity = Decimal(str(item.get('quantity', 0)))
             pricing = prepare_order_item_pricing(
                 variant=variant,

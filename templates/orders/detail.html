@@ -39,7 +39,11 @@
     {% endif %}
     {% if order.status == 'draft' %}<form method="post" action="{% url 'orders:confirm' order.pk %}">{% csrf_token %}<button class="btn btn-accent">تأكيد وخصم المخزون</button></form>{% endif %}
     <form method="post" action="{% url 'orders:cancel' order.pk %}" data-confirm="إلغاء الطلب؟">{% csrf_token %}<button class="btn btn-danger">إلغاء</button></form>
-    <form method="post" action="{% url 'orders:return' order.pk %}" data-confirm="تسجيل مرتجع؟">{% csrf_token %}<button class="btn btn-secondary">مرتجع</button></form>
+    {% if order.invoice %}
+        <a class="btn btn-secondary" href="{% url 'returns:create' %}?invoice_number={{ order.invoice.invoice_number }}">مرتجع</a>
+    {% else %}
+        <a class="btn btn-secondary" href="{% url 'returns:create' %}?invoice_number={{ order.order_number }}">مرتجع</a>
+    {% endif %}
     {% if not order.invoice %}<form method="post" action="{% url 'invoices:generate' order.pk %}">{% csrf_token %}<button class="btn btn-primary">إصدار فاتورة</button></form>{% else %}<a class="btn btn-primary" href="{% url 'invoices:detail' order.invoice.pk %}">عرض الفاتورة</a>{% endif %}
 </div>
 {% endblock %}

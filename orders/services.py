@@ -238,15 +238,13 @@ def create_order(*, order_data, items, user, confirm=False):
     order.remaining_amount = Decimal('0')
     order.payment_status = Order.PAYMENT_PAID
     order.save(update_fields=['paid_amount', 'remaining_amount', 'payment_status'])
-    if order.paid_amount > 0:
-        from finance.services import record_customer_payment
+    if order.total > 0:
+        from finance.services import record_order_sale_payment
 
-        record_customer_payment(
+        record_order_sale_payment(
             order=order,
-            customer=order.customer,
-            amount=order.paid_amount,
             user=user,
-            notes=f'Initial payment for order {order.order_number}',
+            notes=f'قيمة بيع تلقائية للطلب {order.order_number}',
         )
     if confirm:
         order = confirm_order(order=order, user=user)
@@ -297,6 +295,9 @@ def cancel_order(*, order, user):
             user=user,
             note=f'إلغاء الطلب {order.order_number}',
         )
+    from finance.services import record_order_refund
+
+    record_order_refund(order=order, user=user, notes=f'رد تلقائي لإلغاء الطلب {order.order_number}')
     order.status = Order.STATUS_CANCELLED
     order.save(update_fields=['status'])
     return order

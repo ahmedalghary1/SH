@@ -155,7 +155,7 @@ class GenerateInvoiceView(SalesRequiredMixin, View):
     def post(self, request, order_pk):
         order = get_object_or_404(Order, pk=order_pk)
         try:
-            invoice = generate_invoice(order)
+            invoice = generate_invoice(order, user=request.user)
             messages.success(request, 'تم إصدار الفاتورة')
             return redirect('invoices:detail', pk=invoice.pk)
         except ValidationError as exc:

@@ -2,15 +2,18 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
 
 from accounts.models import User
 from customers.models import Customer
 from finance.models import CashAccount, PaymentTransaction
+from invoices.models import Invoice
 from inventory.models import Stock, StockMovement, Warehouse
 from orders.models import Order, OrderItem
 from products.models import Product, ProductVariant
 
 from .models import SalesReturn, SalesReturnItem
+from .forms import SalesReturnCreateForm
 from .services import (
     add_exchange_item,
     add_return_item,
@@ -60,6 +63,7 @@ class SalesReturnServiceTests(TestCase):
             cost_total=Decimal('360.00'),
             profit_total=Decimal('540.00'),
         )
+        self.invoice = Invoice.objects.create(order=self.order, invoice_number='INV-RET-001')
         Stock.objects.create(warehouse=self.warehouse, variant=self.variant, quantity=0, min_quantity=0)
         Stock.objects.create(warehouse=self.warehouse, variant=self.exchange_variant, quantity=5, min_quantity=0)
         self.cash = CashAccount.objects.create(name='Main Cash', balance=Decimal('2000.00'))
@@ -132,6 +136,29 @@ class SalesReturnServiceTests(TestCase):
 
         self.assertEqual(self.order.status, Order.STATUS_RETURNED)
 
+    def test_complete_return_without_cash_account_deducts_default_cash(self):
+        default_cash = CashAccount.get_default()
+        default_cash.balance = Decimal('1000.00')
+        default_cash.save(update_fields=['balance'])
+        sales_return = create_sales_return(
+            order=self.order,
+            return_type=SalesReturn.TYPE_PARTIAL_RETURN,
+            reason='Auto refund',
+            user=self.user,
+        )
+        add_return_item(sales_return=sales_return, original_order_item=self.order_item, quantity=1)
+        approve_sales_return(sales_return=sales_return, user=self.user)
+
+        complete_sales_return(sales_return=sales_return, user=self.user)
+        default_cash.refresh_from_db()
+
+        self.assertEqual(default_cash.balance, Decimal('700.00'))
+        self.assertTrue(PaymentTransaction.objects.filter(
+            related_order=self.order,
+            transaction_type=PaymentTransaction.TYPE_REFUND,
+            amount=Decimal('300.00'),
+        ).exists())
+
     def test_exchange_with_company_favor_records_collection_and_moves_stock(self):
         sales_return = create_sales_return(order=self.order, return_type=SalesReturn.TYPE_EXCHANGE, reason='Exchange', user=self.user)
         add_return_item(sales_return=sales_return, original_order_item=self.order_item, quantity=1)
@@ -185,3 +212,41 @@ class SalesReturnServiceTests(TestCase):
 
         self.assertEqual(self.cash.balance, Decimal('1950.00'))
         self.assertTrue(PaymentTransaction.objects.filter(transaction_type=PaymentTransaction.TYPE_REFUND, amount=Decimal('50.00')).exists())
+
+    def test_create_form_finds_order_by_invoice_number(self):
+        form = SalesReturnCreateForm(
+            data={'invoice_number': self.invoice.invoice_number, 'return_type': SalesReturn.TYPE_PARTIAL_RETURN},
+            user=self.user,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.order, self.order)
+
+    def test_create_view_displays_invoice_items_after_search(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('returns:create'), data={'invoice_number': self.invoice.invoice_number})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.order.order_number)
+        self.assertContains(response, self.variant.product.name)
+        self.assertContains(response, f'selected_{self.order_item.pk}')
+
+    def test_create_view_records_selected_invoice_items(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('returns:create'), data={
+            'invoice_number': self.invoice.invoice_number,
+            'return_type': SalesReturn.TYPE_PARTIAL_RETURN,
+            'reason': 'Size issue',
+            f'selected_{self.order_item.pk}': 'on',
+            f'quantity_{self.order_item.pk}': '2',
+            f'condition_{self.order_item.pk}': SalesReturnItem.CONDITION_GOOD,
+            f'return_to_stock_{self.order_item.pk}': 'on',
+        })
+
+        sales_return = SalesReturn.objects.latest('pk')
+        self.assertRedirects(response, reverse('returns:detail', kwargs={'pk': sales_return.pk}))
+        self.assertEqual(sales_return.order, self.order)
+        self.assertEqual(sales_return.items.count(), 1)
+        self.assertEqual(sales_return.items.first().quantity, 2)
