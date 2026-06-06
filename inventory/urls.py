@@ -16,4 +16,5 @@ urlpatterns = [
     path('movements/representative-return/', views.RepresentativeReturnView.as_view(), name='representative_return'),
     path('movements/adjustment/', views.StockAdjustmentView.as_view(), name='adjustment'),
     path('ajax/check-stock/', views.ajax_check_stock, name='ajax_check_stock'),
+    path('ajax/variant-warehouses/', views.ajax_variant_warehouses, name='ajax_variant_warehouses'),
 ]

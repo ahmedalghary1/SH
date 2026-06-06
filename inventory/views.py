@@ -125,6 +125,14 @@ class StockOutView(WarehouseRequiredMixin, FormView):
     form_class = StockMovementForm
     success_url = reverse_lazy('inventory:movements')
 
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        form.fields['variant'].widget.attrs.update({
+            'data-stock-filter-target': 'id_warehouse',
+            'data-stock-filter-scope': 'all',
+        })
+        return form
+
     def form_valid(self, form):
         try:
             stock_out(user=self.request.user, **form.cleaned_data)
@@ -231,5 +239,35 @@ def ajax_check_stock(request):
     stock = Stock.objects.filter(variant_id=variant_id, warehouse_id=warehouse_id).first()
     quantity = stock.quantity if stock else 0
     return JsonResponse({'success': True, 'message': 'تم جلب الكمية', 'data': {'quantity': quantity}})
+
+@require_GET
+@role_required('manager', 'sales', 'warehouse')
+def ajax_variant_warehouses(request):
+    variant_id = request.GET.get('variant_id')
+    scope = request.GET.get('scope', 'all')
+    stocks = Stock.objects.filter(
+        variant_id=variant_id,
+        quantity__gt=0,
+        warehouse__is_active=True,
+    ).select_related('warehouse')
+    if scope == 'non_representative':
+        stocks = stocks.exclude(warehouse__warehouse_type=Warehouse.TYPE_REPRESENTATIVE)
+    elif scope == 'representative':
+        stocks = stocks.filter(warehouse__warehouse_type=Warehouse.TYPE_REPRESENTATIVE)
+    if request.user.role == 'sales' and not request.user.is_superuser:
+        stocks = stocks.filter(
+            warehouse__assigned_user=request.user,
+            warehouse__warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
+        )
+    data = [
+        {
+            'warehouse_id': stock.warehouse_id,
+            'warehouse_name': stock.warehouse.name,
+            'quantity': stock.quantity,
+        }
+        for stock in stocks.order_by('warehouse__name')
+    ]
+    return JsonResponse({'success': True, 'message': 'تم جلب المخازن', 'data': {'warehouses': data}})
+
 
 # Create your views here.

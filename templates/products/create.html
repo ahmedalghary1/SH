@@ -25,7 +25,6 @@
 
     <label>
         <span>{{ product_form.category.label }}</span>
-        <input class="select-filter-input" type="search" placeholder="اكتب للبحث في التصنيفات" data-select-filter="id_category">
         {{ product_form.category }}
         {% if product_form.category.errors %}<small class="error">{{ product_form.category.errors|join:', ' }}</small>{% endif %}
     </label>
@@ -56,21 +55,18 @@
 
     <label>
         <span>{{ variant_form.color.label }}</span>
-        <input class="select-filter-input" type="search" placeholder="اكتب للبحث في الألوان" data-select-filter="id_color">
         {{ variant_form.color }}
         {% if variant_form.color.errors %}<small class="error">{{ variant_form.color.errors|join:', ' }}</small>{% endif %}
     </label>
 
     <label>
         <span>{{ variant_form.size.label }}</span>
-        <input class="select-filter-input" type="search" placeholder="اكتب للبحث في المقاسات" data-select-filter="id_size">
         {{ variant_form.size }}
         {% if variant_form.size.errors %}<small class="error">{{ variant_form.size.errors|join:', ' }}</small>{% endif %}
     </label>
 
     <label>
         <span>{{ stock_form.warehouse.label }}</span>
-        <input class="select-filter-input" type="search" placeholder="اكتب للبحث في المخازن" data-select-filter="id_warehouse">
         {{ stock_form.warehouse }}
         {% if stock_form.warehouse.errors %}<small class="error">{{ stock_form.warehouse.errors|join:', ' }}</small>{% endif %}
     </label>
@@ -86,25 +82,4 @@
         <button class="btn btn-light" type="button" onclick="history.back()">رجوع</button>
     </div>
 </form>
-{% endblock %}
-{% block extra_js %}
-<script>
-document.querySelectorAll("[data-select-filter]").forEach((input) => {
-    const select = document.getElementById(input.dataset.selectFilter);
-    if (!select) return;
-    const options = Array.from(select.options);
-    input.addEventListener("input", () => {
-        const term = input.value.trim().toLowerCase();
-        options.forEach((option) => {
-            const matches = !term || option.textContent.toLowerCase().includes(term);
-            option.hidden = !matches;
-        });
-        const selected = select.options[select.selectedIndex];
-        if (selected && selected.hidden) {
-            const firstVisible = options.find((option) => !option.hidden && option.value);
-            if (firstVisible) select.value = firstVisible.value;
-        }
-    });
-});
-</script>
 {% endblock %}

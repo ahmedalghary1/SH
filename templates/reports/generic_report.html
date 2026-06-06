@@ -4,9 +4,9 @@
 <div class="page-head">
     <h1>{{ title }}</h1>
     <div class="button-row">
-        <a class="btn btn-light" href="{% url 'reports:sales_export' %}?{{ request.GET.urlencode }}">Export sales CSV</a>
+        <a class="btn btn-light" href="{% url 'reports:sales_export' %}?{{ request.GET.urlencode }}">تصدير CSV للمبيعات</a>
         {% if request.user.is_manager %}
-            <a class="btn btn-light" href="{% url 'reports:profitability_export' %}?{{ request.GET.urlencode }}">Export profit CSV</a>
+            <a class="btn btn-light" href="{% url 'reports:profitability_export' %}?{{ request.GET.urlencode }}">تصدير CSV للأرباح</a>
         {% endif %}
     </div>
 </div>
@@ -14,26 +14,26 @@
 <section class="card">
     <form method="get" class="filters-form">
         <div class="form-grid">
-            <div class="form-group">
-                <label>From</label>
-                <input type="date" name="date_from" value="{{ filters.date_from }}">
-            </div>
-            <div class="form-group">
-                <label>To</label>
-                <input type="date" name="date_to" value="{{ filters.date_to }}">
-            </div>
-            <div class="form-group">
-                <label>Status</label>
-                <input type="text" name="status" value="{{ filters.status }}" placeholder="status">
-            </div>
-            <div class="form-group">
-                <label>Payment</label>
-                <input type="text" name="payment_status" value="{{ filters.payment_status }}" placeholder="payment_status">
-            </div>
+                <div class="form-group">
+                    <label>من</label>
+                    <input type="date" name="date_from" value="{{ filters.date_from }}">
+                </div>
+                <div class="form-group">
+                    <label>إلى</label>
+                    <input type="date" name="date_to" value="{{ filters.date_to }}">
+                </div>
+                <div class="form-group">
+                    <label>الحالة</label>
+                    <input type="text" name="status" value="{{ filters.status }}" placeholder="الحالة">
+                </div>
+                <div class="form-group">
+                    <label>حالة الدفع</label>
+                    <input type="text" name="payment_status" value="{{ filters.payment_status }}" placeholder="حالة الدفع">
+                </div>
         </div>
         <div class="button-row">
-            <button class="btn btn-accent" type="submit">Apply</button>
-            <a class="btn btn-light" href="{{ request.path }}">Reset</a>
+            <button class="btn btn-accent" type="submit">تطبيق</button>
+            <a class="btn btn-light" href="{{ request.path }}">إعادة تعيين</a>
         </div>
     </form>
 </section>
@@ -73,7 +73,7 @@
     </div>
 </section>
 {% else %}
-<section class="card"><p>No rows found.</p></section>
+<section class="card"><p>لا توجد صفوف.</p></section>
 {% endif %}
 
 {% if prepared_sections %}
@@ -102,7 +102,7 @@
                     </table>
                 </div>
             {% else %}
-                <p>No rows found.</p>
+                <p>لا توجد صفوف.</p>
             {% endif %}
         </section>
     {% endfor %}

@@ -47,12 +47,28 @@ class StockTransferForm(forms.Form):
     note = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظة')
 
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['variant'].widget.attrs.update({
+            'data-stock-filter-target': 'id_from_warehouse',
+            'data-stock-filter-scope': 'all',
+        })
+
+
 class RepresentativeIssueForm(forms.Form):
     representative = forms.ModelChoiceField(queryset=User.objects.filter(role=User.ROLE_SALES, is_active=True), label='المندوب')
     variant = forms.ModelChoiceField(queryset=ProductVariant.objects.select_related('product', 'color', 'size'), label='المنتج')
     from_warehouse = forms.ModelChoiceField(queryset=Warehouse.objects.filter(is_active=True).exclude(warehouse_type=Warehouse.TYPE_REPRESENTATIVE), label='من مخزن')
     quantity = forms.IntegerField(min_value=1, label='الكمية')
     note = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظة')
+
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['variant'].widget.attrs.update({
+            'data-stock-filter-target': 'id_from_warehouse',
+            'data-stock-filter-scope': 'non_representative',
+        })
 
 
 class RepresentativeReturnForm(forms.Form):

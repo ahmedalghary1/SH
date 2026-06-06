@@ -12,18 +12,15 @@
         {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
         <label><span>نوع الطلب</span>{{ form.order_type }}</label>
         <label><span>العميل</span>{{ form.customer }}</label>
-        <label><span>بحث عن العميل</span><input id="customer-search" type="search" placeholder="اكتب اسم العميل أو رقم الهاتف"></label>
-        <div id="customer-results" class="results span-2"></div>
         <button class="btn btn-light" type="button" data-open-modal="customer-modal">إضافة عميل سريع</button>
         <label><span>طريقة الدفع</span>{{ form.payment_method }}</label>
-        <label class="wallet-field"><span>رقم محفظة العميل</span>{{ form.wallet_from_number }}</label>
-        <label class="wallet-field"><span>رقم محفظة الشركة</span>{{ form.wallet_to_number }}</label>
+        <label class="wallet-field" hidden><span>رقم محفظة العميل</span>{{ form.wallet_from_number }}</label>
+        <label class="wallet-field" hidden><span>رقم محفظة الشركة</span>{{ form.wallet_to_number }}</label>
         <label><span>الخصم بالنسبة</span>{{ form.discount_percentage }}</label>
     </section>
     <section class="card form-grid">
         <h2>إضافة المنتجات</h2>
         <label class="span-2"><span>بحث المنتج</span><input id="product-search" type="search" placeholder="اكتب اسم المنتج أو كوده"></label>
-        <div id="product-results" class="results span-2"></div>
         <label><span>اللون والمقاس</span><select id="variant-select"><option value="">اختر اللون والمقاس</option></select></label>
         <label><span>المخزن</span><select id="item-warehouse"><option value="">اختر المنتج أولا</option></select></label>
         <label><span>المتاح</span><input id="available-stock" type="number" readonly></label>

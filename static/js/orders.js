@@ -3,7 +3,6 @@
     if (!form) return;
 
     const searchInput = document.getElementById("product-search");
-    const resultsBox = document.getElementById("product-results");
     const variantSelect = document.getElementById("variant-select");
     const itemWarehouse = document.getElementById("item-warehouse");
     const stockInput = document.getElementById("available-stock");
@@ -25,6 +24,26 @@
     const walletInputs = [document.getElementById("id_wallet_from_number"), document.getElementById("id_wallet_to_number")];
     const items = [];
     let selectedProduct = null;
+    let selectedProductLabel = "";
+    const productCombo = document.createElement("div");
+    const productToggle = document.createElement("button");
+    const resultsBox = document.createElement("div");
+    productCombo.className = "combo-field";
+    productToggle.type = "button";
+    productToggle.className = "combo-toggle";
+    productToggle.setAttribute("aria-label", "فتح قائمة المنتجات");
+    resultsBox.id = "product-results";
+    resultsBox.className = "combo-list";
+    resultsBox.setAttribute("role", "listbox");
+    searchInput.parentNode.insertBefore(productCombo, searchInput);
+    productCombo.appendChild(searchInput);
+    productCombo.appendChild(productToggle);
+    productCombo.appendChild(resultsBox);
+    searchInput.classList.add("combo-input");
+    searchInput.autocomplete = "off";
+    searchInput.setAttribute("role", "combobox");
+    searchInput.setAttribute("aria-expanded", "false");
+    searchInput.setAttribute("aria-haspopup", "listbox");
 
     function money(value) {
         return Number(value || 0).toFixed(2);
@@ -46,6 +65,7 @@
         const isWallet = paymentMethod?.value === "wallet_transfer";
         walletFields.forEach((field) => {
             field.hidden = !isWallet;
+            field.classList.toggle("is-hidden", !isWallet);
         });
         walletInputs.forEach((input) => {
             if (!input) return;
@@ -110,24 +130,62 @@
         updateLineTotal();
     }
 
+    function openProductResults() {
+        if (typeof closeAllCombos === "function") closeAllCombos(productCombo);
+        productCombo.classList.add("is-open");
+        searchInput.setAttribute("aria-expanded", "true");
+    }
+
+    function closeProductResults() {
+        productCombo.classList.remove("is-open");
+        searchInput.setAttribute("aria-expanded", "false");
+    }
+
+    function loadProductResults() {
+        searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
+    searchInput.addEventListener("focus", loadProductResults);
+    productToggle.addEventListener("click", () => {
+        if (productCombo.classList.contains("is-open")) {
+            closeProductResults();
+            return;
+        }
+        searchInput.focus({ preventScroll: true });
+        loadProductResults();
+    });
+    resultsBox.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+    });
+
     searchInput.addEventListener("input", async () => {
         const q = searchInput.value.trim();
-        if (q.length < 2) {
-            resultsBox.classList.remove("is-open");
-            return;
+        if (selectedProduct && searchInput.value !== selectedProductLabel) {
+            selectedProduct = null;
+            selectedProductLabel = "";
+            variantSelect.innerHTML = '<option value="">اختر المنتج أولا</option>';
+            resetProductMeta();
         }
         const data = await fetchJson(`/orders/ajax/search-products/?q=${encodeURIComponent(q)}`);
         resultsBox.innerHTML = "";
+        if (!data.data.length) {
+            const empty = document.createElement("div");
+            empty.className = "combo-empty";
+            empty.textContent = "لا توجد نتائج";
+            resultsBox.appendChild(empty);
+            openProductResults();
+            return;
+        }
         data.data.forEach((product) => {
             const button = document.createElement("button");
             button.type = "button";
-            button.className = "search-result";
+            button.className = "combo-option search-result";
             button.textContent = `${product.name} - ${product.sku}`;
             button.dataset.id = product.id;
             button.dataset.name = product.name;
             resultsBox.appendChild(button);
         });
-        resultsBox.classList.add("is-open");
+        openProductResults();
     });
 
     resultsBox.addEventListener("click", async (event) => {
@@ -135,7 +193,8 @@
         if (!button) return;
         selectedProduct = { id: button.dataset.id, name: button.dataset.name };
         searchInput.value = button.textContent;
-        resultsBox.classList.remove("is-open");
+        selectedProductLabel = button.textContent;
+        closeProductResults();
         resetProductMeta();
         const data = await fetchJson(`/orders/ajax/products/${selectedProduct.id}/variants/`);
         variantSelect.innerHTML = '<option value="">اختر اللون والمقاس</option>';

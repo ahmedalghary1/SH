@@ -18,6 +18,10 @@ class AssignStockForm(forms.Form):
     sales_rep = forms.ModelChoiceField(queryset=sales_rep_queryset(), label='المندوب')
     product_variant = forms.ModelChoiceField(
         queryset=ProductVariant.objects.filter(is_active=True).select_related('product', 'color', 'size'),
+        widget=forms.Select(attrs={
+            'data-stock-filter-target': 'id_source_warehouse',
+            'data-stock-filter-scope': 'non_representative',
+        }),
         label='الصنف',
     )
     source_warehouse = forms.ModelChoiceField(

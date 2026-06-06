@@ -16,7 +16,7 @@ from . import services
 
 class GenericReportMixin:
     template_name = 'reports/generic_report.html'
-    report_title = 'Report'
+    report_title = 'تقرير'
 
     def get_report(self):
         raise NotImplementedError
@@ -38,7 +38,7 @@ class GenericReportMixin:
 
 class SalesReportView(RoleRequiredMixin, GenericReportMixin, TemplateView):
     allowed_roles = ('manager', 'sales')
-    report_title = 'Sales report'
+    report_title = 'تقرير المبيعات'
 
     def get_report(self):
         return services.sales_report(self.request)
@@ -53,7 +53,7 @@ class SalesReportExportView(RoleRequiredMixin, View):
 
 
 class ProfitabilityReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
-    report_title = 'Profitability report'
+    report_title = 'تقرير الربحية'
 
     def get_report(self):
         return services.profitability_report(self.request)
@@ -67,21 +67,21 @@ class ProfitabilityReportExportView(ManagerRequiredMixin, View):
 
 
 class NetProfitReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
-    report_title = 'Net profit report'
+    report_title = 'تقرير صافي الربح'
 
     def get_report(self):
         return services.net_profit_report(self.request)
 
 
 class CustomerDebtReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
-    report_title = 'Customer debt report'
+    report_title = 'تقرير مديونية العملاء'
 
     def get_report(self):
         return services.customer_debt_report()
 
 
 class InactiveCustomerReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
-    report_title = 'Inactive customer report'
+    report_title = 'تقرير العملاء غير النشطين'
 
     def get_report(self):
         days = int(self.request.GET.get('days') or 90)
@@ -89,7 +89,7 @@ class InactiveCustomerReportView(ManagerRequiredMixin, GenericReportMixin, Templ
 
 
 class DiscountReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
-    report_title = 'Discount report'
+    report_title = 'تقرير الخصومات'
 
     def get_report(self):
         return services.discount_report(self.request)
@@ -97,7 +97,7 @@ class DiscountReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView)
 
 class SalesRepCustodyReportView(RoleRequiredMixin, GenericReportMixin, TemplateView):
     allowed_roles = ('manager', 'sales', 'warehouse')
-    report_title = 'Sales rep custody report'
+    report_title = 'تقرير عهدة المندوبين'
 
     def get_report(self):
         return services.sales_rep_custody_report(self.request)
@@ -105,7 +105,7 @@ class SalesRepCustodyReportView(RoleRequiredMixin, GenericReportMixin, TemplateV
 
 class SalesRepCollectionsReportView(RoleRequiredMixin, GenericReportMixin, TemplateView):
     allowed_roles = ('manager', 'sales')
-    report_title = 'Sales rep collections report'
+    report_title = 'تقرير تحصيلات المندوب'
 
     def get_report(self):
         return services.sales_rep_collections_report(self.request)
@@ -113,14 +113,14 @@ class SalesRepCollectionsReportView(RoleRequiredMixin, GenericReportMixin, Templ
 
 class LowStockReportView(RoleRequiredMixin, GenericReportMixin, TemplateView):
     allowed_roles = ('manager', 'warehouse')
-    report_title = 'Low stock report'
+    report_title = 'تقرير المخزون المنخفض'
 
     def get_report(self):
         return services.low_stock_report()
 
 
 class StaleProductsReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
-    report_title = 'Stale products report'
+    report_title = 'تقرير المنتجات القديمة'
 
     def get_report(self):
         days = int(self.request.GET.get('days') or 90)
@@ -128,21 +128,21 @@ class StaleProductsReportView(ManagerRequiredMixin, GenericReportMixin, Template
 
 
 class ReturnsReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
-    report_title = 'Returns report'
+    report_title = 'تقرير المرتجعات'
 
     def get_report(self):
         return services.returns_report(self.request)
 
 
 class PurchaseReportAdvancedView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
-    report_title = 'Purchase report'
+    report_title = 'تقرير المشتريات'
 
     def get_report(self):
         return services.purchase_report(self.request)
 
 
 class SupplierDuesReportView(ManagerRequiredMixin, GenericReportMixin, TemplateView):
-    report_title = 'Supplier dues report'
+    report_title = 'تقرير مستحقات الموردين'
 
     def get_report(self):
         return services.supplier_dues_report()
@@ -169,8 +169,46 @@ def prepare_table(rows):
     if not rows:
         return {'headers': [], 'rows': []}
     headers = list(rows[0].keys())
+    header_translations = {
+        'order_number': 'رقم الطلب',
+        'date': 'التاريخ',
+        'created_at': 'التاريخ',
+        'customer': 'العميل',
+        'customer__name': 'العميل',
+        'customer__phone': 'هاتف العميل',
+        'employee': 'الموظف',
+        'created_by__username': 'الموظف',
+        'sales_rep__username': 'المندوب',
+        'total': 'الإجمالي',
+        'paid': 'المدفوع',
+        'paid_amount': 'المدفوع',
+        'remaining': 'المتبقي',
+        'remaining_amount': 'المتبقي',
+        'discount': 'الخصم',
+        'status': 'الحالة',
+        'payment_status': 'حالة الدفع',
+        'subtotal': 'المجموع الفرعي',
+        'amount': 'المبلغ',
+        'cash_account__name': 'الحساب النقدي',
+        'notes': 'ملاحظات',
+        'product__name': 'المنتج',
+        'variant__product__name': 'المنتج',
+        'product_variant__product__name': 'المنتج',
+        'quantity': 'الكمية',
+        'qty': 'الكمية',
+        'count': 'الكمية',
+        'count__id': 'الكمية',
+        'month': 'الشهر',
+        'year': 'السنة',
+        'warehouse__name': 'المخزن',
+        'variant_sku': 'SKU',
+        'variant__variant_sku': 'SKU',
+        'barcode': 'الباركود',
+        'company_name': 'اسم الشركة',
+    }
+    translated_headers = [header_translations.get(h, h.replace('__', ' - ').replace('_', ' ').title()) for h in headers]
     return {
-        'headers': headers,
+        'headers': translated_headers,
         'rows': [[row.get(header, '') for header in headers] for row in rows],
     }
 

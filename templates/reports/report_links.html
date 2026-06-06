@@ -1,23 +1,23 @@
 <div class="button-row report-links">
-    <a class="btn btn-light" href="{% url 'reports:sales' %}">Sales</a>
+    <a class="btn btn-light" href="{% url 'reports:sales' %}">المبيعات</a>
     {% if request.user.is_manager %}
-        <a class="btn btn-light" href="{% url 'reports:profitability' %}">Profitability</a>
-        <a class="btn btn-light" href="{% url 'reports:net_profit' %}">Net profit</a>
-        <a class="btn btn-light" href="{% url 'reports:customer_debt' %}">Customer debt</a>
-        <a class="btn btn-light" href="{% url 'reports:inactive_customers' %}">Inactive customers</a>
-        <a class="btn btn-light" href="{% url 'reports:discounts' %}">Discounts</a>
-        <a class="btn btn-light" href="{% url 'reports:stale_products' %}">Stale products</a>
-        <a class="btn btn-light" href="{% url 'reports:returns' %}">Returns</a>
-        <a class="btn btn-light" href="{% url 'reports:purchases' %}">Purchases</a>
-        <a class="btn btn-light" href="{% url 'reports:supplier_dues' %}">Supplier dues</a>
+        <a class="btn btn-light" href="{% url 'reports:profitability' %}">الربحية</a>
+        <a class="btn btn-light" href="{% url 'reports:net_profit' %}">صافي الربح</a>
+        <a class="btn btn-light" href="{% url 'reports:customer_debt' %}">مديونية العملاء</a>
+        <a class="btn btn-light" href="{% url 'reports:inactive_customers' %}">العملاء غير النشطين</a>
+        <a class="btn btn-light" href="{% url 'reports:discounts' %}">الخصومات</a>
+        <a class="btn btn-light" href="{% url 'reports:stale_products' %}">المنتجات القديمة</a>
+        <a class="btn btn-light" href="{% url 'reports:returns' %}">المرتجعات</a>
+        <a class="btn btn-light" href="{% url 'reports:purchases' %}">المشتريات</a>
+        <a class="btn btn-light" href="{% url 'reports:supplier_dues' %}">مستحقات الموردين</a>
     {% endif %}
-    <a class="btn btn-light" href="{% url 'reports:sales_rep_custody' %}">Rep custody</a>
-    <a class="btn btn-light" href="{% url 'reports:sales_rep_collections' %}">Rep collections</a>
-    <a class="btn btn-light" href="{% url 'reports:low_stock' %}">Low stock</a>
-    <a class="btn btn-light" href="{% url 'reports:daily_sales' %}">Daily</a>
-    <a class="btn btn-light" href="{% url 'reports:monthly_sales' %}">Monthly</a>
-    <a class="btn btn-light" href="{% url 'reports:yearly_sales' %}">Yearly</a>
-    <a class="btn btn-light" href="{% url 'reports:inventory' %}">Inventory</a>
-    <a class="btn btn-light" href="{% url 'reports:customers' %}">Customers</a>
-    <a class="btn btn-light" href="{% url 'reports:employees' %}">Employees</a>
+    <a class="btn btn-light" href="{% url 'reports:sales_rep_custody' %}">عهدة المندوبين</a>
+    <a class="btn btn-light" href="{% url 'reports:sales_rep_collections' %}">تحصيلات المندوب</a>
+    <a class="btn btn-light" href="{% url 'reports:low_stock' %}">المخزون منخفض</a>
+    <a class="btn btn-light" href="{% url 'reports:daily_sales' %}">يومي</a>
+    <a class="btn btn-light" href="{% url 'reports:monthly_sales' %}">شهري</a>
+    <a class="btn btn-light" href="{% url 'reports:yearly_sales' %}">سنوي</a>
+    <a class="btn btn-light" href="{% url 'reports:inventory' %}">المخزون</a>
+    <a class="btn btn-light" href="{% url 'reports:customers' %}">العملاء</a>
+    <a class="btn btn-light" href="{% url 'reports:employees' %}">الموظفين</a>
 </div>

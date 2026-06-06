@@ -9,6 +9,7 @@ from inventory.models import Stock, StockMovement, Warehouse
 from products.models import Product, ProductVariant
 
 from .models import PurchaseOrder, Supplier
+from .raw_material import record_raw_material_purchase
 from .services import create_purchase_order, pay_supplier, receive_purchase_order_items
 
 
@@ -120,3 +121,24 @@ class PurchaseServiceTests(TestCase):
 
         self.cash.refresh_from_db()
         self.assertEqual(self.cash.balance, Decimal('10000.00'))
+
+    def test_raw_material_purchase_deducts_default_cash_and_links_supplier(self):
+        default_cash = CashAccount.get_default()
+        default_cash.balance = Decimal('1000.00')
+        default_cash.save(update_fields=['balance'])
+
+        record_raw_material_purchase(
+            raw_name='Cotton Fabric',
+            supplier=self.supplier,
+            amount=Decimal('250.00'),
+            user=self.manager,
+            notes='test buy',
+        )
+        default_cash.refresh_from_db()
+
+        self.assertEqual(default_cash.balance, Decimal('750.00'))
+        self.assertTrue(PaymentTransaction.objects.filter(
+            related_supplier=self.supplier,
+            amount=Decimal('250.00'),
+            notes__icontains='Cotton Fabric',
+        ).exists())

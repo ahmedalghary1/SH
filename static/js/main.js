@@ -37,7 +37,336 @@ function closeModal(modal) {
     }
 }
 
+function getComboText(value, fallback = "") {
+    return String(value || fallback || "").trim();
+}
+
+function closeCombo(combo) {
+    if (!combo) return;
+    combo.classList.remove("is-open");
+    const input = combo.querySelector(".combo-input");
+    input?.setAttribute("aria-expanded", "false");
+}
+
+function closeAllCombos(except = null) {
+    document.querySelectorAll(".combo-field.is-open").forEach((combo) => {
+        if (combo !== except) closeCombo(combo);
+    });
+}
+
+function buildComboOption(label, value, isSelected = false) {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "combo-option";
+    option.textContent = label || value || "-";
+    option.dataset.value = value;
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", String(isSelected));
+    return option;
+}
+
+function enhanceSelect(select) {
+    if (select.dataset.comboReady || select.multiple || select.closest(".combo-field")) return;
+    if (select.hidden || select.disabled && select.options.length <= 1) return;
+
+    select.dataset.comboReady = "true";
+    const combo = document.createElement("div");
+    combo.className = "combo-field";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "combo-input";
+    input.autocomplete = "off";
+    input.disabled = select.disabled;
+    input.required = select.required;
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-expanded", "false");
+    input.setAttribute("aria-haspopup", "listbox");
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "combo-toggle";
+    toggle.disabled = select.disabled;
+    toggle.setAttribute("aria-label", "افتح القائمة");
+
+    const list = document.createElement("div");
+    list.className = "combo-list";
+    list.setAttribute("role", "listbox");
+
+    select.parentNode.insertBefore(combo, select);
+    combo.appendChild(select);
+    combo.appendChild(input);
+    combo.appendChild(toggle);
+    combo.appendChild(list);
+    select.classList.add("combo-source");
+    select.tabIndex = -1;
+
+    function optionData() {
+        return Array.from(select.options).map((option) => ({
+            value: option.value,
+            label: getComboText(option.textContent, option.value),
+            disabled: option.disabled,
+            selected: option.selected,
+        }));
+    }
+
+    function selectedOption() {
+        return select.options[select.selectedIndex] || null;
+    }
+
+    function syncInput() {
+        const selected = selectedOption();
+        const label = selected ? getComboText(selected.textContent, selected.value) : "";
+        input.value = selected && selected.value ? label : "";
+        input.placeholder = selected && !selected.value ? label : "";
+        input.disabled = select.disabled;
+        input.required = select.required;
+        toggle.disabled = select.disabled;
+        combo.classList.toggle("is-disabled", select.disabled);
+    }
+
+    function render(term = input.value) {
+        const query = getComboText(term).toLowerCase();
+        const options = optionData().filter((option) => {
+            return !query || option.label.toLowerCase().includes(query) || option.value.toLowerCase().includes(query);
+        });
+        list.innerHTML = "";
+        options.forEach((option) => {
+            const button = buildComboOption(option.label, option.value, option.selected);
+            button.disabled = option.disabled;
+            list.appendChild(button);
+        });
+        if (!options.length) {
+            const empty = document.createElement("div");
+            empty.className = "combo-empty";
+            empty.textContent = "لا توجد نتائج";
+            list.appendChild(empty);
+        }
+    }
+
+    function openCombo() {
+        if (select.disabled) return;
+        closeAllCombos(combo);
+        render();
+        combo.classList.add("is-open");
+        input.setAttribute("aria-expanded", "true");
+    }
+
+    function setSelectValue(value, shouldDispatch = true) {
+        if (select.value !== value) {
+            select.value = value;
+            if (shouldDispatch) {
+                select.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+        }
+        syncInput();
+    }
+
+    input.addEventListener("focus", openCombo);
+    input.addEventListener("input", () => {
+        const typed = getComboText(input.value);
+        const typedLower = typed.toLowerCase();
+        const exact = optionData().find((option) => !option.disabled && option.label.toLowerCase() === typedLower);
+        if (exact) {
+            setSelectValue(exact.value);
+        } else if (select.value) {
+            setSelectValue("");
+        }
+        openCombo();
+    });
+
+    toggle.addEventListener("click", () => {
+        if (combo.classList.contains("is-open")) {
+            closeCombo(combo);
+            return;
+        }
+        input.focus({ preventScroll: true });
+        openCombo();
+    });
+
+    list.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+    });
+
+    list.addEventListener("click", (event) => {
+        const option = event.target.closest(".combo-option");
+        if (!option || option.disabled) return;
+        setSelectValue(option.dataset.value);
+        closeCombo(combo);
+    });
+
+    select.addEventListener("change", () => {
+        syncInput();
+        if (combo.classList.contains("is-open")) render();
+    });
+
+    new MutationObserver(() => {
+        syncInput();
+        if (combo.classList.contains("is-open")) render();
+    }).observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "required", "selected"] });
+
+    syncInput();
+}
+
+function enhanceListInput(input) {
+    if (input.dataset.comboReady || input.closest(".combo-field")) return;
+    const datalist = document.getElementById(input.getAttribute("list"));
+    if (!datalist) return;
+
+    input.dataset.comboReady = "true";
+    input.dataset.originalList = input.getAttribute("list");
+    input.removeAttribute("list");
+    input.classList.add("combo-input");
+    input.autocomplete = "off";
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-expanded", "false");
+    input.setAttribute("aria-haspopup", "listbox");
+
+    const combo = document.createElement("div");
+    combo.className = "combo-field";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "combo-toggle";
+    toggle.setAttribute("aria-label", "افتح القائمة");
+    const list = document.createElement("div");
+    list.className = "combo-list";
+    list.setAttribute("role", "listbox");
+
+    input.parentNode.insertBefore(combo, input);
+    combo.appendChild(input);
+    combo.appendChild(toggle);
+    combo.appendChild(list);
+
+    function datalistOptions() {
+        return Array.from(datalist.options).map((option) => ({
+            value: option.value,
+            label: getComboText(option.label, option.value),
+        }));
+    }
+
+    function render(term = input.value) {
+        const query = getComboText(term).toLowerCase();
+        const options = datalistOptions().filter((option) => {
+            return !query || option.label.toLowerCase().includes(query) || option.value.toLowerCase().includes(query);
+        });
+        list.innerHTML = "";
+        options.forEach((option) => {
+            list.appendChild(buildComboOption(option.label, option.value, option.value === input.value));
+        });
+        if (!options.length) {
+            const empty = document.createElement("div");
+            empty.className = "combo-empty";
+            empty.textContent = "لا توجد نتائج";
+            list.appendChild(empty);
+        }
+    }
+
+    function openCombo() {
+        if (input.disabled) return;
+        closeAllCombos(combo);
+        render();
+        combo.classList.add("is-open");
+        input.setAttribute("aria-expanded", "true");
+    }
+
+    input.addEventListener("focus", openCombo);
+    input.addEventListener("input", openCombo);
+    toggle.addEventListener("click", () => {
+        if (combo.classList.contains("is-open")) {
+            closeCombo(combo);
+            return;
+        }
+        input.focus({ preventScroll: true });
+        openCombo();
+    });
+    list.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+    });
+    list.addEventListener("click", (event) => {
+        const option = event.target.closest(".combo-option");
+        if (!option) return;
+        input.value = option.dataset.value;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        closeCombo(combo);
+    });
+
+    new MutationObserver(() => {
+        if (combo.classList.contains("is-open")) render();
+    }).observe(datalist, { childList: true, subtree: true, attributes: true });
+}
+
+function enhanceListControls(root = document) {
+    root.querySelectorAll("select:not([data-native-select])").forEach(enhanceSelect);
+    root.querySelectorAll("input[list]:not([data-native-list])").forEach(enhanceListInput);
+}
+
+function setWarehouseOptions(select, warehouses, placeholder, selectedValue = "") {
+    select.innerHTML = "";
+    const placeholderOption = document.createElement("option");
+    placeholderOption.value = "";
+    placeholderOption.textContent = placeholder;
+    select.appendChild(placeholderOption);
+    warehouses.forEach((warehouse) => {
+        const option = document.createElement("option");
+        option.value = warehouse.warehouse_id;
+        option.textContent = `${warehouse.warehouse_name} - المتاح ${warehouse.quantity}`;
+        option.dataset.quantity = warehouse.quantity;
+        select.appendChild(option);
+    });
+    if (selectedValue && Array.from(select.options).some((option) => option.value === selectedValue)) {
+        select.value = selectedValue;
+    } else {
+        select.value = "";
+    }
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function setupStockWarehouseFilters(root = document) {
+    root.querySelectorAll("[data-stock-filter-target]").forEach((variantSelect) => {
+        if (variantSelect.dataset.stockFilterReady) return;
+        const warehouseSelect = document.getElementById(variantSelect.dataset.stockFilterTarget);
+        if (!warehouseSelect) return;
+        variantSelect.dataset.stockFilterReady = "true";
+        const initialPlaceholder = warehouseSelect.options[0]?.textContent || "اختر المخزن";
+        const scope = variantSelect.dataset.stockFilterScope || "all";
+
+        async function updateWarehouses() {
+            const variantId = variantSelect.value;
+            const selectedValue = warehouseSelect.value;
+            if (!variantId) {
+                warehouseSelect.disabled = true;
+                setWarehouseOptions(warehouseSelect, [], "اختر المنتج أولا");
+                return;
+            }
+            warehouseSelect.disabled = true;
+            setWarehouseOptions(warehouseSelect, [], "جاري تحميل المخازن...");
+            try {
+                const response = await fetch(`/inventory/ajax/variant-warehouses/?variant_id=${encodeURIComponent(variantId)}&scope=${encodeURIComponent(scope)}`);
+                const payload = await response.json();
+                const warehouses = payload.data?.warehouses || [];
+                warehouseSelect.disabled = warehouses.length === 0;
+                setWarehouseOptions(
+                    warehouseSelect,
+                    warehouses,
+                    warehouses.length ? initialPlaceholder : "غير متاح في المخازن",
+                    selectedValue,
+                );
+            } catch (error) {
+                warehouseSelect.disabled = true;
+                setWarehouseOptions(warehouseSelect, [], "تعذر تحميل المخازن");
+            }
+        }
+
+        variantSelect.addEventListener("change", updateWarehouses);
+        updateWarehouses();
+    });
+}
+
 document.addEventListener("click", (event) => {
+    if (!event.target.closest(".combo-field")) {
+        closeAllCombos();
+    }
+
     const opener = event.target.closest("[data-open-modal]");
     if (opener) {
         openModal(document.getElementById(opener.dataset.openModal));
@@ -54,6 +383,9 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("DOMContentLoaded", () => {
+    enhanceListControls();
+    setupStockWarehouseFilters();
+
     const currentPath = window.location.pathname;
     document.querySelectorAll(".side-nav a").forEach((link) => {
         const linkPath = new URL(link.href, window.location.origin).pathname;
@@ -99,6 +431,7 @@ document.addEventListener("click", (event) => {
 
 document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
+    closeAllCombos();
     closeModal(document.querySelector(".modal:not([hidden])"));
     document.body.classList.remove("sidebar-open");
 });

@@ -10,6 +10,7 @@ from finance.models import PaymentTransaction
 
 from .forms import PurchaseOrderForm, PurchaseReceiveForm, SupplierForm, SupplierPaymentForm
 from .models import PurchaseOrder, Supplier
+from .raw_material import RawMaterialPurchaseForm, record_raw_material_purchase
 from .services import cancel_purchase_order, create_purchase_order, pay_supplier, receive_purchase_order_items
 
 
@@ -48,6 +49,35 @@ class SupplierUpdateView(ManagerRequiredMixin, UpdateView):
     def form_valid(self, form):
         messages.success(self.request, 'تم تحديث المورد')
         return super().form_valid(form)
+
+
+class RawMaterialPurchaseView(ManagerRequiredMixin, FormView):
+    template_name = 'purchases/suppliers/raw_purchase.html'
+    form_class = RawMaterialPurchaseForm
+    success_url = reverse_lazy('purchases:suppliers')
+
+    def get_initial(self):
+        initial = super().get_initial()
+        supplier_id = self.request.GET.get('supplier')
+        if supplier_id:
+            initial['supplier'] = supplier_id
+            initial['operation_type'] = 'raw_material'
+        return initial
+
+    def form_valid(self, form):
+        try:
+            record_raw_material_purchase(
+                raw_name=form.cleaned_data['raw_name'],
+                supplier=form.cleaned_data['supplier'],
+                amount=form.cleaned_data['amount'],
+                notes=form.cleaned_data.get('notes') or '',
+                user=self.request.user,
+            )
+            messages.success(self.request, 'تم تسجيل شراء الخام وخصم السعر من الخزنة')
+            return redirect(self.success_url)
+        except ValidationError as exc:
+            form.add_error(None, exc.message)
+            return self.form_invalid(form)
 
 
 class SupplierDetailView(ManagerRequiredMixin, DetailView):

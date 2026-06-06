@@ -7,6 +7,7 @@ app_name = 'purchases'
 urlpatterns = [
     path('suppliers/', views.SupplierListView.as_view(), name='suppliers'),
     path('suppliers/create/', views.SupplierCreateView.as_view(), name='supplier_create'),
+    path('suppliers/raw-purchase/', views.RawMaterialPurchaseView.as_view(), name='raw_purchase'),
     path('suppliers/<int:pk>/', views.SupplierDetailView.as_view(), name='supplier_detail'),
     path('suppliers/<int:pk>/edit/', views.SupplierUpdateView.as_view(), name='supplier_update'),
     path('suppliers/<int:pk>/statement/', views.SupplierStatementView.as_view(), name='supplier_statement'),

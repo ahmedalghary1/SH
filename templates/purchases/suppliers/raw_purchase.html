@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% block title %}شراء خام{% endblock %}
+{% block content %}
+<div class="page-head"><h1>شراء خام من مورد</h1></div>
+<form method="post" class="card form-grid" id="raw-purchase-form">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <label>
+        <span>{{ form.operation_type.label }}</span>
+        {{ form.operation_type }}
+        {% if form.operation_type.errors %}<small class="error">{{ form.operation_type.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <label class="raw-purchase-field" hidden>
+        <span>{{ form.raw_name.label }}</span>
+        {{ form.raw_name }}
+        {% if form.raw_name.errors %}<small class="error">{{ form.raw_name.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <label class="raw-purchase-field" hidden>
+        <span>{{ form.supplier.label }}</span>
+        {{ form.supplier }}
+        {% if form.supplier.errors %}<small class="error">{{ form.supplier.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <label class="raw-purchase-field" hidden>
+        <span>{{ form.amount.label }}</span>
+        {{ form.amount }}
+        {% if form.amount.errors %}<small class="error">{{ form.amount.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <label class="raw-purchase-field span-2" hidden>
+        <span>{{ form.notes.label }}</span>
+        {{ form.notes }}
+        {% if form.notes.errors %}<small class="error">{{ form.notes.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <div class="form-actions raw-purchase-field" hidden>
+        <button class="btn btn-primary" type="submit">تسجيل شراء الخام</button>
+        <button class="btn btn-light" type="button" onclick="history.back()">رجوع</button>
+    </div>
+</form>
+{% endblock %}
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const typeSelect = document.querySelector("[data-raw-purchase-toggle]");
+    const fields = document.querySelectorAll(".raw-purchase-field");
+    function toggleRawFields() {
+        const isRawPurchase = typeSelect?.value === "raw_material";
+        fields.forEach((field) => {
+            field.hidden = !isRawPurchase;
+            field.classList.toggle("is-hidden", !isRawPurchase);
+        });
+    }
+    typeSelect?.addEventListener("change", toggleRawFields);
+    toggleRawFields();
+});
+</script>
+{% endblock %}
