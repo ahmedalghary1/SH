@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from finance.models import PaymentTransaction
 from finance.services import record_transaction
-from inventory.models import Stock, StockMovement
+from inventory.services import stock_in
 
 from .models import PurchaseOrder, PurchaseOrderItem, Supplier
 
@@ -85,21 +85,17 @@ def receive_purchase_order_items(*, purchase_order, warehouse, received_items, u
         if quantity > item.remaining_quantity:
             raise ValidationError('لا يمكن استلام كمية أكبر من المتبقي في أمر الشراء')
 
-        stock, _ = Stock.objects.select_for_update().get_or_create(
+        movement = stock_in(
+            variant=item.product_variant,
             warehouse=warehouse,
-            variant=item.product_variant,
-            defaults={'quantity': 0},
-        )
-        stock.quantity += quantity
-        stock.save(update_fields=['quantity'])
-        StockMovement.objects.create(
-            movement_type=StockMovement.TYPE_PURCHASE_RECEIVE,
-            variant=item.product_variant,
-            to_warehouse=warehouse,
             quantity=quantity,
+            user=user,
             note=note or f'استلام من أمر الشراء {purchase_order.purchase_number}',
-            created_by=user,
+            unit_cost=item.unit_cost,
+            source=purchase_order.purchase_number,
         )
+        movement.movement_type = movement.TYPE_PURCHASE_RECEIVE
+        movement.save(update_fields=['movement_type'])
         item.received_quantity += quantity
         item.save(update_fields=['received_quantity'])
         item.product_variant.cost_price = item.unit_cost

@@ -41,6 +41,18 @@ function getComboText(value, fallback = "") {
     return String(value || fallback || "").trim();
 }
 
+function normalizeSearchText(value) {
+    return getComboText(value)
+        .toLowerCase()
+        .replace(/[\u064b-\u065f\u0670\u0640]/g, "")
+        .replace(/[أإآٱ]/g, "ا")
+        .replace(/[ىئ]/g, "ي")
+        .replace(/ؤ/g, "و")
+        .replace(/ة/g, "ه")
+        .replace(/ء/g, "")
+        .replace(/\s+/g, " ");
+}
+
 function closeCombo(combo) {
     if (!combo) return;
     combo.classList.remove("is-open");
@@ -125,9 +137,9 @@ function enhanceSelect(select) {
     }
 
     function render(term = input.value) {
-        const query = getComboText(term).toLowerCase();
+        const query = normalizeSearchText(term);
         const options = optionData().filter((option) => {
-            return !query || option.label.toLowerCase().includes(query) || option.value.toLowerCase().includes(query);
+            return !query || normalizeSearchText(option.label).includes(query) || normalizeSearchText(option.value).includes(query);
         });
         list.innerHTML = "";
         options.forEach((option) => {
@@ -164,8 +176,8 @@ function enhanceSelect(select) {
     input.addEventListener("focus", openCombo);
     input.addEventListener("input", () => {
         const typed = getComboText(input.value);
-        const typedLower = typed.toLowerCase();
-        const exact = optionData().find((option) => !option.disabled && option.label.toLowerCase() === typedLower);
+        const typedLower = normalizeSearchText(typed);
+        const exact = optionData().find((option) => !option.disabled && normalizeSearchText(option.label) === typedLower);
         if (exact) {
             setSelectValue(exact.value);
         } else if (select.value) {
@@ -244,9 +256,9 @@ function enhanceListInput(input) {
     }
 
     function render(term = input.value) {
-        const query = getComboText(term).toLowerCase();
+        const query = normalizeSearchText(term);
         const options = datalistOptions().filter((option) => {
-            return !query || option.label.toLowerCase().includes(query) || option.value.toLowerCase().includes(query);
+            return !query || normalizeSearchText(option.label).includes(query) || normalizeSearchText(option.value).includes(query);
         });
         list.innerHTML = "";
         options.forEach((option) => {

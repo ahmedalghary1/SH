@@ -6,6 +6,7 @@
     <a class="btn btn-accent" href="{% url 'orders:create' %}">إضافة فاتورة</a>
 </div>
 <form class="filters" method="get">
+    {{ filter_form.q }}
     {{ filter_form.date_from }}
     {{ filter_form.date_to }}
     <button class="btn btn-primary" type="submit">تصفية</button>
@@ -14,18 +15,19 @@
 <form method="post">
     {% csrf_token %}
     <div class="button-row card">
-        <button class="btn btn-accent" formaction="{% url 'invoices:export_excel' %}?date_from={{ request.GET.date_from }}&date_to={{ request.GET.date_to }}" type="submit">تصدير Excel</button>
-        <button class="btn btn-accent" formaction="{% url 'invoices:export_pdf' %}?date_from={{ request.GET.date_from }}&date_to={{ request.GET.date_to }}" type="submit">تحميل PDF</button>
-        <button class="btn btn-light" formaction="{% url 'invoices:report_print' %}?date_from={{ request.GET.date_from }}&date_to={{ request.GET.date_to }}" formtarget="_blank" type="submit">عرض للطباعة</button>
+        <button class="btn btn-accent" formaction="{% url 'invoices:export_excel' %}?q={{ request.GET.q }}&date_from={{ request.GET.date_from }}&date_to={{ request.GET.date_to }}" type="submit">تصدير Excel</button>
+        <button class="btn btn-accent" formaction="{% url 'invoices:export_pdf' %}?q={{ request.GET.q }}&date_from={{ request.GET.date_from }}&date_to={{ request.GET.date_to }}" type="submit">تحميل PDF</button>
+        <button class="btn btn-light" formaction="{% url 'invoices:report_print' %}?q={{ request.GET.q }}&date_from={{ request.GET.date_from }}&date_to={{ request.GET.date_to }}" formtarget="_blank" type="submit">عرض للطباعة</button>
     </div>
     <div class="table-wrap">
         <table>
-            <thead><tr><th>اختيار</th><th>رقم الفاتورة</th><th>العميل</th><th>هاتف العميل</th><th>المندوب أو الفرع</th><th>الإجمالي</th><th>الخصم</th><th>طريقة الدفع</th><th>تاريخ الشراء</th><th>إجراءات</th></tr></thead>
+            <thead><tr><th>اختيار</th><th>رقم الفاتورة</th><th>رقم الطلب</th><th>العميل</th><th>هاتف العميل</th><th>المندوب أو الفرع</th><th>الإجمالي</th><th>الخصم</th><th>طريقة الدفع</th><th>تاريخ الشراء</th><th>إجراءات</th></tr></thead>
             <tbody>
             {% for invoice in invoices %}
                 <tr>
                     <td><input type="checkbox" name="invoice_ids" value="{{ invoice.pk }}"></td>
                     <td>{{ invoice.invoice_number }}</td>
+                    <td>{{ invoice.order.order_number }}</td>
                     <td>{{ invoice.order.customer|default:'عميل فردي' }}</td>
                     <td>{{ invoice.order.customer.phone|default:'-' }}</td>
                     <td>{{ invoice.order.created_by|default:'-' }}</td>
@@ -39,7 +41,7 @@
                     </td>
                 </tr>
             {% empty %}
-                <tr><td colspan="10">لا توجد فواتير</td></tr>
+                <tr><td colspan="11">لا توجد فواتير</td></tr>
             {% endfor %}
             </tbody>
         </table>

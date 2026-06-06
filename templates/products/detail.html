@@ -6,6 +6,7 @@
     <div class="button-row">
         {% if request.user.is_manager %}
             <a class="btn btn-accent" href="{% url 'products:variant_create' %}?product={{ product.pk }}">إضافة لون / مقاس</a>
+            <a class="btn btn-light" href="{% url 'products:movement_report' product.pk %}">تقرير حركة الصنف</a>
             <a class="btn btn-light" href="{% url 'products:update' product.pk %}">تعديل المنتج</a>
         {% endif %}
         <a class="btn btn-light" href="{% url 'products:list' %}">رجوع</a>

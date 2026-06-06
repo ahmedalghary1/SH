@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}تحديث الأسعار{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>تحديث الأسعار جماعيا</h1>
+    <a class="btn btn-light" href="{% url 'products:list' %}">رجوع</a>
+</div>
+<section class="card">
+    <form method="post" class="form-grid" data-confirm="سيتم تطبيق التحديث على كل المنتجات المطابقة. هل تريد المتابعة؟">
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+        <label><span>{{ form.category.label }}</span>{{ form.category }}</label>
+        <label><span>{{ form.mode.label }}</span>{{ form.mode }}</label>
+        <label><span>{{ form.sale_price.label }}</span>{{ form.sale_price }}</label>
+        <label><span>{{ form.cost_price.label }}</span>{{ form.cost_price }}</label>
+        <label class="inline-check">{{ form.include_inactive }} <span>{{ form.include_inactive.label }}</span></label>
+        <div class="form-actions">
+            <button class="btn btn-accent" type="submit">تطبيق التحديث</button>
+            <a class="btn btn-secondary" href="{% url 'products:list' %}">إلغاء</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

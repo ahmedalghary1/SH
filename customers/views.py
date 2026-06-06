@@ -7,6 +7,7 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import CreateView, DetailView, ListView, TemplateView, UpdateView
 
 from accounts.permissions import SalesRequiredMixin, sales_required
+from config.search import arabic_search_q
 from finance.models import PaymentTransaction
 from orders.models import Order, OrderItem
 from returns.models import SalesReturn
@@ -36,7 +37,7 @@ class CustomerListView(SalesRequiredMixin, ListView):
         customer_type = self.request.GET.get('type')
         valid_types = {choice[0] for choice in Customer.CUSTOMER_TYPE_CHOICES}
         if q:
-            qs = qs.filter(Q(name__icontains=q) | Q(phone__icontains=q) | Q(company_name__icontains=q))
+            qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name'), q))
         if customer_type in valid_types:
             qs = qs.filter(customer_type=customer_type)
         return qs.order_by('-created_at')
@@ -251,7 +252,7 @@ def ajax_search_customers(request):
     q = request.GET.get('q', '').strip()
     qs = Customer.objects.filter(is_active=True)
     if q:
-        qs = qs.filter(Q(name__icontains=q) | Q(phone__icontains=q) | Q(company_name__icontains=q))
+        qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name'), q))
     data = [
         {'id': c.id, 'name': c.name, 'phone': c.phone, 'customer_type': c.customer_type, 'company_name': c.company_name or ''}
         for c in qs[:12]

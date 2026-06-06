@@ -3,11 +3,20 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from customers.models import Customer
-from inventory.models import Warehouse
+from inventory.models import StockBatch, Warehouse
 from products.models import ProductVariant
 
 
 class Order(models.Model):
+    DOCUMENT_SALE = 'sale'
+    DOCUMENT_QUOTE = 'quote'
+    DOCUMENT_SAMPLE = 'sample'
+    DOCUMENT_TYPE_CHOICES = [
+        (DOCUMENT_SALE, 'Sale'),
+        (DOCUMENT_QUOTE, 'Priced quote'),
+        (DOCUMENT_SAMPLE, 'Sample / free issue'),
+    ]
+
     TYPE_B2C = 'b2c'
     TYPE_B2B = 'b2b'
     ORDER_TYPE_CHOICES = [
@@ -55,6 +64,7 @@ class Order(models.Model):
     ]
 
     order_number = models.CharField(max_length=50, unique=True, db_index=True)
+    document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPE_CHOICES, default=DOCUMENT_SALE, db_index=True)
     order_type = models.CharField(max_length=10, choices=ORDER_TYPE_CHOICES)
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True)
     warehouse = models.ForeignKey(Warehouse, on_delete=models.SET_NULL, null=True)
@@ -114,6 +124,7 @@ class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
     variant = models.ForeignKey(ProductVariant, on_delete=models.SET_NULL, null=True)
     warehouse = models.ForeignKey(Warehouse, on_delete=models.SET_NULL, null=True, blank=True)
+    stock_batch = models.ForeignKey(StockBatch, on_delete=models.SET_NULL, null=True, blank=True)
     quantity = models.PositiveIntegerField()
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     original_unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)

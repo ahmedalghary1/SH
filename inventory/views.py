@@ -8,6 +8,7 @@ from django.views.decorators.http import require_GET
 from django.views.generic import CreateView, FormView, ListView
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin, role_required
+from config.search import arabic_search_q
 from products.models import ProductVariant
 
 from .forms import RepresentativeIssueForm, RepresentativeReturnForm, StockAdjustmentForm, StockMovementForm, StockTransferForm, WarehouseForm
@@ -67,13 +68,13 @@ class StockListView(RoleRequiredMixin, ListView):
                 qs = qs.none()
         q = self.request.GET.get('q')
         if q:
-            qs = qs.filter(
-                Q(variant__product__name__icontains=q)
-                | Q(variant__product__sku__icontains=q)
-                | Q(variant__product__category__name__icontains=q)
-                | Q(variant__variant_sku__icontains=q)
-                | Q(variant__barcode__icontains=q)
-            )
+            qs = qs.filter(arabic_search_q((
+                'variant__product__name',
+                'variant__product__sku',
+                'variant__product__category__name',
+                'variant__variant_sku',
+                'variant__barcode',
+            ), q))
         low = self.request.GET.get('low')
         if low:
             qs = qs.filter(quantity__lte=F('min_quantity'))

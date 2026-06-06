@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from accounts.models import User
 from customers.models import Customer
-from inventory.models import Stock
+from inventory.models import Stock, StockMovement
 from inventory.services import return_stock, sale_stock
 from settings_app.models import CompanySettings
 
@@ -64,7 +64,7 @@ def _validate_discount_percentage(*, discount_amount, discount_percentage, base_
         raise ValidationError('الخصم أكبر من الحد المسموح لهذا المستخدم')
 
 
-def prepare_order_item_pricing(*, variant, quantity, user, customer=None, order_type=None, unit_price=None, discount_amount=0, discount_percentage=0):
+def prepare_order_item_pricing(*, variant, quantity, user, customer=None, order_type=None, unit_price=None, discount_amount=0, discount_percentage=0, unit_cost=None, allow_free=False):
     quantity = int(quantity)
     if quantity <= 0:
         raise ValidationError('الكمية يجب أن تكون أكبر من صفر')
@@ -87,8 +87,8 @@ def prepare_order_item_pricing(*, variant, quantity, user, customer=None, order_
     )
     line_total = max(line_base - line_discount, Decimal('0'))
     final_unit_price = line_total / quantity
-    unit_cost = _as_decimal(getattr(variant, 'cost_price', 0) or 0)
-    if final_unit_price < unit_cost and not can_sell_below_cost:
+    unit_cost = _as_decimal(unit_cost if unit_cost is not None else getattr(variant, 'cost_price', 0) or 0)
+    if final_unit_price < unit_cost and not (can_sell_below_cost or allow_free):
         raise ValidationError('لا يمكن البيع تحت التكلفة لهذا المستخدم')
     cost_total = unit_cost * quantity
     return {
@@ -162,11 +162,14 @@ def get_order_item_warehouse(item, order=None):
 @transaction.atomic
 def create_order(*, order_data, items, user, confirm=False):
     order_data = dict(order_data)
+    document_type = order_data.get('document_type') or Order.DOCUMENT_SALE
+    if document_type == Order.DOCUMENT_QUOTE:
+        confirm = False
     customer = order_data.get('customer')
     if not order_data.get('warehouse') and items:
         order_data['warehouse'] = items[0].get('warehouse')
-    order_discount_amount = _as_decimal(order_data.get('discount_amount', order_data.get('discount', 0)))
-    order_discount_percentage = _as_decimal(order_data.get('discount_percentage', 0))
+    order_discount_amount = Decimal('0') if document_type == Order.DOCUMENT_SAMPLE else _as_decimal(order_data.get('discount_amount', order_data.get('discount', 0)))
+    order_discount_percentage = Decimal('0') if document_type == Order.DOCUMENT_SAMPLE else _as_decimal(order_data.get('discount_percentage', 0))
     order_data['discount_amount'] = order_discount_amount
     order_data['discount_percentage'] = order_discount_percentage
     order_data['discount'] = order_discount_amount
@@ -184,18 +187,22 @@ def create_order(*, order_data, items, user, confirm=False):
     for item in items:
         variant = item['variant']
         warehouse = item.get('warehouse') or order.warehouse
+        stock_batch = item.get('stock_batch')
         if not warehouse:
             raise ValidationError('يجب تحديد مخزن لكل صنف في الفاتورة')
         quantity = int(item['quantity'])
+        is_sample = document_type == Order.DOCUMENT_SAMPLE
         pricing = prepare_order_item_pricing(
             variant=variant,
             quantity=quantity,
             user=user,
             customer=customer,
             order_type=order.order_type,
-            unit_price=item.get('unit_price'),
-            discount_amount=item.get('discount_amount', item.get('discount', 0)),
-            discount_percentage=item.get('discount_percentage', 0),
+            unit_price=0 if is_sample else item.get('unit_price'),
+            discount_amount=0 if is_sample else item.get('discount_amount', item.get('discount', 0)),
+            discount_percentage=0 if is_sample else item.get('discount_percentage', 0),
+            unit_cost=getattr(stock_batch, 'unit_cost', None),
+            allow_free=is_sample,
         )
         subtotal_before_item_discounts += pricing['original_unit_price'] * quantity
         item_discount_total += pricing['line_discount']
@@ -204,6 +211,7 @@ def create_order(*, order_data, items, user, confirm=False):
             order=order,
             variant=variant,
             warehouse=warehouse,
+            stock_batch=stock_batch,
             quantity=quantity,
             unit_price=pricing['final_unit_price'],
             original_unit_price=pricing['original_unit_price'],
@@ -234,11 +242,7 @@ def create_order(*, order_data, items, user, confirm=False):
         max_percentage=max_discount,
     )
     calculate_order_totals(order)
-    order.paid_amount = order.total
-    order.remaining_amount = Decimal('0')
-    order.payment_status = Order.PAYMENT_PAID
-    order.save(update_fields=['paid_amount', 'remaining_amount', 'payment_status'])
-    if order.total > 0:
+    if document_type == Order.DOCUMENT_SALE and order.total > 0:
         from finance.services import record_order_sale_payment
 
         record_order_sale_payment(
@@ -246,6 +250,12 @@ def create_order(*, order_data, items, user, confirm=False):
             user=user,
             notes=f'قيمة بيع تلقائية للطلب {order.order_number}',
         )
+        order.refresh_from_db()
+    elif document_type == Order.DOCUMENT_SAMPLE:
+        order.paid_amount = Decimal('0')
+        order.remaining_amount = Decimal('0')
+        order.payment_status = Order.PAYMENT_PAID
+        order.save(update_fields=['paid_amount', 'remaining_amount', 'payment_status'])
     if confirm:
         order = confirm_order(order=order, user=user)
     return order
@@ -254,23 +264,42 @@ def create_order(*, order_data, items, user, confirm=False):
 @transaction.atomic
 def confirm_order(*, order, user):
     order = Order.objects.select_for_update().get(pk=order.pk)
+    if order.document_type == Order.DOCUMENT_QUOTE:
+        raise ValidationError('هذه فاتورة مسعرة فقط ولا تخصم من المخزون')
     if order.status != Order.STATUS_DRAFT:
         raise ValidationError('يمكن تأكيد الطلبات المسودة فقط')
     if not order.items.exists():
         raise ValidationError('لا يمكن تأكيد طلب بدون منتجات')
-    for item in order.items.select_related('variant', 'warehouse'):
+    for item in order.items.select_related('variant', 'warehouse', 'stock_batch'):
         warehouse = get_order_item_warehouse(item, order=order)
         stock = Stock.objects.select_for_update().filter(warehouse=warehouse, variant=item.variant).first()
         if not stock or stock.quantity < item.quantity:
             raise ValidationError(f'الكمية غير متاحة: {item.variant}')
-    for item in order.items.select_related('variant', 'warehouse'):
+        if item.stock_batch and item.stock_batch.remaining_quantity < item.quantity:
+            raise ValidationError(f'الكمية غير متاحة في دفعة السعر: {item.variant}')
+    movement_type = StockMovement.TYPE_SAMPLE if order.document_type == Order.DOCUMENT_SAMPLE else StockMovement.TYPE_SALE
+    for item in order.items.select_related('variant', 'warehouse', 'stock_batch'):
         warehouse = get_order_item_warehouse(item, order=order)
         sale_stock(
             variant=item.variant,
             warehouse=warehouse,
             quantity=item.quantity,
             user=user,
-            note=f'بيع من الطلب {order.order_number}',
+            batch=item.stock_batch,
+            movement_type=movement_type,
+            note=f'صرف من الطلب {order.order_number}',
+        )
+    if order.document_type == Order.DOCUMENT_SALE and order.total > 0 and order.paid_amount <= 0:
+        from finance.services import record_order_sale_payment
+
+        order.paid_amount = order.total
+        order.remaining_amount = Decimal('0')
+        order.payment_status = Order.PAYMENT_PAID
+        order.save(update_fields=['paid_amount', 'remaining_amount', 'payment_status'])
+        record_order_sale_payment(
+            order=order,
+            user=user,
+            notes=f'قيمة بيع تلقائية للطلب {order.order_number}',
         )
     order.status = Order.STATUS_CONFIRMED
     order.save(update_fields=['status'])
@@ -293,11 +322,13 @@ def cancel_order(*, order, user):
             warehouse=warehouse,
             quantity=item.quantity,
             user=user,
+            unit_cost=item.unit_cost,
             note=f'إلغاء الطلب {order.order_number}',
         )
-    from finance.services import record_order_refund
+    if order.document_type == Order.DOCUMENT_SALE and order.total > 0:
+        from finance.services import record_order_refund
 
-    record_order_refund(order=order, user=user, notes=f'رد تلقائي لإلغاء الطلب {order.order_number}')
+        record_order_refund(order=order, user=user, notes=f'رد تلقائي لإلغاء الطلب {order.order_number}')
     order.status = Order.STATUS_CANCELLED
     order.save(update_fields=['status'])
     return order
@@ -315,6 +346,7 @@ def return_order(*, order, user):
             warehouse=warehouse,
             quantity=item.quantity,
             user=user,
+            unit_cost=item.unit_cost,
             note=f'مرتجع الطلب {order.order_number}',
         )
     order.status = Order.STATUS_RETURNED

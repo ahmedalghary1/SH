@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.views.generic import DetailView, ListView, View
 
 from accounts.permissions import SalesRequiredMixin
+from config.search import arabic_search_q
 from orders.models import Order
 from settings_app.models import CompanySettings
 
@@ -41,8 +42,11 @@ class InvoiceListView(SalesRequiredMixin, ListView):
             qs = qs.filter(order__created_by=self.request.user)
         self.filter_form = InvoiceFilterForm(self.request.GET)
         if self.filter_form.is_valid():
+            q = self.filter_form.cleaned_data.get('q')
             date_from = self.filter_form.cleaned_data.get('date_from')
             date_to = self.filter_form.cleaned_data.get('date_to')
+            if q:
+                qs = qs.filter(arabic_search_q(('invoice_number', 'order__order_number', 'order__customer__name', 'order__customer__phone'), q))
             if date_from:
                 qs = qs.filter(issued_at__date__gte=date_from)
             if date_to:
@@ -65,8 +69,11 @@ class InvoiceExportMixin:
             qs = qs.filter(pk__in=selected_ids)
         form = InvoiceFilterForm(request.POST or request.GET)
         if form.is_valid():
+            q = form.cleaned_data.get('q')
             date_from = form.cleaned_data.get('date_from')
             date_to = form.cleaned_data.get('date_to')
+            if q:
+                qs = qs.filter(arabic_search_q(('invoice_number', 'order__order_number', 'order__customer__name', 'order__customer__phone'), q))
             if date_from:
                 qs = qs.filter(issued_at__date__gte=date_from)
             if date_to:

@@ -24,6 +24,7 @@
                     <a class="nav-link" href="{% url 'products:list' %}"><span class="nav-text">المنتجات</span><span class="nav-arrow">‹</span></a>
                     {% if request.user.is_manager %}
                         <a class="nav-link" href="{% url 'products:categories' %}"><span class="nav-text">التصنيفات</span><span class="nav-arrow">‹</span></a>
+                        <a class="nav-link" href="{% url 'products:bulk_price_update' %}"><span class="nav-text">تحديث الأسعار</span><span class="nav-arrow">‹</span></a>
                         <a class="nav-link" href="{% url 'products:sizes' %}"><span class="nav-text">المقاسات</span><span class="nav-arrow">‹</span></a>
                         <a class="nav-link" href="{% url 'products:colors' %}"><span class="nav-text">الألوان</span><span class="nav-arrow">‹</span></a>
                     {% endif %}

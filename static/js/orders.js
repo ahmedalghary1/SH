@@ -5,6 +5,7 @@
     const searchInput = document.getElementById("product-search");
     const variantSelect = document.getElementById("variant-select");
     const itemWarehouse = document.getElementById("item-warehouse");
+    const batchSelect = document.getElementById("stock-batch");
     const stockInput = document.getElementById("available-stock");
     const priceInput = document.getElementById("unit-price");
     const qtyInput = document.getElementById("item-quantity");
@@ -12,6 +13,7 @@
     const addButton = document.getElementById("add-item");
     const body = document.getElementById("order-items-body");
     const itemsJson = document.getElementById("items-json");
+    const documentType = document.getElementById("id_document_type");
     const orderType = document.getElementById("id_order_type");
     const warehouse = document.getElementById("id_warehouse");
     const generalDiscount = document.getElementById("id_discount_amount");
@@ -22,9 +24,11 @@
     const paymentMethod = document.getElementById("id_payment_method");
     const walletFields = document.querySelectorAll(".wallet-field");
     const walletInputs = [document.getElementById("id_wallet_from_number"), document.getElementById("id_wallet_to_number")];
+    const invoiceItemSearch = document.getElementById("invoice-item-search");
     const items = [];
     let selectedProduct = null;
     let selectedProductLabel = "";
+
     const productCombo = document.createElement("div");
     const productToggle = document.createElement("button");
     const resultsBox = document.createElement("div");
@@ -45,8 +49,25 @@
     searchInput.setAttribute("aria-expanded", "false");
     searchInput.setAttribute("aria-haspopup", "listbox");
 
+    function normalizeArabic(value) {
+        return String(value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[\u064b-\u065f\u0670\u0640]/g, "")
+            .replace(/[أإآٱ]/g, "ا")
+            .replace(/[ىئ]/g, "ي")
+            .replace(/ؤ/g, "و")
+            .replace(/ة/g, "ه")
+            .replace(/ء/g, "")
+            .replace(/\s+/g, " ");
+    }
+
     function money(value) {
         return Number(value || 0).toFixed(2);
+    }
+
+    function isSample() {
+        return documentType?.value === "sample";
     }
 
     function lineDiscount(item) {
@@ -57,12 +78,17 @@
     }
 
     function updateLineTotal() {
-        if (!lineTotalInput) return;
+        if (isSample()) {
+            priceInput.value = "0.00";
+            priceInput.readOnly = true;
+        } else {
+            priceInput.readOnly = false;
+        }
         lineTotalInput.value = money(Number(priceInput.value || 0) * Number(qtyInput.value || 0));
     }
 
     function toggleWalletFields() {
-        const isWallet = paymentMethod?.value === "wallet_transfer";
+        const isWallet = paymentMethod?.value === "wallet_transfer" && !isSample() && documentType?.value !== "quote";
         walletFields.forEach((field) => {
             field.hidden = !isWallet;
             field.classList.toggle("is-hidden", !isWallet);
@@ -74,33 +100,63 @@
         });
     }
 
+    function updateDocumentMode() {
+        const nonPaid = isSample() || documentType?.value === "quote";
+        if (paymentMethod) paymentMethod.disabled = nonPaid;
+        if (generalDiscount) {
+            generalDiscount.disabled = isSample();
+            if (isSample()) generalDiscount.value = "0";
+        }
+        if (generalDiscountPercentage) {
+            generalDiscountPercentage.disabled = isSample();
+            if (isSample()) generalDiscountPercentage.value = "0";
+        }
+        updateLineTotal();
+        updateSummary();
+        toggleWalletFields();
+    }
+
     function updateSummary() {
         const subtotal = items.reduce((sum, item) => sum + (Number(item.unit_price) * Number(item.quantity)), 0);
         const itemDiscount = items.reduce((sum, item) => sum + lineDiscount(item), 0);
         const afterItems = Math.max(subtotal - itemDiscount, 0);
-        const orderDiscountAmount = generalDiscount ? Number(generalDiscount.value || 0) : 0;
-        const orderDiscountPercent = generalDiscountPercentage ? Number(generalDiscountPercentage.value || 0) : 0;
+        const orderDiscountAmount = isSample() ? 0 : Number(generalDiscount?.value || 0);
+        const orderDiscountPercent = isSample() ? 0 : Number(generalDiscountPercentage?.value || 0);
         const orderDiscount = Math.min(afterItems, orderDiscountAmount + (afterItems * orderDiscountPercent / 100));
         const discount = itemDiscount + orderDiscount;
         const total = Math.max(subtotal - discount, 0);
         document.getElementById("summary-subtotal").textContent = money(subtotal);
         document.getElementById("summary-discount").textContent = money(discount);
         document.getElementById("summary-total").textContent = money(total);
-        const paidNode = document.getElementById("summary-paid");
-        const remainingNode = document.getElementById("summary-remaining");
-        if (paidNode) paidNode.textContent = money(total);
-        if (remainingNode) remainingNode.textContent = money(0);
         itemsJson.value = JSON.stringify(items);
+    }
+
+    function itemMatchesFilter(item) {
+        const q = normalizeArabic(invoiceItemSearch?.value || "");
+        if (!q) return true;
+        return normalizeArabic([
+            item.product_name,
+            item.color,
+            item.size,
+            item.warehouse_name,
+            item.batch_label,
+        ].join(" ")).includes(q);
     }
 
     function renderItems() {
         body.innerHTML = "";
+        const visibleItems = items.map((item, index) => ({ item, index })).filter(({ item }) => itemMatchesFilter(item));
         if (!items.length) {
-            body.innerHTML = '<tr class="empty-row"><td colspan="8">لم تتم إضافة منتجات بعد</td></tr>';
+            body.innerHTML = '<tr class="empty-row"><td colspan="10">لم تتم إضافة منتجات بعد</td></tr>';
             updateSummary();
             return;
         }
-        items.forEach((item, index) => {
+        if (!visibleItems.length) {
+            body.innerHTML = '<tr class="empty-row"><td colspan="10">لا توجد أصناف مطابقة للبحث</td></tr>';
+            updateSummary();
+            return;
+        }
+        visibleItems.forEach(({ item, index }) => {
             const total = Math.max((Number(item.unit_price) * Number(item.quantity)) - lineDiscount(item), 0);
             const row = document.createElement("tr");
             row.innerHTML = `
@@ -108,6 +164,8 @@
                 <td>${item.color || "-"}</td>
                 <td>${item.size || "-"}</td>
                 <td>${item.warehouse_name || "-"}</td>
+                <td>${item.batch_label || "تلقائي"}</td>
+                <td>${item.available_quantity}</td>
                 <td>${item.quantity}</td>
                 <td>${money(item.unit_price)}</td>
                 <td>${money(total)}</td>
@@ -127,6 +185,7 @@
         stockInput.value = "";
         priceInput.value = "";
         itemWarehouse.innerHTML = '<option value="">اختر اللون والمقاس أولا</option>';
+        batchSelect.innerHTML = '<option value="">أقدم كمية متاحة تلقائيا</option>';
         updateLineTotal();
     }
 
@@ -154,9 +213,7 @@
         searchInput.focus({ preventScroll: true });
         loadProductResults();
     });
-    resultsBox.addEventListener("mousedown", (event) => {
-        event.preventDefault();
-    });
+    resultsBox.addEventListener("mousedown", (event) => event.preventDefault());
 
     searchInput.addEventListener("input", async () => {
         const q = searchInput.value.trim();
@@ -210,7 +267,7 @@
 
     customerSearch?.addEventListener("input", async () => {
         const q = customerSearch.value.trim();
-        if (q.length < 2) {
+        if (q.length < 1) {
             customerResults.classList.remove("is-open");
             return;
         }
@@ -245,12 +302,25 @@
         refreshVariantMeta();
     });
 
+    function fillBatches(batches) {
+        batchSelect.innerHTML = '<option value="">أقدم كمية متاحة تلقائيا</option>';
+        batches.forEach((batch) => {
+            const option = document.createElement("option");
+            option.value = batch.id;
+            option.textContent = `${batch.received_at} - تكلفة ${money(batch.unit_cost)} - متبقي ${batch.remaining_quantity}${batch.source ? ` - ${batch.source}` : ""}`;
+            option.dataset.quantity = batch.remaining_quantity;
+            option.dataset.cost = batch.unit_cost;
+            option.dataset.label = option.textContent;
+            batchSelect.appendChild(option);
+        });
+    }
+
     function updateSelectedWarehouse() {
         const selected = itemWarehouse.options[itemWarehouse.selectedIndex];
         stockInput.value = selected?.dataset.quantity || "";
-        if (warehouse && itemWarehouse.value) {
-            warehouse.value = itemWarehouse.value;
-        }
+        if (warehouse && itemWarehouse.value) warehouse.value = itemWarehouse.value;
+        const batches = selected?.dataset.batches ? JSON.parse(selected.dataset.batches) : [];
+        fillBatches(batches);
     }
 
     async function refreshVariantMeta() {
@@ -269,15 +339,14 @@
             option.textContent = `${warehouseStock.warehouse_name} - المتاح ${warehouseStock.quantity}`;
             option.dataset.quantity = warehouseStock.quantity;
             option.dataset.name = warehouseStock.warehouse_name;
+            option.dataset.batches = JSON.stringify(warehouseStock.batches || []);
             itemWarehouse.appendChild(option);
         });
-        if (warehouses.length) {
-            itemWarehouse.value = warehouses[0].warehouse_id;
-        }
+        if (warehouses.length) itemWarehouse.value = warehouses[0].warehouse_id;
         updateSelectedWarehouse();
 
         const price = await fetchJson(`/orders/ajax/variants/${variantId}/price/?order_type=${orderType.value}&customer_id=${customerSelect.value || ""}`);
-        priceInput.value = price.data.price;
+        priceInput.value = isSample() ? "0.00" : price.data.price;
         updateLineTotal();
     }
 
@@ -286,16 +355,24 @@
         updateSelectedWarehouse();
         updateLineTotal();
     });
+    batchSelect.addEventListener("change", () => {
+        const selectedBatch = batchSelect.options[batchSelect.selectedIndex];
+        if (selectedBatch?.dataset.quantity) stockInput.value = selectedBatch.dataset.quantity;
+    });
     orderType.addEventListener("change", refreshVariantMeta);
     customerSelect.addEventListener("change", refreshVariantMeta);
+    documentType?.addEventListener("change", updateDocumentMode);
     paymentMethod?.addEventListener("change", toggleWalletFields);
     qtyInput.addEventListener("input", updateLineTotal);
+    priceInput.addEventListener("input", updateLineTotal);
     generalDiscount?.addEventListener("input", updateSummary);
     generalDiscountPercentage?.addEventListener("input", updateSummary);
+    invoiceItemSearch?.addEventListener("input", renderItems);
 
     addButton.addEventListener("click", () => {
         const selected = variantSelect.options[variantSelect.selectedIndex];
         const selectedWarehouse = itemWarehouse.options[itemWarehouse.selectedIndex];
+        const selectedBatch = batchSelect.options[batchSelect.selectedIndex];
         const quantity = Number(qtyInput.value || 0);
         const available = Number(stockInput.value || 0);
         if (!selectedProduct || !variantSelect.value) {
@@ -307,13 +384,14 @@
             return;
         }
         const alreadySelected = items
-            .filter((item) => item.variant_id === variantSelect.value && item.warehouse_id === itemWarehouse.value)
+            .filter((item) => item.variant_id === variantSelect.value && item.warehouse_id === itemWarehouse.value && (item.stock_batch_id || "") === (batchSelect.value || ""))
             .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
         if (quantity <= 0 || quantity + alreadySelected > available) {
             window.alert("الكمية غير متاحة");
             return;
         }
         if (!warehouse.value) warehouse.value = itemWarehouse.value;
+        const unitPrice = isSample() ? 0 : Number(priceInput.value || 0);
         items.push({
             variant_id: variantSelect.value,
             product_name: selectedProduct.name,
@@ -321,8 +399,11 @@
             size: selected.dataset.size,
             warehouse_id: itemWarehouse.value,
             warehouse_name: selectedWarehouse?.dataset.name || "",
+            stock_batch_id: batchSelect.value || "",
+            batch_label: batchSelect.value ? selectedBatch?.dataset.label : "تلقائي",
+            available_quantity: available,
             quantity,
-            unit_price: Number(priceInput.value || 0),
+            unit_price: unitPrice,
             discount_amount: 0,
             discount_percentage: 0,
         });
@@ -347,7 +428,7 @@
         }
         if (!warehouse.value) {
             event.preventDefault();
-            window.alert("اختر مخزنا من بيانات المنتج قبل تأكيد الفاتورة");
+            window.alert("اختر مخزنا من بيانات المنتج قبل حفظ الفاتورة");
         }
     });
 
@@ -380,6 +461,6 @@
     });
 
     renderItems();
-    toggleWalletFields();
+    updateDocumentMode();
     updateLineTotal();
 })();

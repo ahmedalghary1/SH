@@ -18,6 +18,9 @@ def generate_invoice_number():
 def generate_invoice(order, user=None):
     if order.status == Order.STATUS_DRAFT:
         raise ValidationError('لا يمكن إصدار فاتورة لطلب مسودة')
+    if order.document_type == Order.DOCUMENT_QUOTE:
+        raise ValidationError('لا يمكن إصدار فاتورة نهائية من تسعيرة غير مؤكدة')
     invoice, _ = Invoice.objects.get_or_create(order=order, defaults={'invoice_number': generate_invoice_number()})
-    record_order_sale_payment(order=order, user=user or order.created_by, notes=f'قيمة فاتورة تلقائية {invoice.invoice_number}')
+    if order.document_type == Order.DOCUMENT_SALE and order.total > 0:
+        record_order_sale_payment(order=order, user=user or order.created_by, notes=f'قيمة فاتورة تلقائية {invoice.invoice_number}')
     return invoice

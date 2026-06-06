@@ -6,6 +6,7 @@ from django.urls import reverse_lazy
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView, View
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin
+from config.search import arabic_search_q
 from finance.models import PaymentTransaction
 
 from .forms import PurchaseOrderForm, PurchaseReceiveForm, SupplierForm, SupplierPaymentForm
@@ -24,7 +25,7 @@ class SupplierListView(ManagerRequiredMixin, ListView):
         qs = Supplier.objects.order_by('-created_at')
         q = self.request.GET.get('q')
         if q:
-            qs = qs.filter(name__icontains=q)
+            qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name'), q))
         return qs
 
 

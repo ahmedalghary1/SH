@@ -5,16 +5,18 @@ from django.db.models import Count, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
+from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_GET
-from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
+from django.views.generic import CreateView, DetailView, FormView, ListView, UpdateView, View
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, role_required
-from inventory.models import Stock, Warehouse
+from config.search import arabic_search_q
+from inventory.models import Stock, StockBatch, Warehouse
 from inventory.models import StockMovement
 from inventory.services import adjust_stock, stock_in, transfer_stock
 from orders.models import Order, OrderItem
 
-from .forms import CategoryForm, ColorForm, InitialProductVariantForm, InitialStockForm, ProductForm, ProductVariantForm, SizeForm
+from .forms import BulkPriceUpdateForm, CategoryForm, ColorForm, InitialProductVariantForm, InitialStockForm, ProductForm, ProductVariantForm, SizeForm
 from .models import Category, Color, Product, ProductVariant, Size
 
 
@@ -50,7 +52,7 @@ class ProductListView(RoleRequiredMixin, ListView):
         category = self.request.GET.get('category')
         status = self.request.GET.get('status')
         if q:
-            qs = qs.filter(Q(name__icontains=q) | Q(sku__icontains=q))
+            qs = qs.filter(arabic_search_q(('name', 'sku'), q))
         if category:
             qs = qs.filter(category_id=category)
         if status in {'active', 'inactive'}:
@@ -91,6 +93,58 @@ class ProductDetailView(RoleRequiredMixin, DetailView):
         context['order_items'] = order_items[:50]
         context['current_quantity'] = stocks.aggregate(total=Sum('quantity'))['total'] or 0
         context['variants'] = variants
+        return context
+
+
+class ProductMovementReportView(RoleRequiredMixin, DetailView):
+    allowed_roles = ('manager', 'sales', 'warehouse')
+    model = Product
+    template_name = 'products/movement_report.html'
+    context_object_name = 'product'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        variant_id = self.request.GET.get('variant')
+        day = parse_date(self.request.GET.get('day') or '')
+        date_from = parse_date(self.request.GET.get('date_from') or '')
+        date_to = parse_date(self.request.GET.get('date_to') or '')
+
+        variants = self.object.variants.select_related('color', 'size')
+        movements = StockMovement.objects.filter(variant__product=self.object).select_related(
+            'variant__color', 'variant__size', 'from_warehouse', 'to_warehouse', 'created_by', 'batch',
+        )
+        order_items = OrderItem.objects.filter(variant__product=self.object).select_related(
+            'order__customer', 'order__created_by', 'variant__color', 'variant__size', 'warehouse', 'stock_batch',
+        )
+        batches = StockBatch.objects.filter(variant__product=self.object, remaining_quantity__gt=0).select_related(
+            'variant__color', 'variant__size', 'warehouse',
+        )
+        if variant_id:
+            movements = movements.filter(variant_id=variant_id)
+            order_items = order_items.filter(variant_id=variant_id)
+            batches = batches.filter(variant_id=variant_id)
+        if day:
+            movements = movements.filter(created_at__date=day)
+            order_items = order_items.filter(order__created_at__date=day)
+        else:
+            if date_from:
+                movements = movements.filter(created_at__date__gte=date_from)
+                order_items = order_items.filter(order__created_at__date__gte=date_from)
+            if date_to:
+                movements = movements.filter(created_at__date__lte=date_to)
+                order_items = order_items.filter(order__created_at__date__lte=date_to)
+
+        context.update({
+            'variants': variants,
+            'selected_variant_id': variant_id or '',
+            'day': self.request.GET.get('day', ''),
+            'date_from': self.request.GET.get('date_from', ''),
+            'date_to': self.request.GET.get('date_to', ''),
+            'movement_rows': movements.order_by('-created_at')[:300],
+            'order_items': order_items.order_by('-order__created_at')[:300],
+            'stock_rows': Stock.objects.filter(variant__product=self.object).select_related('variant__color', 'variant__size', 'warehouse'),
+            'batch_rows': batches.order_by('received_at', 'pk'),
+        })
         return context
 
 
@@ -251,6 +305,44 @@ class ProductDeactivateView(ManagerRequiredMixin, View):
         return redirect('products:list')
 
 
+class BulkPriceUpdateView(ManagerRequiredMixin, FormView):
+    template_name = 'products/bulk_price_update.html'
+    form_class = BulkPriceUpdateForm
+    success_url = reverse_lazy('products:list')
+
+    def form_valid(self, form):
+        qs = ProductVariant.objects.select_related('product')
+        if not form.cleaned_data.get('include_inactive'):
+            qs = qs.filter(is_active=True, product__is_active=True)
+        category = form.cleaned_data.get('category')
+        if category:
+            qs = qs.filter(product__category=category)
+        mode = form.cleaned_data['mode']
+        sale_value = form.cleaned_data.get('sale_price')
+        cost_value = form.cleaned_data.get('cost_price')
+        count = 0
+        with transaction.atomic():
+            for variant in qs.select_for_update():
+                update_fields = []
+                if sale_value is not None:
+                    if mode == BulkPriceUpdateForm.MODE_PERCENT:
+                        variant.sale_price = max(variant.sale_price + (variant.sale_price * sale_value / 100), 0)
+                    else:
+                        variant.sale_price = max(sale_value, 0)
+                    update_fields.append('sale_price')
+                if cost_value is not None:
+                    if mode == BulkPriceUpdateForm.MODE_PERCENT:
+                        variant.cost_price = max(variant.cost_price + (variant.cost_price * cost_value / 100), 0)
+                    else:
+                        variant.cost_price = max(cost_value, 0)
+                    update_fields.append('cost_price')
+                if update_fields:
+                    variant.save(update_fields=update_fields)
+                    count += 1
+        messages.success(self.request, f'تم تحديث أسعار {count} لون/مقاس')
+        return super().form_valid(form)
+
+
 class CategoryListView(ManagerRequiredMixin, ListView):
     model = Category
     template_name = 'products/catalog/categories.html'
@@ -402,7 +494,7 @@ def ajax_search_products(request):
     q = request.GET.get('q', '').strip()
     products = Product.objects.filter(is_active=True)
     if q:
-        products = products.filter(Q(name__icontains=q) | Q(sku__icontains=q) | Q(variants__variant_sku__icontains=q)).distinct()
+        products = products.filter(arabic_search_q(('name', 'sku', 'variants__variant_sku'), q)).distinct()
     data = [
         {'id': p.id, 'name': p.name, 'sku': p.sku}
         for p in products[:12]
@@ -460,7 +552,7 @@ def api_products(request):
     size = request.GET.get('size')
     warehouse = request.GET.get('warehouse')
     if q:
-        qs = qs.filter(Q(name__icontains=q) | Q(sku__icontains=q) | Q(variants__variant_sku__icontains=q)).distinct()
+        qs = qs.filter(arabic_search_q(('name', 'sku', 'variants__variant_sku'), q)).distinct()
     if category:
         qs = qs.filter(category_id=category)
     if color:

@@ -11,9 +11,10 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import DetailView, FormView, ListView, UpdateView, View
 
 from accounts.permissions import RoleRequiredMixin, SalesRequiredMixin, sales_required
+from config.search import arabic_search_q
 from customers.models import Customer
 from invoices.services import generate_invoice
-from inventory.models import Stock, Warehouse
+from inventory.models import Stock, StockBatch, Warehouse
 from products.models import Product, ProductVariant
 
 from .forms import OrderForm
@@ -72,7 +73,7 @@ class OrderListView(RoleRequiredMixin, ListView):
         q = self.request.GET.get('q')
         status = self.request.GET.get('status')
         if q:
-            qs = qs.filter(Q(order_number__icontains=q) | Q(customer__name__icontains=q) | Q(customer__phone__icontains=q))
+            qs = qs.filter(arabic_search_q(('order_number', 'customer__name', 'customer__phone'), q))
         if status:
             qs = qs.filter(status=status)
         return qs
@@ -102,6 +103,15 @@ class OrderCreateView(SalesRequiredMixin, FormView):
                 variant = _available_variants_for_user(self.request.user).select_related('product').get(pk=posted['variant_id'])
                 warehouse = self.get_item_warehouse(posted['warehouse_id'])
                 quantity = int(posted['quantity'])
+                stock_batch = None
+                batch_id = posted.get('stock_batch_id')
+                if batch_id:
+                    stock_batch = StockBatch.objects.get(
+                        pk=batch_id,
+                        variant=variant,
+                        warehouse=warehouse,
+                        remaining_quantity__gte=quantity,
+                    )
                 if _is_restricted_sales_user(self.request.user):
                     available_stock = Stock.objects.filter(
                         warehouse=warehouse,
@@ -113,20 +123,26 @@ class OrderCreateView(SalesRequiredMixin, FormView):
                 items.append({
                     'variant': variant,
                     'warehouse': warehouse,
+                    'stock_batch': stock_batch,
                     'quantity': quantity,
                     'unit_price': Decimal(str(posted.get('unit_price', 0))),
                     'discount_amount': Decimal(str(posted.get('discount_amount', posted.get('discount', 0)))),
                     'discount_percentage': Decimal(str(posted.get('discount_percentage', 0))),
                 })
             confirm = self.request.POST.get('action') == 'confirm'
-            order = create_order(order_data=form.cleaned_data, items=items, user=self.request.user, confirm=confirm)
+            order_data = dict(form.cleaned_data)
+            if self.request.POST.get('action') == 'draft':
+                order_data['document_type'] = Order.DOCUMENT_QUOTE
+            if order_data.get('document_type') == Order.DOCUMENT_QUOTE:
+                confirm = False
+            order = create_order(order_data=order_data, items=items, user=self.request.user, confirm=confirm)
             if confirm:
                 invoice = generate_invoice(order, user=self.request.user)
                 messages.success(self.request, 'تم حفظ الفاتورة وخصم الكمية من المخزون')
                 return redirect('invoices:detail', pk=invoice.pk)
             messages.success(self.request, 'تم حفظ الطلب' + (' وتأكيده' if confirm else ' كمسودة'))
             return redirect('orders:detail', pk=order.pk)
-        except (ValidationError, ProductVariant.DoesNotExist, Warehouse.DoesNotExist, KeyError, ValueError, json.JSONDecodeError) as exc:
+        except (ValidationError, ProductVariant.DoesNotExist, StockBatch.DoesNotExist, Warehouse.DoesNotExist, KeyError, ValueError, json.JSONDecodeError) as exc:
             form.add_error(None, getattr(exc, 'message', 'بيانات الطلب غير صحيحة'))
             return self.form_invalid(form)
 
@@ -211,7 +227,7 @@ def ajax_search_products(request):
     q = request.GET.get('q', '').strip()
     qs = _available_products_for_user(request.user)
     if q:
-        qs = qs.filter(Q(name__icontains=q) | Q(sku__icontains=q) | Q(variants__variant_sku__icontains=q)).distinct()
+        qs = qs.filter(arabic_search_q(('name', 'sku', 'variants__variant_sku'), q)).distinct()
     data = [{'id': p.id, 'name': p.name, 'sku': p.sku} for p in qs[:10]]
     return JsonResponse({'success': True, 'message': 'تم جلب المنتجات', 'data': data})
 
@@ -243,6 +259,20 @@ def ajax_get_variant_stock(request, variant_id):
             'warehouse_id': stock.warehouse_id,
             'warehouse_name': stock.warehouse.name,
             'quantity': stock.quantity,
+            'batches': [
+                {
+                    'id': batch.id,
+                    'remaining_quantity': batch.remaining_quantity,
+                    'unit_cost': str(batch.unit_cost),
+                    'received_at': batch.received_at.strftime('%Y-%m-%d'),
+                    'source': batch.source or '',
+                }
+                for batch in StockBatch.objects.filter(
+                    variant_id=variant_id,
+                    warehouse_id=stock.warehouse_id,
+                    remaining_quantity__gt=0,
+                ).order_by('received_at', 'pk')
+            ],
         }
         for stock in stocks.order_by('warehouse__name')
     ]
@@ -266,7 +296,7 @@ def ajax_search_customers(request):
     q = request.GET.get('q', '').strip()
     qs = Customer.objects.filter(is_active=True)
     if q:
-        qs = qs.filter(Q(name__icontains=q) | Q(phone__icontains=q) | Q(company_name__icontains=q))
+        qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name'), q))
     data = [{'id': c.id, 'name': c.name, 'phone': c.phone, 'customer_type': c.customer_type} for c in qs[:10]]
     return JsonResponse({'success': True, 'message': 'تم جلب العملاء', 'data': data})
 
@@ -300,6 +330,7 @@ def ajax_calculate_order_totals(request):
                 unit_price=item.get('unit_price'),
                 discount_amount=item.get('discount_amount', item.get('discount', 0)),
                 discount_percentage=item.get('discount_percentage', 0),
+                allow_free=payload.get('document_type') == Order.DOCUMENT_SAMPLE,
             )
             subtotal += pricing['original_unit_price'] * quantity
             discount += pricing['line_discount']

@@ -51,6 +51,28 @@ class Stock(models.Model):
         return self.quantity <= self.min_quantity
 
 
+class StockBatch(models.Model):
+    variant = models.ForeignKey(ProductVariant, on_delete=models.CASCADE, related_name='stock_batches')
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.CASCADE, related_name='stock_batches')
+    received_quantity = models.PositiveIntegerField(default=0)
+    remaining_quantity = models.PositiveIntegerField(default=0, db_index=True)
+    unit_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    source = models.CharField(max_length=100, blank=True, null=True, db_index=True)
+    note = models.TextField(blank=True, null=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    received_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['variant', 'warehouse', 'remaining_quantity']),
+            models.Index(fields=['received_at']),
+        ]
+        ordering = ['received_at', 'pk']
+
+    def __str__(self):
+        return f'{self.variant} - {self.unit_cost} - {self.remaining_quantity}'
+
+
 class StockMovement(models.Model):
     TYPE_IN = 'in'
     TYPE_OUT = 'out'
@@ -65,6 +87,7 @@ class StockMovement(models.Model):
     TYPE_SALES_REP_ASSIGNMENT = 'sales_rep_assignment'
     TYPE_SALES_REP_RETURN = 'sales_rep_return'
     TYPE_SALES_REP_SALE = 'sales_rep_sale'
+    TYPE_SAMPLE = 'sample'
 
     MOVEMENT_TYPE_CHOICES = [
         (TYPE_IN, 'دخول مخزون'),
@@ -82,11 +105,13 @@ class StockMovement(models.Model):
     MOVEMENT_TYPE_CHOICES.append((TYPE_SALES_REP_ASSIGNMENT, 'Sales rep assignment'))
     MOVEMENT_TYPE_CHOICES.append((TYPE_SALES_REP_RETURN, 'Sales rep return'))
     MOVEMENT_TYPE_CHOICES.append((TYPE_SALES_REP_SALE, 'Sales rep sale'))
+    MOVEMENT_TYPE_CHOICES.append((TYPE_SAMPLE, 'Sample / free issue'))
 
     movement_type = models.CharField(max_length=20, choices=MOVEMENT_TYPE_CHOICES, db_index=True)
     variant = models.ForeignKey(ProductVariant, on_delete=models.CASCADE)
     from_warehouse = models.ForeignKey(Warehouse, on_delete=models.SET_NULL, null=True, blank=True, related_name='out_movements')
     to_warehouse = models.ForeignKey(Warehouse, on_delete=models.SET_NULL, null=True, blank=True, related_name='in_movements')
+    batch = models.ForeignKey(StockBatch, on_delete=models.SET_NULL, null=True, blank=True, related_name='movements')
     quantity = models.IntegerField()
     note = models.TextField(blank=True, null=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)

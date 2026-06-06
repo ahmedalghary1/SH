@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block title %}تقرير حركة صنف{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>تقرير حركة صنف: {{ product.name }}</h1>
+    <a class="btn btn-light" href="{% url 'products:detail' product.pk %}">رجوع</a>
+</div>
+
+<form class="filters" method="get">
+    <select name="variant" data-filterable-select="true">
+        <option value="">كل الألوان والمقاسات</option>
+        {% for variant in variants %}
+            <option value="{{ variant.pk }}" {% if selected_variant_id == variant.pk|stringformat:'s' %}selected{% endif %}>{{ variant.color|default:'-' }} / {{ variant.size|default:'-' }} - {{ variant.variant_sku }}</option>
+        {% endfor %}
+    </select>
+    <input type="date" name="day" value="{{ day }}" aria-label="يوم محدد">
+    <input type="date" name="date_from" value="{{ date_from }}" aria-label="من تاريخ">
+    <input type="date" name="date_to" value="{{ date_to }}" aria-label="إلى تاريخ">
+    <button class="btn btn-primary" type="submit">عرض</button>
+    <a class="btn btn-light" href="{% url 'products:movement_report' product.pk %}">إعادة ضبط</a>
+</form>
+
+<section class="card">
+    <h2>الكمية الحالية حسب المخزن</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>المخزن</th><th>اللون</th><th>المقاس</th><th>الكمية</th><th>حد التنبيه</th></tr></thead>
+            <tbody>
+                {% for stock in stock_rows %}
+                    <tr><td>{{ stock.warehouse.name }}</td><td>{{ stock.variant.color|default:'-' }}</td><td>{{ stock.variant.size|default:'-' }}</td><td>{{ stock.quantity }}</td><td>{{ stock.min_quantity }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="5">لا توجد كمية حالية</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card">
+    <h2>دفعات الأسعار المتاحة</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>تاريخ الدخول</th><th>المخزن</th><th>اللون</th><th>المقاس</th><th>سعر الشراء</th><th>الكمية الأصلية</th><th>المتبقي</th><th>المصدر</th></tr></thead>
+            <tbody>
+                {% for batch in batch_rows %}
+                    <tr><td>{{ batch.received_at }}</td><td>{{ batch.warehouse }}</td><td>{{ batch.variant.color|default:'-' }}</td><td>{{ batch.variant.size|default:'-' }}</td><td>{{ batch.unit_cost }}</td><td>{{ batch.received_quantity }}</td><td>{{ batch.remaining_quantity }}</td><td>{{ batch.source|default:'-' }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="8">لا توجد دفعات متاحة</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card">
+    <h2>حركات المخزون</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>التاريخ</th><th>نوع الحركة</th><th>من</th><th>إلى</th><th>اللون</th><th>المقاس</th><th>الكمية</th><th>دفعة السعر</th><th>الموظف</th><th>ملاحظات</th></tr></thead>
+            <tbody>
+                {% for movement in movement_rows %}
+                    <tr>
+                        <td>{{ movement.created_at }}</td>
+                        <td>{{ movement.get_movement_type_display }}</td>
+                        <td>{{ movement.from_warehouse|default:'-' }}</td>
+                        <td>{{ movement.to_warehouse|default:'-' }}</td>
+                        <td>{{ movement.variant.color|default:'-' }}</td>
+                        <td>{{ movement.variant.size|default:'-' }}</td>
+                        <td>{{ movement.quantity }}</td>
+                        <td>{% if movement.batch %}{{ movement.batch.unit_cost }} / متبقي {{ movement.batch.remaining_quantity }}{% else %}-{% endif %}</td>
+                        <td>{{ movement.created_by|default:'-' }}</td>
+                        <td>{{ movement.note|default:'-' }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="10">لا توجد حركات في هذه الفترة</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card">
+    <h2>ظهور الصنف في الفواتير</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>التاريخ</th><th>رقم الطلب</th><th>نوع المستند</th><th>العميل</th><th>المخزن</th><th>اللون</th><th>المقاس</th><th>الكمية المطلوبة</th><th>سعر البيع</th><th>سعر الشراء</th><th>الإجمالي</th></tr></thead>
+            <tbody>
+                {% for item in order_items %}
+                    <tr><td>{{ item.order.created_at }}</td><td>{{ item.order.order_number }}</td><td>{{ item.order.get_document_type_display }}</td><td>{{ item.order.customer|default:'-' }}</td><td>{{ item.warehouse|default:'-' }}</td><td>{{ item.variant.color|default:'-' }}</td><td>{{ item.variant.size|default:'-' }}</td><td>{{ item.quantity }}</td><td>{{ item.final_unit_price }}</td><td>{{ item.unit_cost }}</td><td>{{ item.total }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="11">لم يظهر الصنف في فواتير هذه الفترة</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

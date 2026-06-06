@@ -10,28 +10,37 @@ class OrderForm(forms.ModelForm):
     class Meta:
         model = Order
         fields = (
-            'order_type', 'customer', 'warehouse', 'payment_method',
-            'wallet_from_number', 'wallet_to_number', 'discount_percentage',
+            'document_type', 'order_type', 'customer', 'warehouse', 'payment_method',
+            'wallet_from_number', 'wallet_to_number', 'discount_amount', 'discount_percentage',
         )
         labels = {
+            'document_type': 'نوع المستند',
             'order_type': 'نوع الطلب',
             'customer': 'العميل',
             'warehouse': 'المخزن',
             'payment_method': 'طريقة الدفع',
             'wallet_from_number': 'رقم محفظة العميل',
             'wallet_to_number': 'رقم محفظة الشركة',
+            'discount_amount': 'خصم عام بالقيمة',
             'discount_percentage': 'خصم عام بالنسبة',
         }
         widgets = {
             'warehouse': forms.HiddenInput(),
             'wallet_from_number': forms.TextInput(attrs={'placeholder': 'رقم محفظة العميل'}),
             'wallet_to_number': forms.TextInput(attrs={'placeholder': 'رقم محفظة الشركة'}),
+            'discount_amount': forms.NumberInput(attrs={'min': '0', 'step': '0.01', 'placeholder': '0.00'}),
+            'discount_percentage': forms.NumberInput(attrs={'min': '0', 'max': '100', 'step': '0.01', 'placeholder': '0'}),
         }
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['customer'].required = False
         self.fields['warehouse'].required = False
+        self.fields['document_type'].choices = (
+            (Order.DOCUMENT_SALE, 'بيع'),
+            (Order.DOCUMENT_QUOTE, 'تسعيرة بدون تأكيد'),
+            (Order.DOCUMENT_SAMPLE, 'عينة / تسوية مجانية'),
+        )
         warehouses = Warehouse.objects.filter(is_active=True)
         if user and getattr(user, 'role', None) == 'sales' and not user.is_superuser:
             warehouses = warehouses.filter(assigned_user=user, warehouse_type=Warehouse.TYPE_REPRESENTATIVE)
@@ -44,6 +53,7 @@ class OrderForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
+        document_type = cleaned.get('document_type')
         order_type = cleaned.get('order_type')
         customer = cleaned.get('customer')
         payment_method = cleaned.get('payment_method')
@@ -51,6 +61,8 @@ class OrderForm(forms.ModelForm):
         wallet_to = cleaned.get('wallet_to_number')
         if order_type == Order.TYPE_B2B and not customer:
             raise ValidationError('بيانات العميل مطلوبة عند البيع لشركة أو تاجر')
+        if document_type == Order.DOCUMENT_QUOTE:
+            return cleaned
         if payment_method == Order.METHOD_WALLET and (not wallet_from or not wallet_to):
             raise ValidationError('أرقام المحافظ مطلوبة عند اختيار الدفع بمحفظة')
         return cleaned
