@@ -1,0 +1,6 @@
+{% if export_enabled %}
+    <div class="button-row export-actions">
+        <a class="btn btn-light" href="?{{ request.GET.urlencode }}{% if request.GET %}&{% endif %}export=excel"><svg class="ui-icon"><use href="#icon-download"></use></svg>تصدير Excel</a>
+        <a class="btn btn-light" href="?{{ request.GET.urlencode }}{% if request.GET %}&{% endif %}export=pdf"><svg class="ui-icon"><use href="#icon-file"></use></svg>تحميل PDF</a>
+    </div>
+{% endif %}

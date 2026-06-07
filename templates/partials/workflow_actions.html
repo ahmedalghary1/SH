@@ -1,0 +1,15 @@
+<section class="workflow-panel">
+    <div class="workflow-head">
+        <h2>{{ workflow_title|default:'مسار سريع' }}</h2>
+    </div>
+    <div class="workflow-actions">
+        {% for action in workflow_actions %}
+            <a class="workflow-action" href="{{ action.href }}">
+                <span class="workflow-icon">
+                    <svg class="ui-icon"><use href="#{{ action.icon }}"></use></svg>
+                </span>
+                <span>{{ action.label }}</span>
+            </a>
+        {% endfor %}
+    </div>
+</section>

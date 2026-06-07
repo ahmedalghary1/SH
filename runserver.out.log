@@ -1,7 +1,7 @@
 Performing system checks...
 
 System check identified no issues (0 silenced).
-June 05, 2026 - 12:04:03
+June 07, 2026 - 09:27:32
 Django version 6.0.3, using settings 'config.settings'
 Starting development server at http://127.0.0.1:8000/
 Quit the server with CTRL-BREAK.
@@ -11,7 +11,7 @@ For more information on production servers see: https://docs.djangoproject.com/e
 Performing system checks...
 
 System check identified no issues (0 silenced).
-June 05, 2026 - 12:32:58
+June 07, 2026 - 10:52:19
 Django version 6.0.3, using settings 'config.settings'
 Starting development server at http://127.0.0.1:8000/
 Quit the server with CTRL-BREAK.
@@ -21,7 +21,7 @@ For more information on production servers see: https://docs.djangoproject.com/e
 Performing system checks...
 
 System check identified no issues (0 silenced).
-June 05, 2026 - 12:33:08
+June 07, 2026 - 11:07:46
 Django version 6.0.3, using settings 'config.settings'
 Starting development server at http://127.0.0.1:8000/
 Quit the server with CTRL-BREAK.
@@ -31,7 +31,10 @@ For more information on production servers see: https://docs.djangoproject.com/e
 Performing system checks...
 
 System check identified no issues (0 silenced).
-June 05, 2026 - 12:33:24
+
+You have 1 unapplied migration(s). Your project may not work properly until you apply the migrations for app(s): finance.
+Run 'python manage.py migrate' to apply them.
+June 07, 2026 - 11:08:11
 Django version 6.0.3, using settings 'config.settings'
 Starting development server at http://127.0.0.1:8000/
 Quit the server with CTRL-BREAK.
@@ -40,18 +43,19 @@ WARNING: This is a development server. Do not use it in a production setting. Us
 For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
 Performing system checks...
 
-System check identified no issues (0 silenced).
-June 05, 2026 - 12:33:44
-Django version 6.0.3, using settings 'config.settings'
-Starting development server at http://127.0.0.1:8000/
-Quit the server with CTRL-BREAK.
+Performing system checks...
 
-WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
-For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+Performing system checks...
+
 Performing system checks...
 
 System check identified no issues (0 silenced).
-June 05, 2026 - 12:34:03
+
+You have 1 unapplied migration(s). Your project may not work properly until you apply the migrations for app(s): finance.
+Run 'python manage.py migrate' to apply them.
+June 07, 2026 - 11:18:48
 Django version 6.0.3, using settings 'config.settings'
 Starting development server at http://127.0.0.1:8000/
 Quit the server with CTRL-BREAK.

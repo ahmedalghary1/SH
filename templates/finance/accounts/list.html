@@ -5,6 +5,7 @@
     <h1>الخزن والحسابات المالية</h1>
     <a class="btn btn-primary" href="{% url 'finance:account_create' %}">إضافة حساب</a>
 </div>
+{% include 'partials/export_buttons.html' %}
 <div class="table-wrap card">
     <table>
         <thead><tr><th>الحساب</th><th>النوع</th><th>المندوب</th><th>الرصيد</th><th>الحالة</th><th></th></tr></thead>

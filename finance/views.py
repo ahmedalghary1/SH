@@ -9,17 +9,28 @@ from django.utils.dateparse import parse_date
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView
 
 from accounts.permissions import ManagerRequiredMixin
+from config.exports import ExportListMixin
 
 from .forms import CashAccountForm, CustomerCollectionForm, ExpenseForm, SalesRepStatementForm, TransferForm
 from .models import CashAccount, PaymentTransaction
 from .services import add_expense, collect_order_payment, record_customer_payment, transfer_between_accounts
 
 
-class CashAccountListView(ManagerRequiredMixin, ListView):
+class CashAccountListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = CashAccount
     template_name = 'finance/accounts/list.html'
     context_object_name = 'accounts'
     paginate_by = 20
+    export_title = 'قائمة الحسابات المالية'
+    export_filename = 'cash-accounts'
+    export_columns = (
+        ('اسم الحساب', 'name'),
+        ('النوع', 'get_account_type_display'),
+        ('المسؤول', 'assigned_user'),
+        ('الرصيد', 'balance'),
+        ('السماح بالسحب على المكشوف', lambda account: 'نعم' if account.allow_overdraft else 'لا'),
+        ('الحالة', lambda account: 'نشط' if account.is_active else 'متوقف'),
+    )
 
     def get_queryset(self):
         return CashAccount.objects.select_related('assigned_user').order_by('account_type', 'name')
@@ -60,9 +71,9 @@ class CashAccountDetailView(ManagerRequiredMixin, DetailView):
         if direction:
             transactions = transactions.filter(direction=direction)
         if date_from:
-            transactions = transactions.filter(created_at__date__gte=date_from)
+            transactions = transactions.filter(transaction_date__gte=date_from)
         if date_to:
-            transactions = transactions.filter(created_at__date__lte=date_to)
+            transactions = transactions.filter(transaction_date__lte=date_to)
 
         total_in = transactions.filter(direction=PaymentTransaction.DIRECTION_IN).aggregate(v=Sum('amount'))['v'] or 0
         total_out = transactions.filter(direction=PaymentTransaction.DIRECTION_OUT).aggregate(v=Sum('amount'))['v'] or 0
@@ -89,11 +100,26 @@ class CashAccountDetailView(ManagerRequiredMixin, DetailView):
         return context
 
 
-class TransactionListView(ManagerRequiredMixin, ListView):
+class TransactionListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = PaymentTransaction
     template_name = 'finance/transactions/list.html'
     context_object_name = 'transactions'
     paginate_by = 30
+    export_title = 'قائمة المعاملات المالية'
+    export_filename = 'transactions'
+    export_columns = (
+        ('تاريخ الحركة', 'transaction_date'),
+        ('وقت التسجيل', 'created_at'),
+        ('النوع', 'get_transaction_type_display'),
+        ('الاتجاه', 'get_direction_display'),
+        ('المبلغ', 'amount'),
+        ('الحساب', 'cash_account'),
+        ('الطلب', 'related_order'),
+        ('العميل', 'related_customer'),
+        ('المورد', 'related_supplier'),
+        ('الموظف', 'created_by'),
+        ('ملاحظات', 'notes'),
+    )
 
     def get_queryset(self):
         qs = PaymentTransaction.objects.select_related(
@@ -105,7 +131,25 @@ class TransactionListView(ManagerRequiredMixin, ListView):
             qs = qs.filter(transaction_type=transaction_type)
         if direction:
             qs = qs.filter(direction=direction)
+        date_from = parse_date(self.request.GET.get('date_from', ''))
+        date_to = parse_date(self.request.GET.get('date_to', ''))
+        if date_from:
+            qs = qs.filter(transaction_date__gte=date_from)
+        if date_to:
+            qs = qs.filter(transaction_date__lte=date_to)
         return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['transaction_type_choices'] = PaymentTransaction.TRANSACTION_TYPE_CHOICES
+        context['direction_choices'] = PaymentTransaction.DIRECTION_CHOICES
+        context['filters'] = {
+            'type': self.request.GET.get('type', ''),
+            'direction': self.request.GET.get('direction', ''),
+            'date_from': self.request.GET.get('date_from', ''),
+            'date_to': self.request.GET.get('date_to', ''),
+        }
+        return context
 
 
 class ExpenseCreateView(ManagerRequiredMixin, FormView):
@@ -138,6 +182,7 @@ class CustomerCollectionView(ManagerRequiredMixin, FormView):
                     cash_account=form.cleaned_data['cash_account'],
                     user=self.request.user,
                     notes=form.cleaned_data.get('notes') or '',
+                    transaction_date=form.cleaned_data.get('transaction_date'),
                 )
             else:
                 record_customer_payment(
@@ -147,6 +192,7 @@ class CustomerCollectionView(ManagerRequiredMixin, FormView):
                     cash_account=form.cleaned_data['cash_account'],
                     user=self.request.user,
                     notes=form.cleaned_data.get('notes') or '',
+                    transaction_date=form.cleaned_data.get('transaction_date'),
                 )
             messages.success(self.request, 'تم تسجيل التحصيل')
             return redirect(self.success_url)
@@ -201,7 +247,7 @@ class DailyCollectionsReportView(ManagerRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         today = timezone.localdate()
         transactions = PaymentTransaction.objects.filter(
-            created_at__date=today,
+            transaction_date=today,
             direction=PaymentTransaction.DIRECTION_IN,
         ).select_related('cash_account', 'related_customer', 'related_order')
         context['transactions'] = transactions

@@ -7,6 +7,7 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import CreateView, DetailView, ListView, TemplateView, UpdateView
 
 from accounts.permissions import SalesRequiredMixin, sales_required
+from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
 from orders.models import Order, OrderItem
@@ -25,11 +26,22 @@ from .services import (
 )
 
 
-class CustomerListView(SalesRequiredMixin, ListView):
+class CustomerListView(SalesRequiredMixin, ExportListMixin, ListView):
     model = Customer
     template_name = 'customers/list.html'
     context_object_name = 'customers'
     paginate_by = 20
+    export_title = 'قائمة العملاء'
+    export_filename = 'customers'
+    export_columns = (
+        ('اسم العميل', 'name'),
+        ('نوع العميل', 'get_customer_type_display'),
+        ('الهاتف', 'phone'),
+        ('الشركة', 'company_name'),
+        ('العنوان', 'address'),
+        ('المسؤول', 'created_by'),
+        ('تاريخ الإضافة', 'created_at'),
+    )
 
     def get_queryset(self):
         qs = Customer.objects.select_related('created_by').filter(is_active=True)

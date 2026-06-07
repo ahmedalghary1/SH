@@ -5,6 +5,7 @@
     <h1>الألوان</h1>
     <a class="btn btn-accent" href="{% url 'products:color_create' %}">إضافة لون</a>
 </div>
+{% include 'partials/export_buttons.html' %}
 <div class="table-wrap">
     <table>
         <thead><tr><th>اللون</th><th>الكود</th><th>معاينة</th><th>إجراءات</th></tr></thead>

@@ -12,6 +12,6 @@ class CashAccountAdmin(admin.ModelAdmin):
 
 @admin.register(PaymentTransaction)
 class PaymentTransactionAdmin(admin.ModelAdmin):
-    list_display = ('transaction_type', 'direction', 'amount', 'cash_account', 'related_order', 'created_at')
-    list_filter = ('transaction_type', 'direction', 'cash_account')
+    list_display = ('transaction_date', 'transaction_type', 'direction', 'amount', 'cash_account', 'related_order', 'created_at')
+    list_filter = ('transaction_type', 'direction', 'cash_account', 'transaction_date')
     search_fields = ('reference', 'notes', 'related_order__order_number', 'related_customer__name')

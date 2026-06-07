@@ -8,6 +8,7 @@ from django.views.decorators.http import require_GET
 from django.views.generic import CreateView, FormView, ListView
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin, role_required
+from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from products.models import ProductVariant
 
@@ -16,12 +17,21 @@ from .models import Stock, StockMovement, Warehouse
 from .services import adjust_stock, stock_in, stock_out, transfer_stock
 
 
-class WarehouseListView(RoleRequiredMixin, ListView):
+class WarehouseListView(RoleRequiredMixin, ExportListMixin, ListView):
     allowed_roles = ('manager', 'warehouse')
     model = Warehouse
     template_name = 'inventory/warehouses/list.html'
     context_object_name = 'warehouses'
     paginate_by = 20
+    export_title = 'قائمة المخازن'
+    export_filename = 'warehouses'
+    export_columns = (
+        ('اسم المخزن', 'name'),
+        ('النوع', 'get_warehouse_type_display'),
+        ('المسؤول', 'assigned_user'),
+        ('العنوان', 'address'),
+        ('الحالة', lambda warehouse: 'نشط' if warehouse.is_active else 'متوقف'),
+    )
 
     def get_queryset(self):
         return Warehouse.objects.select_related('assigned_user').order_by('warehouse_type', 'name')
@@ -34,12 +44,28 @@ class WarehouseCreateView(ManagerRequiredMixin, CreateView):
     success_url = reverse_lazy('inventory:warehouses')
 
 
-class StockListView(RoleRequiredMixin, ListView):
+class StockListView(RoleRequiredMixin, ExportListMixin, ListView):
     allowed_roles = ('manager', 'sales', 'warehouse')
     model = Stock
     template_name = 'inventory/stock/list.html'
     context_object_name = 'stocks'
     paginate_by = 30
+    export_title = 'قائمة المخزون'
+    export_filename = 'stock'
+    export_columns = (
+        ('المخزن', 'warehouse.name'),
+        ('المنتج', 'variant.product.name'),
+        ('كود المنتج', 'variant.product.sku'),
+        ('كود اللون/المقاس', 'variant.variant_sku'),
+        ('التصنيف', 'variant.product.category'),
+        ('اللون', 'variant.color'),
+        ('المقاس', 'variant.size'),
+        ('سعر الشراء', 'variant.cost_price'),
+        ('سعر البيع', 'variant.sale_price'),
+        ('الكمية', 'quantity'),
+        ('الحد الأدنى', 'min_quantity'),
+        ('تنبيه', lambda stock: 'منخفض' if stock.is_low else 'جيد'),
+    )
 
     def get_allowed_warehouses(self):
         qs = Warehouse.objects.filter(is_active=True)
@@ -92,12 +118,25 @@ class StockListView(RoleRequiredMixin, ListView):
         return context
 
 
-class StockMovementListView(RoleRequiredMixin, ListView):
+class StockMovementListView(RoleRequiredMixin, ExportListMixin, ListView):
     allowed_roles = ('manager', 'warehouse')
     model = StockMovement
     template_name = 'inventory/movements/list.html'
     context_object_name = 'movements'
     paginate_by = 30
+    export_title = 'قائمة الحركات المخزنية'
+    export_filename = 'stock-movements'
+    export_columns = (
+        ('التاريخ', 'created_at'),
+        ('النوع', 'get_movement_type_display'),
+        ('المنتج', 'variant.product.name'),
+        ('الكود', 'variant.variant_sku'),
+        ('من مخزن', 'from_warehouse'),
+        ('إلى مخزن', 'to_warehouse'),
+        ('الكمية', 'quantity'),
+        ('الموظف', 'created_by'),
+        ('ملاحظات', 'note'),
+    )
 
     def get_queryset(self):
         allowed_types = [StockMovement.TYPE_TRANSFER]

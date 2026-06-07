@@ -5,6 +5,7 @@
     <h1>العملاء</h1>
     <a class="btn btn-accent" href="{% url 'customers:create' %}">إضافة عميل</a>
 </div>
+{% include 'partials/export_buttons.html' %}
 <form class="filters">
     <input name="q" placeholder="بحث بالاسم أو الهاتف" value="{{ request.GET.q }}">
     <select name="type">

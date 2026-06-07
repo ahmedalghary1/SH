@@ -124,28 +124,3 @@ class InitialStockForm(forms.Form):
     def has_stock_data(self):
         return self.is_valid() and bool(self.cleaned_data.get('warehouse'))
 
-
-class BulkPriceUpdateForm(forms.Form):
-    MODE_SET = 'set'
-    MODE_PERCENT = 'percent'
-    MODE_CHOICES = (
-        (MODE_SET, 'تعيين قيمة ثابتة'),
-        (MODE_PERCENT, 'تعديل بنسبة مئوية'),
-    )
-
-    category = forms.ModelChoiceField(
-        queryset=Category.objects.filter(is_active=True).order_by('name'),
-        required=False,
-        label='التصنيف',
-        widget=forms.Select(attrs={'data-filterable-select': 'true'}),
-    )
-    mode = forms.ChoiceField(label='طريقة التحديث', choices=MODE_CHOICES)
-    sale_price = forms.DecimalField(label='سعر البيع / نسبة التعديل', required=False)
-    cost_price = forms.DecimalField(label='سعر الشراء / نسبة التعديل', required=False)
-    include_inactive = forms.BooleanField(label='تطبيق على المتوقف أيضا', required=False)
-
-    def clean(self):
-        cleaned = super().clean()
-        if cleaned.get('sale_price') in (None, '') and cleaned.get('cost_price') in (None, ''):
-            raise forms.ValidationError('أدخل قيمة واحدة على الأقل لتحديث سعر البيع أو سعر الشراء')
-        return cleaned

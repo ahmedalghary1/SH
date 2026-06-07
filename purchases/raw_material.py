@@ -8,11 +8,7 @@ from .models import Supplier
 
 
 class RawMaterialPurchaseForm(forms.Form):
-    operation_type = forms.ChoiceField(
-        choices=(('', 'اختر نوع الإضافة'), ('raw_material', 'شراء خام')),
-        label='نوع الإضافة',
-        widget=forms.Select(attrs={'data-raw-purchase-toggle': 'true'}),
-    )
+    operation_type = forms.CharField(initial='raw_material', widget=forms.HiddenInput)
     raw_name = forms.CharField(max_length=200, label='اسم الخام')
     supplier = forms.ModelChoiceField(queryset=Supplier.objects.filter(is_active=True), label='المورد')
     amount = forms.DecimalField(min_value=0.01, label='السعر')

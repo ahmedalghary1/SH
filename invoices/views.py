@@ -4,14 +4,17 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
+from django.utils import timezone
 from django.views.generic import DetailView, ListView, View
 
 from accounts.permissions import SalesRequiredMixin
 from config.search import arabic_search_q
+from finance.models import PaymentTransaction
+from finance.services import collect_order_payment
 from orders.models import Order
 from settings_app.models import CompanySettings
 
-from .forms import InvoiceFilterForm
+from .forms import InvoiceFilterForm, InvoicePaymentForm
 from .models import Invoice
 from .pdf import build_invoice_report_pdf
 from .services import generate_invoice
@@ -21,6 +24,19 @@ class InvoiceContextMixin:
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['company_settings'] = CompanySettings.load()
+        invoice = getattr(self, 'object', None)
+        if invoice:
+            context['payment_rows'] = PaymentTransaction.objects.select_related(
+                'cash_account', 'created_by',
+            ).filter(
+                related_order=invoice.order,
+                transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+                direction=PaymentTransaction.DIRECTION_IN,
+            ).order_by('-transaction_date', '-created_at')
+            context['payment_form'] = kwargs.get('payment_form') or InvoicePaymentForm(
+                invoice=invoice,
+                initial={'transaction_date': timezone.localdate()},
+            )
         return context
 
 
@@ -45,12 +61,18 @@ class InvoiceListView(SalesRequiredMixin, ListView):
             q = self.filter_form.cleaned_data.get('q')
             date_from = self.filter_form.cleaned_data.get('date_from')
             date_to = self.filter_form.cleaned_data.get('date_to')
+            payment_method = self.filter_form.cleaned_data.get('payment_method')
+            payment_status = self.filter_form.cleaned_data.get('payment_status')
             if q:
                 qs = qs.filter(arabic_search_q(('invoice_number', 'order__order_number', 'order__customer__name', 'order__customer__phone'), q))
             if date_from:
                 qs = qs.filter(issued_at__date__gte=date_from)
             if date_to:
                 qs = qs.filter(issued_at__date__lte=date_to)
+            if payment_method:
+                qs = qs.filter(order__payment_method=payment_method)
+            if payment_status:
+                qs = qs.filter(order__payment_status=payment_status)
         return qs
 
     def get_context_data(self, **kwargs):
@@ -72,12 +94,18 @@ class InvoiceExportMixin:
             q = form.cleaned_data.get('q')
             date_from = form.cleaned_data.get('date_from')
             date_to = form.cleaned_data.get('date_to')
+            payment_method = form.cleaned_data.get('payment_method')
+            payment_status = form.cleaned_data.get('payment_status')
             if q:
                 qs = qs.filter(arabic_search_q(('invoice_number', 'order__order_number', 'order__customer__name', 'order__customer__phone'), q))
             if date_from:
                 qs = qs.filter(issued_at__date__gte=date_from)
             if date_to:
                 qs = qs.filter(issued_at__date__lte=date_to)
+            if payment_method:
+                qs = qs.filter(order__payment_method=payment_method)
+            if payment_status:
+                qs = qs.filter(order__payment_status=payment_status)
         return qs
 
 
@@ -97,7 +125,7 @@ class InvoiceExcelExportView(InvoiceExportMixin, SalesRequiredMixin, View):
         response['Content-Disposition'] = 'attachment; filename=\"invoices.csv\"'
         response.write('\ufeff')
         writer = csv.writer(response)
-        writer.writerow(['رقم الفاتورة', 'رقم الطلب', 'العميل', 'المندوب', 'طريقة الدفع', 'الإجمالي', 'المدفوع', 'المتبقي', 'التاريخ'])
+        writer.writerow(['رقم الفاتورة', 'رقم الطلب', 'العميل', 'المندوب', 'طريقة الدفع', 'حالة الدفع', 'الإجمالي', 'المدفوع', 'المتبقي', 'التاريخ'])
         for invoice in self.get_filtered_invoices(request):
             writer.writerow([
                 invoice.invoice_number,
@@ -105,6 +133,7 @@ class InvoiceExcelExportView(InvoiceExportMixin, SalesRequiredMixin, View):
                 invoice.order.customer or '',
                 invoice.order.created_by or '',
                 invoice.order.get_payment_method_display(),
+                invoice.order.get_payment_status_display(),
                 invoice.order.total,
                 invoice.order.paid_amount,
                 invoice.order.remaining_amount,
@@ -156,6 +185,36 @@ class InvoicePrintView(InvoiceContextMixin, SalesRequiredMixin, DetailView):
         self.object.printed_count += 1
         self.object.save(update_fields=['printed_count'])
         return response
+
+
+class InvoicePaymentCreateView(InvoiceContextMixin, SalesRequiredMixin, View):
+    def get_invoice(self, request, pk):
+        qs = Invoice.objects.select_related('order__customer', 'order__created_by')
+        if request.user.role == 'sales' and not request.user.is_superuser:
+            qs = qs.filter(order__created_by=request.user)
+        return get_object_or_404(qs, pk=pk)
+
+    def post(self, request, pk):
+        invoice = self.get_invoice(request, pk)
+        form = InvoicePaymentForm(request.POST, invoice=invoice)
+        if form.is_valid():
+            try:
+                collect_order_payment(
+                    order=invoice.order,
+                    amount=form.cleaned_data['amount'],
+                    cash_account=form.cleaned_data['cash_account'],
+                    transaction_date=form.cleaned_data['transaction_date'],
+                    notes=form.cleaned_data.get('notes') or f'دفعة من الفاتورة {invoice.invoice_number}',
+                    user=request.user,
+                )
+                messages.success(request, 'تم تسجيل الدفعة وتحديث المتبقي')
+                return redirect('invoices:detail', pk=invoice.pk)
+            except ValidationError as exc:
+                form.add_error(None, getattr(exc, 'message', str(exc)))
+        view = InvoiceDetailView()
+        view.request = request
+        view.object = invoice
+        return view.render_to_response(view.get_context_data(payment_form=form))
 
 
 class GenerateInvoiceView(SalesRequiredMixin, View):

@@ -129,6 +129,7 @@ function enhanceSelect(select) {
         const selected = selectedOption();
         const label = selected ? getComboText(selected.textContent, selected.value) : "";
         input.value = selected && selected.value ? label : "";
+        input.title = selected && selected.value ? label : "";
         input.placeholder = selected && !selected.value ? label : "";
         input.disabled = select.disabled;
         input.required = select.required;
@@ -155,10 +156,10 @@ function enhanceSelect(select) {
         }
     }
 
-    function openCombo() {
+    function openCombo(term = "") {
         if (select.disabled) return;
         closeAllCombos(combo);
-        render();
+        render(term);
         combo.classList.add("is-open");
         input.setAttribute("aria-expanded", "true");
     }
@@ -173,7 +174,7 @@ function enhanceSelect(select) {
         syncInput();
     }
 
-    input.addEventListener("focus", openCombo);
+    input.addEventListener("focus", () => openCombo(""));
     input.addEventListener("input", () => {
         const typed = getComboText(input.value);
         const typedLower = normalizeSearchText(typed);
@@ -183,7 +184,7 @@ function enhanceSelect(select) {
         } else if (select.value) {
             setSelectValue("");
         }
-        openCombo();
+        openCombo(typed);
     });
 
     toggle.addEventListener("click", () => {
@@ -192,7 +193,7 @@ function enhanceSelect(select) {
             return;
         }
         input.focus({ preventScroll: true });
-        openCombo();
+        openCombo("");
     });
 
     list.addEventListener("mousedown", (event) => {
@@ -272,23 +273,23 @@ function enhanceListInput(input) {
         }
     }
 
-    function openCombo() {
+    function openCombo(term = "") {
         if (input.disabled) return;
         closeAllCombos(combo);
-        render();
+        render(term);
         combo.classList.add("is-open");
         input.setAttribute("aria-expanded", "true");
     }
 
-    input.addEventListener("focus", openCombo);
-    input.addEventListener("input", openCombo);
+    input.addEventListener("focus", () => openCombo(""));
+    input.addEventListener("input", () => openCombo(input.value));
     toggle.addEventListener("click", () => {
         if (combo.classList.contains("is-open")) {
             closeCombo(combo);
             return;
         }
         input.focus({ preventScroll: true });
-        openCombo();
+        openCombo("");
     });
     list.addEventListener("mousedown", (event) => {
         event.preventDefault();

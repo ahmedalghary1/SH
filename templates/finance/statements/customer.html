@@ -11,7 +11,7 @@
         <thead><tr><th>العميل</th><th>الطلب</th><th>النوع</th><th>الاتجاه</th><th>المبلغ</th><th>الخزنة</th><th>التاريخ</th></tr></thead>
         <tbody>
         {% for tx in transactions %}
-            <tr><td>{{ tx.related_customer|default:'-' }}</td><td>{{ tx.related_order|default:'-' }}</td><td>{{ tx.get_transaction_type_display }}</td><td>{{ tx.get_direction_display }}</td><td>{{ tx.amount }}</td><td>{{ tx.cash_account }}</td><td>{{ tx.created_at }}</td></tr>
+            <tr><td>{{ tx.related_customer|default:'-' }}</td><td>{{ tx.related_order|default:'-' }}</td><td>{{ tx.get_transaction_type_display }}</td><td>{{ tx.get_direction_display }}</td><td>{{ tx.amount }}</td><td>{{ tx.cash_account }}</td><td>{{ tx.transaction_date }}</td></tr>
         {% empty %}
             <tr><td colspan="7">لا توجد حركات لهذا الاختيار</td></tr>
         {% endfor %}

@@ -4,6 +4,7 @@ from uuid import uuid4
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Sum
+from django.utils import timezone
 
 from .models import CashAccount, PaymentTransaction
 
@@ -36,6 +37,7 @@ def record_transaction(
     notes='',
     created_by=None,
     reference='',
+    transaction_date=None,
 ):
     amount = _as_decimal(amount)
     account = _locked_account(cash_account)
@@ -59,12 +61,13 @@ def record_transaction(
         related_supplier=related_supplier,
         related_supplier_name=related_supplier_name or '',
         notes=notes,
+        transaction_date=transaction_date or timezone.localdate(),
         created_by=created_by,
         reference=reference or '',
     )
 
 
-def record_customer_payment(*, order, customer, amount, user, cash_account=None, notes=''):
+def record_customer_payment(*, order, customer, amount, user, cash_account=None, notes='', transaction_date=None):
     amount = _as_decimal(amount)
     if order and amount > order.remaining_amount + order.paid_amount:
         raise ValidationError('مبلغ التحصيل أكبر من قيمة الطلب')
@@ -77,6 +80,7 @@ def record_customer_payment(*, order, customer, amount, user, cash_account=None,
         related_customer=customer,
         notes=notes,
         created_by=user,
+        transaction_date=transaction_date,
     )
 
 
@@ -151,7 +155,7 @@ def record_order_refund(*, order, user, cash_account=None, amount=None, notes=''
 
 
 @transaction.atomic
-def collect_order_payment(*, order, amount, user, cash_account=None, notes=''):
+def collect_order_payment(*, order, amount, user, cash_account=None, notes='', transaction_date=None):
     from orders.models import Order
 
     amount = _as_decimal(amount)
@@ -165,6 +169,7 @@ def collect_order_payment(*, order, amount, user, cash_account=None, notes=''):
         user=user,
         cash_account=cash_account,
         notes=notes,
+        transaction_date=transaction_date,
     )
     order.paid_amount += amount
     order.remaining_amount = max(order.total - order.paid_amount, Decimal('0'))
@@ -178,7 +183,7 @@ def collect_order_payment(*, order, amount, user, cash_account=None, notes=''):
     return tx
 
 
-def add_expense(*, amount, cash_account, user, notes=''):
+def add_expense(*, amount, cash_account, user, notes='', transaction_date=None):
     return record_transaction(
         transaction_type=PaymentTransaction.TYPE_EXPENSE,
         direction=PaymentTransaction.DIRECTION_OUT,
@@ -186,11 +191,12 @@ def add_expense(*, amount, cash_account, user, notes=''):
         cash_account=cash_account,
         notes=notes,
         created_by=user,
+        transaction_date=transaction_date,
     )
 
 
 @transaction.atomic
-def transfer_between_accounts(*, from_account, to_account, amount, user, notes=''):
+def transfer_between_accounts(*, from_account, to_account, amount, user, notes='', transaction_date=None):
     if from_account == to_account:
         raise ValidationError('لا يمكن التحويل إلى نفس الخزنة')
     reference = f'TRF-{uuid4().hex[:12].upper()}'
@@ -202,6 +208,7 @@ def transfer_between_accounts(*, from_account, to_account, amount, user, notes='
         notes=notes,
         created_by=user,
         reference=reference,
+        transaction_date=transaction_date,
     )
     in_tx = record_transaction(
         transaction_type=PaymentTransaction.TYPE_TRANSFER,
@@ -211,11 +218,12 @@ def transfer_between_accounts(*, from_account, to_account, amount, user, notes='
         notes=notes,
         created_by=user,
         reference=reference,
+        transaction_date=transaction_date,
     )
     return out_tx, in_tx
 
 
-def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, order=None, customer=None, notes=''):
+def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, order=None, customer=None, notes='', transaction_date=None):
     return record_transaction(
         transaction_type=PaymentTransaction.TYPE_SALES_REP_COLLECTION,
         direction=PaymentTransaction.DIRECTION_IN,
@@ -226,4 +234,5 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, o
         related_sales_rep=sales_rep,
         notes=notes,
         created_by=user,
+        transaction_date=transaction_date,
     )

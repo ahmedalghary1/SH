@@ -111,6 +111,34 @@ class OrderStockServiceTests(TestCase):
         self.assertEqual(order.remaining_amount, Decimal('0'))
         self.assertTrue(PaymentTransaction.objects.filter(related_order=order, amount=Decimal('570.00')).exists())
 
+    def test_create_credit_order_keeps_amount_due_without_auto_payment(self):
+        cash = CashAccount.objects.create(name='Credit Test Cash', balance=Decimal('0.00'))
+
+        order = create_order(
+            order_data={
+                'order_type': Order.TYPE_B2C,
+                'customer': self.customer,
+                'warehouse': self.warehouse,
+                'payment_method': Order.METHOD_CREDIT,
+            },
+            items=[{
+                'variant': self.variant,
+                'warehouse': self.warehouse,
+                'quantity': 1,
+                'unit_price': Decimal('300.00'),
+            }],
+            user=self.user,
+            confirm=True,
+        )
+        cash.refresh_from_db()
+
+        self.assertEqual(order.payment_method, Order.METHOD_CREDIT)
+        self.assertEqual(order.payment_status, Order.PAYMENT_UNPAID)
+        self.assertEqual(order.paid_amount, Decimal('0'))
+        self.assertEqual(order.remaining_amount, Decimal('300.00'))
+        self.assertFalse(PaymentTransaction.objects.filter(related_order=order).exists())
+        self.assertEqual(cash.balance, Decimal('0.00'))
+
     def test_confirm_order_can_deduct_items_from_different_warehouses(self):
         CashAccount.objects.create(name='Multi Warehouse Cash', balance=Decimal('0.00'))
         second_warehouse = Warehouse.objects.create(name='فرع ثاني', warehouse_type=Warehouse.TYPE_MAIN)
@@ -179,6 +207,31 @@ class OrderStockServiceTests(TestCase):
             transaction_type=PaymentTransaction.TYPE_REFUND,
             amount=Decimal('300.00'),
         ).exists())
+
+    def test_warehouse_or_sales_rep_shows_sales_rep_for_representative_warehouse(self):
+        sales_rep = User.objects.create_user(username='rep-user', password='pass', role=User.ROLE_SALES)
+        rep_warehouse = Warehouse.objects.create(
+            name='عهدة مندوب',
+            warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
+            assigned_user=sales_rep,
+        )
+        order = Order.objects.create(
+            order_number='ORD-REP-002',
+            order_type='b2c',
+            customer=self.customer,
+            warehouse=rep_warehouse,
+            created_by=sales_rep,
+        )
+        item = OrderItem.objects.create(
+            order=order,
+            variant=self.variant,
+            warehouse=rep_warehouse,
+            quantity=1,
+            unit_price=Decimal('300.00'),
+            total=Decimal('300.00'),
+        )
+
+        self.assertEqual(item.warehouse_or_sales_rep, sales_rep)
 
 
 class OrderSalesRepProductVisibilityTests(TestCase):

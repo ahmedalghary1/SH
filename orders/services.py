@@ -242,7 +242,7 @@ def create_order(*, order_data, items, user, confirm=False):
         max_percentage=max_discount,
     )
     calculate_order_totals(order)
-    if document_type == Order.DOCUMENT_SALE and order.total > 0:
+    if document_type == Order.DOCUMENT_SALE and order.total > 0 and order.payment_method != Order.METHOD_CREDIT:
         from finance.services import record_order_sale_payment
 
         record_order_sale_payment(
@@ -289,7 +289,12 @@ def confirm_order(*, order, user):
             movement_type=movement_type,
             note=f'صرف من الطلب {order.order_number}',
         )
-    if order.document_type == Order.DOCUMENT_SALE and order.total > 0 and order.paid_amount <= 0:
+    if (
+        order.document_type == Order.DOCUMENT_SALE
+        and order.total > 0
+        and order.paid_amount <= 0
+        and order.payment_method != Order.METHOD_CREDIT
+    ):
         from finance.services import record_order_sale_payment
 
         order.paid_amount = order.total

@@ -1,7 +1,8 @@
 {% extends 'base.html' %}
 {% block title %}الفواتير{% endblock %}
 {% block content %}
-<div class="page-head"><h1>الفواتير</h1><a class="btn btn-accent" href="{% url 'orders:create' %}">إضافة فاتورة</a></div>
+<div class="page-head"><h1>الفواتير</h1><a class="btn btn-accent" href="{% url 'orders:create' %}"><svg class="ui-icon"><use href="#icon-plus"></use></svg>إضافة فاتورة</a></div>
+{% include 'partials/export_buttons.html' %}
 <form class="filters"><input name="q" placeholder="رقم الطلب أو العميل" value="{{ request.GET.q }}"><select name="status"><option value="">كل الحالات</option><option value="draft">مسودة</option><option value="confirmed">مؤكد</option><option value="preparing">قيد التجهيز</option><option value="ready">جاهز</option><option value="completed">مكتمل</option></select><button class="btn btn-primary">بحث</button></form>
 <div class="table-wrap"><table><thead><tr><th>رقم الفاتورة</th><th>النوع</th><th>العميل</th><th>الحالة</th><th>طريقة الدفع</th><th>الإجمالي</th><th>الخصم</th><th>الموظف</th><th>إجراءات</th></tr></thead><tbody>
 {% for order in orders %}<tr><td>{{ order.order_number }}</td><td>{{ order.get_order_type_display }}</td><td>{{ order.customer|default:'-' }}</td><td><span class="badge status-{{ order.status }}">{{ order.get_status_display }}</span></td><td>{{ order.get_payment_method_display }}</td><td>{{ order.total }}</td><td>{{ order.discount }}</td><td>{{ order.created_by|default:'-' }}</td><td><a class="btn btn-light" href="{% url 'orders:detail' order.pk %}">عرض</a></td></tr>{% empty %}<tr><td colspan="9">لا توجد فواتير</td></tr>{% endfor %}

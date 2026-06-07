@@ -1,21 +1,30 @@
 <section class="invoice-box">
     <div class="invoice-head">
-        {% if company_settings.logo %}
-            <img class="invoice-logo" src="{{ company_settings.logo.url }}" alt="{{ company_settings.company_name }}">
-        {% else %}
-            <div class="brand-mark">م</div>
-        {% endif %}
-        <div>
-            <h1>{{ company_settings.company_name|default:'شركة الملابس' }}</h1>
-            <p>{{ company_settings.phone|default:'بيانات التواصل' }}{% if company_settings.email %} - {{ company_settings.email }}{% endif %}</p>
-            {% if company_settings.address %}<p>{{ company_settings.address }}</p>{% endif %}
+        <div class="invoice-brand">
+            {% if company_settings.logo %}
+                <img class="invoice-logo" src="{{ company_settings.logo.url }}" alt="{{ company_settings.company_name }}">
+            {% else %}
+                <div class="brand-mark">م</div>
+            {% endif %}
+            <div>
+                <h1>{{ company_settings.company_name|default:'شركة الملابس' }}</h1>
+                <p>{{ company_settings.phone|default:'بيانات التواصل' }}{% if company_settings.email %} - {{ company_settings.email }}{% endif %}</p>
+                {% if company_settings.address %}<p>{{ company_settings.address }}</p>{% endif %}
+            </div>
         </div>
-        <div><strong>{{ invoice.invoice_number }}</strong><p>{{ invoice.issued_at }}</p></div>
+        <div class="invoice-number-box">
+            <span>فاتورة</span>
+            <strong>{{ invoice.invoice_number }}</strong>
+            <p>{{ invoice.issued_at|date:'Y-m-d H:i' }}</p>
+        </div>
     </div>
     <div class="detail-grid">
         <div><span>رقم الفاتورة</span><strong>{{ invoice.invoice_number }}</strong></div>
         <div><span>العميل</span><strong>{{ invoice.order.customer }}</strong></div>
         <div><span>طريقة الدفع</span><strong>{{ invoice.order.get_payment_method_display }}</strong></div>
+        <div><span>حالة الدفع</span><strong>{{ invoice.order.get_payment_status_display }}</strong></div>
+        <div><span>المدفوع</span><strong>{{ invoice.order.paid_amount }}</strong></div>
+        <div><span>المتبقي</span><strong>{{ invoice.order.remaining_amount }}</strong></div>
         <div><span>الموظف</span><strong>{{ invoice.order.created_by|default:'-' }}</strong></div>
         {% if invoice.order.payment_method == 'wallet_transfer' %}
             <div><span>محفظة العميل</span><strong>{{ invoice.order.wallet_from_number|default:'-' }}</strong></div>
@@ -23,8 +32,8 @@
         {% endif %}
         {% if company_settings.tax_number %}<div><span>الرقم الضريبي</span><strong>{{ company_settings.tax_number }}</strong></div>{% endif %}
     </div>
-    <table><thead><tr><th>المنتج</th><th>اللون</th><th>المقاس</th><th>المخزن</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>الإجمالي</th></tr></thead><tbody>
-        {% for item in invoice.order.items.all %}<tr><td>{{ item.variant.product.name }}</td><td>{{ item.variant.color|default:'-' }}</td><td>{{ item.variant.size|default:'-' }}</td><td>{{ item.warehouse|default:invoice.order.warehouse|default:'-' }}</td><td>{{ item.quantity }}</td><td>{{ item.unit_price }}</td><td>{{ item.discount }}</td><td>{{ item.total }}</td></tr>{% endfor %}
+    <table class="invoice-items-table"><thead><tr><th>المنتج</th><th>اللون</th><th>المقاس</th><th>المخزن / المندوب</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>الإجمالي</th></tr></thead><tbody>
+        {% for item in invoice.order.items.all %}<tr><td>{{ item.variant.product.name }}</td><td>{{ item.variant.color|default:'-' }}</td><td>{{ item.variant.size|default:'-' }}</td><td>{{ item.warehouse_or_sales_rep|default:'-' }}</td><td>{{ item.quantity }}</td><td>{{ item.unit_price }}</td><td>{{ item.discount }}</td><td>{{ item.total }}</td></tr>{% endfor %}
     </tbody></table>
     <div class="invoice-totals">
         <p>الإجمالي قبل الخصم: <strong>{{ invoice.order.subtotal }}</strong></p>

@@ -56,11 +56,13 @@ class Order(models.Model):
     METHOD_COD = 'cod'
     METHOD_BANK = 'bank_transfer'
     METHOD_WALLET = 'wallet_transfer'
+    METHOD_CREDIT = 'credit'
     PAYMENT_METHOD_CHOICES = [
         (METHOD_CASH, 'نقدي'),
         (METHOD_COD, 'الدفع عند الاستلام'),
         (METHOD_BANK, 'تحويل بنكي مسجل يدويا'),
         (METHOD_WALLET, 'تحويل محفظة مسجل يدويا'),
+        (METHOD_CREDIT, 'آجل'),
     ]
 
     order_number = models.CharField(max_length=50, unique=True, db_index=True)
@@ -151,3 +153,11 @@ class OrderItem(models.Model):
     @property
     def item_profit(self):
         return self.profit_total
+
+    @property
+    def warehouse_or_sales_rep(self):
+        """Return the warehouse or sales rep name for representative warehouses."""
+        warehouse = self.warehouse or self.order.warehouse
+        if warehouse and warehouse.warehouse_type == Warehouse.TYPE_REPRESENTATIVE:
+            return warehouse.assigned_user or warehouse
+        return warehouse

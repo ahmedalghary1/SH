@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import date
 
 from django.test import TestCase
 from django.urls import reverse
@@ -96,3 +97,63 @@ class InvoicePDFExportTests(TestCase):
             ).count(),
             1,
         )
+
+    def test_generate_invoice_does_not_auto_collect_credit_invoice(self):
+        credit_order = Order.objects.create(
+            order_number='ORD-CREDIT-001',
+            order_type=Order.TYPE_B2C,
+            customer=self.order.customer,
+            warehouse=self.order.warehouse,
+            status=Order.STATUS_CONFIRMED,
+            payment_method=Order.METHOD_CREDIT,
+            payment_status=Order.PAYMENT_UNPAID,
+            subtotal=Decimal('500.00'),
+            total=Decimal('500.00'),
+            paid_amount=Decimal('0.00'),
+            remaining_amount=Decimal('500.00'),
+            created_by=self.user,
+        )
+
+        invoice = generate_invoice(credit_order, user=self.user)
+        credit_order.refresh_from_db()
+
+        self.assertEqual(invoice.order, credit_order)
+        self.assertEqual(credit_order.payment_status, Order.PAYMENT_UNPAID)
+        self.assertEqual(credit_order.remaining_amount, Decimal('500.00'))
+        self.assertFalse(PaymentTransaction.objects.filter(related_order=credit_order).exists())
+
+    def test_invoice_payment_add_records_installment_date_and_remaining_amount(self):
+        self.client.login(username='manager', password='pass12345')
+        cash = CashAccount.objects.create(name='Invoice Installment Cash', balance=Decimal('0.00'))
+        credit_order = Order.objects.create(
+            order_number='ORD-CREDIT-PAY-001',
+            order_type=Order.TYPE_B2C,
+            customer=self.order.customer,
+            warehouse=self.order.warehouse,
+            status=Order.STATUS_CONFIRMED,
+            payment_method=Order.METHOD_CREDIT,
+            payment_status=Order.PAYMENT_UNPAID,
+            subtotal=Decimal('500.00'),
+            total=Decimal('500.00'),
+            paid_amount=Decimal('0.00'),
+            remaining_amount=Decimal('500.00'),
+            created_by=self.user,
+        )
+        invoice = Invoice.objects.create(order=credit_order, invoice_number='INV-CREDIT-PAY-001')
+
+        response = self.client.post(reverse('invoices:payment_add', kwargs={'pk': invoice.pk}), {
+            'cash_account': cash.pk,
+            'amount': '200.00',
+            'transaction_date': '2026-06-01',
+            'notes': 'first installment',
+        })
+        credit_order.refresh_from_db()
+        cash.refresh_from_db()
+        tx = PaymentTransaction.objects.get(related_order=credit_order)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(credit_order.payment_status, Order.PAYMENT_PARTIAL)
+        self.assertEqual(credit_order.paid_amount, Decimal('200.00'))
+        self.assertEqual(credit_order.remaining_amount, Decimal('300.00'))
+        self.assertEqual(cash.balance, Decimal('200.00'))
+        self.assertEqual(tx.transaction_date, date(2026, 6, 1))

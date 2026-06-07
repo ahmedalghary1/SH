@@ -5,7 +5,6 @@
     const searchInput = document.getElementById("product-search");
     const variantSelect = document.getElementById("variant-select");
     const itemWarehouse = document.getElementById("item-warehouse");
-    const batchSelect = document.getElementById("stock-batch");
     const stockInput = document.getElementById("available-stock");
     const priceInput = document.getElementById("unit-price");
     const qtyInput = document.getElementById("item-quantity");
@@ -139,7 +138,6 @@
             item.color,
             item.size,
             item.warehouse_name,
-            item.batch_label,
         ].join(" ")).includes(q);
     }
 
@@ -147,12 +145,12 @@
         body.innerHTML = "";
         const visibleItems = items.map((item, index) => ({ item, index })).filter(({ item }) => itemMatchesFilter(item));
         if (!items.length) {
-            body.innerHTML = '<tr class="empty-row"><td colspan="10">لم تتم إضافة منتجات بعد</td></tr>';
+            body.innerHTML = '<tr class="empty-row"><td colspan="9">لم تتم إضافة منتجات بعد</td></tr>';
             updateSummary();
             return;
         }
         if (!visibleItems.length) {
-            body.innerHTML = '<tr class="empty-row"><td colspan="10">لا توجد أصناف مطابقة للبحث</td></tr>';
+            body.innerHTML = '<tr class="empty-row"><td colspan="9">لا توجد أصناف مطابقة للبحث</td></tr>';
             updateSummary();
             return;
         }
@@ -164,7 +162,6 @@
                 <td>${item.color || "-"}</td>
                 <td>${item.size || "-"}</td>
                 <td>${item.warehouse_name || "-"}</td>
-                <td>${item.batch_label || "تلقائي"}</td>
                 <td>${item.available_quantity}</td>
                 <td>${item.quantity}</td>
                 <td>${money(item.unit_price)}</td>
@@ -185,7 +182,6 @@
         stockInput.value = "";
         priceInput.value = "";
         itemWarehouse.innerHTML = '<option value="">اختر اللون والمقاس أولا</option>';
-        batchSelect.innerHTML = '<option value="">أقدم كمية متاحة تلقائيا</option>';
         updateLineTotal();
     }
 
@@ -200,8 +196,31 @@
         searchInput.setAttribute("aria-expanded", "false");
     }
 
+    async function renderProductResults(query) {
+        const data = await fetchJson(`/orders/ajax/search-products/?q=${encodeURIComponent(query)}`);
+        resultsBox.innerHTML = "";
+        if (!data.data.length) {
+            const empty = document.createElement("div");
+            empty.className = "combo-empty";
+            empty.textContent = "لا توجد نتائج";
+            resultsBox.appendChild(empty);
+            openProductResults();
+            return;
+        }
+        data.data.forEach((product) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "combo-option search-result";
+            button.textContent = `${product.name} - ${product.sku}`;
+            button.dataset.id = product.id;
+            button.dataset.name = product.name;
+            resultsBox.appendChild(button);
+        });
+        openProductResults();
+    }
+
     function loadProductResults() {
-        searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+        renderProductResults(selectedProduct ? "" : searchInput.value.trim());
     }
 
     searchInput.addEventListener("focus", loadProductResults);
@@ -223,26 +242,7 @@
             variantSelect.innerHTML = '<option value="">اختر المنتج أولا</option>';
             resetProductMeta();
         }
-        const data = await fetchJson(`/orders/ajax/search-products/?q=${encodeURIComponent(q)}`);
-        resultsBox.innerHTML = "";
-        if (!data.data.length) {
-            const empty = document.createElement("div");
-            empty.className = "combo-empty";
-            empty.textContent = "لا توجد نتائج";
-            resultsBox.appendChild(empty);
-            openProductResults();
-            return;
-        }
-        data.data.forEach((product) => {
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "combo-option search-result";
-            button.textContent = `${product.name} - ${product.sku}`;
-            button.dataset.id = product.id;
-            button.dataset.name = product.name;
-            resultsBox.appendChild(button);
-        });
-        openProductResults();
+        renderProductResults(q);
     });
 
     resultsBox.addEventListener("click", async (event) => {
@@ -302,25 +302,10 @@
         refreshVariantMeta();
     });
 
-    function fillBatches(batches) {
-        batchSelect.innerHTML = '<option value="">أقدم كمية متاحة تلقائيا</option>';
-        batches.forEach((batch) => {
-            const option = document.createElement("option");
-            option.value = batch.id;
-            option.textContent = `${batch.received_at} - تكلفة ${money(batch.unit_cost)} - متبقي ${batch.remaining_quantity}${batch.source ? ` - ${batch.source}` : ""}`;
-            option.dataset.quantity = batch.remaining_quantity;
-            option.dataset.cost = batch.unit_cost;
-            option.dataset.label = option.textContent;
-            batchSelect.appendChild(option);
-        });
-    }
-
     function updateSelectedWarehouse() {
         const selected = itemWarehouse.options[itemWarehouse.selectedIndex];
         stockInput.value = selected?.dataset.quantity || "";
         if (warehouse && itemWarehouse.value) warehouse.value = itemWarehouse.value;
-        const batches = selected?.dataset.batches ? JSON.parse(selected.dataset.batches) : [];
-        fillBatches(batches);
     }
 
     async function refreshVariantMeta() {
@@ -339,7 +324,6 @@
             option.textContent = `${warehouseStock.warehouse_name} - المتاح ${warehouseStock.quantity}`;
             option.dataset.quantity = warehouseStock.quantity;
             option.dataset.name = warehouseStock.warehouse_name;
-            option.dataset.batches = JSON.stringify(warehouseStock.batches || []);
             itemWarehouse.appendChild(option);
         });
         if (warehouses.length) itemWarehouse.value = warehouses[0].warehouse_id;
@@ -355,10 +339,6 @@
         updateSelectedWarehouse();
         updateLineTotal();
     });
-    batchSelect.addEventListener("change", () => {
-        const selectedBatch = batchSelect.options[batchSelect.selectedIndex];
-        if (selectedBatch?.dataset.quantity) stockInput.value = selectedBatch.dataset.quantity;
-    });
     orderType.addEventListener("change", refreshVariantMeta);
     customerSelect.addEventListener("change", refreshVariantMeta);
     documentType?.addEventListener("change", updateDocumentMode);
@@ -372,7 +352,6 @@
     addButton.addEventListener("click", () => {
         const selected = variantSelect.options[variantSelect.selectedIndex];
         const selectedWarehouse = itemWarehouse.options[itemWarehouse.selectedIndex];
-        const selectedBatch = batchSelect.options[batchSelect.selectedIndex];
         const quantity = Number(qtyInput.value || 0);
         const available = Number(stockInput.value || 0);
         if (!selectedProduct || !variantSelect.value) {
@@ -384,7 +363,7 @@
             return;
         }
         const alreadySelected = items
-            .filter((item) => item.variant_id === variantSelect.value && item.warehouse_id === itemWarehouse.value && (item.stock_batch_id || "") === (batchSelect.value || ""))
+            .filter((item) => item.variant_id === variantSelect.value && item.warehouse_id === itemWarehouse.value)
             .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
         if (quantity <= 0 || quantity + alreadySelected > available) {
             window.alert("الكمية غير متاحة");
@@ -399,8 +378,6 @@
             size: selected.dataset.size,
             warehouse_id: itemWarehouse.value,
             warehouse_name: selectedWarehouse?.dataset.name || "",
-            stock_batch_id: batchSelect.value || "",
-            batch_label: batchSelect.value ? selectedBatch?.dataset.label : "تلقائي",
             available_quantity: available,
             quantity,
             unit_price: unitPrice,

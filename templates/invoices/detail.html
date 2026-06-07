@@ -1,6 +1,46 @@
 {% extends 'base.html' %}
 {% block title %}فاتورة{% endblock %}
 {% block content %}
-<div class="page-head"><h1>فاتورة {{ invoice.invoice_number }}</h1><a class="btn btn-accent" href="{% url 'invoices:print' invoice.pk %}" target="_blank">طباعة</a></div>
+<div class="page-head">
+    <h1>فاتورة {{ invoice.invoice_number }}</h1>
+    <div class="actions">
+        <a class="btn btn-accent" href="{% url 'invoices:print' invoice.pk %}" target="_blank">طباعة</a>
+    </div>
+</div>
 {% include 'invoices/_invoice_box.html' %}
+
+<section class="card">
+    <div class="page-head compact-head">
+        <h2>دفعات الفاتورة</h2>
+        <span class="badge {% if invoice.order.payment_status == 'paid' %}success{% elif invoice.order.payment_status == 'partial' %}warning{% else %}danger{% endif %}">{{ invoice.order.get_payment_status_display }}</span>
+    </div>
+    {% if invoice.order.remaining_amount > 0 %}
+        <form method="post" action="{% url 'invoices:payment_add' invoice.pk %}" class="form-grid">
+            {% csrf_token %}
+            {% if payment_form.non_field_errors %}<div class="form-errors">{{ payment_form.non_field_errors }}</div>{% endif %}
+            {% for field in payment_form %}
+                <label>
+                    <span>{{ field.label }}</span>
+                    {{ field }}
+                    {% if field.errors %}<small class="error">{{ field.errors|join:', ' }}</small>{% endif %}
+                </label>
+            {% endfor %}
+            <div class="form-actions">
+                <button class="btn btn-primary" type="submit">تسجيل دفعة</button>
+            </div>
+        </form>
+    {% endif %}
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>تاريخ الدفعة</th><th>المبلغ</th><th>الخزنة</th><th>الموظف</th><th>ملاحظات</th><th>وقت التسجيل</th></tr></thead>
+            <tbody>
+                {% for payment in payment_rows %}
+                    <tr><td>{{ payment.transaction_date }}</td><td>{{ payment.amount }}</td><td>{{ payment.cash_account }}</td><td>{{ payment.created_by|default:'-' }}</td><td>{{ payment.notes|default:'-' }}</td><td>{{ payment.created_at }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="6">لا توجد دفعات مسجلة لهذه الفاتورة</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
 {% endblock %}

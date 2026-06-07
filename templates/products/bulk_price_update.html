@@ -1,23 +1,91 @@
 {% extends 'base.html' %}
+{% load l10n %}
 {% block title %}تحديث الأسعار{% endblock %}
 {% block content %}
 <div class="page-head">
-    <h1>تحديث الأسعار جماعيا</h1>
+    <h1>تحديث الأسعار</h1>
     <a class="btn btn-light" href="{% url 'products:list' %}">رجوع</a>
 </div>
+
 <section class="card">
-    <form method="post" class="form-grid" data-confirm="سيتم تطبيق التحديث على كل المنتجات المطابقة. هل تريد المتابعة؟">
+    <form method="post" class="price-update-form">
         {% csrf_token %}
-        {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
-        <label><span>{{ form.category.label }}</span>{{ form.category }}</label>
-        <label><span>{{ form.mode.label }}</span>{{ form.mode }}</label>
-        <label><span>{{ form.sale_price.label }}</span>{{ form.sale_price }}</label>
-        <label><span>{{ form.cost_price.label }}</span>{{ form.cost_price }}</label>
-        <label class="inline-check">{{ form.include_inactive }} <span>{{ form.include_inactive.label }}</span></label>
+        <div class="table-wrap">
+            <table class="price-update-table">
+                <thead>
+                    <tr>
+                        <th>المنتج</th>
+                        <th>الكود</th>
+                        <th>التصنيف</th>
+                        <th>اللون</th>
+                        <th>المقاس</th>
+                        <th>السعر القديم</th>
+                        <th>السعر</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td>{{ row.variant.product.name }}</td>
+                            <td>{{ row.variant.variant_sku|default:row.variant.product.sku }}</td>
+                            <td>{{ row.variant.product.category|default:'-' }}</td>
+                            <td>{{ row.variant.color|default:'-' }}</td>
+                            <td>{{ row.variant.size|default:'-' }}</td>
+                            <td>{{ row.variant.sale_price }}</td>
+                            <td class="price-cell">
+                                <input type="hidden" name="variant_id" value="{{ row.variant.pk }}">
+                                <input
+                                    type="number"
+                                    name="price_{{ row.variant.pk }}"
+                                    value="{{ row.price_value|unlocalize }}"
+                                    min="0"
+                                    step="0.01"
+                                    inputmode="decimal"
+                                    aria-label="سعر {{ row.variant.product.name }}"
+                                    data-price-input
+                                >
+                                {% if row.error %}<small class="error">{{ row.error }}</small>{% endif %}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="7">لا توجد منتجات نشطة لتحديث أسعارها.</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
         <div class="form-actions">
-            <button class="btn btn-accent" type="submit">تطبيق التحديث</button>
+            <button class="btn btn-accent" type="submit">حفظ الأسعار</button>
             <a class="btn btn-secondary" href="{% url 'products:list' %}">إلغاء</a>
         </div>
     </form>
 </section>
+
+<script>
+(() => {
+    const inputs = Array.from(document.querySelectorAll("[data-price-input]"));
+
+    const focusInput = (index) => {
+        const input = inputs[index];
+        if (!input) return;
+        input.focus();
+        input.select();
+    };
+
+    inputs.forEach((input, index) => {
+        input.addEventListener("keydown", (event) => {
+            if (event.key === "ArrowDown") {
+                event.preventDefault();
+                focusInput(index + 1);
+            } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                focusInput(index - 1);
+            }
+        });
+    });
+
+    focusInput(0);
+})();
+</script>
 {% endblock %}

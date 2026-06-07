@@ -3,8 +3,14 @@
 {% block content %}
 <div class="page-head">
     <h1>المنتجات</h1>
-    {% if request.user.is_manager %}<a class="btn btn-accent" href="{% url 'products:create' %}">إضافة منتج جديد</a>{% endif %}
+    {% if request.user.is_manager %}
+        <div class="actions">
+            <a class="btn btn-light" href="{% url 'products:bulk_price_update' %}"><svg class="ui-icon"><use href="#icon-money"></use></svg>تحديث الأسعار</a>
+            <a class="btn btn-accent" href="{% url 'products:create' %}"><svg class="ui-icon"><use href="#icon-plus"></use></svg>إضافة منتج جديد</a>
+        </div>
+    {% endif %}
 </div>
+{% include 'partials/export_buttons.html' %}
 <form class="filters">
     <input name="q" placeholder="بحث بالاسم أو كود المنتج" value="{{ request.GET.q }}">
     <select name="category"><option value="">كل التصنيفات</option>{% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}</select>

@@ -9,19 +9,21 @@
     {{ filter_form.q }}
     {{ filter_form.date_from }}
     {{ filter_form.date_to }}
+    {{ filter_form.payment_method }}
+    {{ filter_form.payment_status }}
     <button class="btn btn-primary" type="submit">تصفية</button>
     <a class="btn btn-light" href="{% url 'invoices:list' %}">إعادة ضبط</a>
 </form>
 <form method="post">
     {% csrf_token %}
     <div class="button-row card">
-        <button class="btn btn-accent" formaction="{% url 'invoices:export_excel' %}?q={{ request.GET.q }}&date_from={{ request.GET.date_from }}&date_to={{ request.GET.date_to }}" type="submit">تصدير Excel</button>
-        <button class="btn btn-accent" formaction="{% url 'invoices:export_pdf' %}?q={{ request.GET.q }}&date_from={{ request.GET.date_from }}&date_to={{ request.GET.date_to }}" type="submit">تحميل PDF</button>
-        <button class="btn btn-light" formaction="{% url 'invoices:report_print' %}?q={{ request.GET.q }}&date_from={{ request.GET.date_from }}&date_to={{ request.GET.date_to }}" formtarget="_blank" type="submit">عرض للطباعة</button>
+        <button class="btn btn-accent" formaction="{% url 'invoices:export_excel' %}?{{ request.GET.urlencode }}" type="submit">تصدير Excel</button>
+        <button class="btn btn-accent" formaction="{% url 'invoices:export_pdf' %}?{{ request.GET.urlencode }}" type="submit">تحميل PDF</button>
+        <button class="btn btn-light" formaction="{% url 'invoices:report_print' %}?{{ request.GET.urlencode }}" formtarget="_blank" type="submit">عرض للطباعة</button>
     </div>
     <div class="table-wrap">
         <table>
-            <thead><tr><th>اختيار</th><th>رقم الفاتورة</th><th>رقم الطلب</th><th>العميل</th><th>هاتف العميل</th><th>المندوب أو الفرع</th><th>الإجمالي</th><th>الخصم</th><th>طريقة الدفع</th><th>تاريخ الشراء</th><th>إجراءات</th></tr></thead>
+            <thead><tr><th>اختيار</th><th>رقم الفاتورة</th><th>رقم الطلب</th><th>العميل</th><th>هاتف العميل</th><th>المندوب أو الفرع</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>حالة الدفع</th><th>طريقة الدفع</th><th>تاريخ الشراء</th><th>إجراءات</th></tr></thead>
             <tbody>
             {% for invoice in invoices %}
                 <tr>
@@ -32,7 +34,9 @@
                     <td>{{ invoice.order.customer.phone|default:'-' }}</td>
                     <td>{{ invoice.order.created_by|default:'-' }}</td>
                     <td>{{ invoice.order.total }}</td>
-                    <td>{{ invoice.order.discount }}</td>
+                    <td>{{ invoice.order.paid_amount }}</td>
+                    <td>{{ invoice.order.remaining_amount }}</td>
+                    <td><span class="badge {% if invoice.order.payment_status == 'paid' %}success{% elif invoice.order.payment_status == 'partial' %}warning{% else %}danger{% endif %}">{{ invoice.order.get_payment_status_display }}</span></td>
                     <td>{{ invoice.order.get_payment_method_display }}</td>
                     <td>{{ invoice.issued_at }}</td>
                     <td class="actions">
@@ -41,7 +45,7 @@
                     </td>
                 </tr>
             {% empty %}
-                <tr><td colspan="11">لا توجد فواتير</td></tr>
+                <tr><td colspan="13">لا توجد فواتير</td></tr>
             {% endfor %}
             </tbody>
         </table>

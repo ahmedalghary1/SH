@@ -14,7 +14,7 @@
         <label><span>نوع المستند</span>{{ form.document_type }}</label>
         <label><span>نوع البيع</span>{{ form.order_type }}</label>
         <label><span>العميل</span>{{ form.customer }}</label>
-        <button class="btn btn-light" type="button" data-open-modal="customer-modal">إضافة عميل سريع</button>
+        <button class="btn btn-light" type="button" data-open-modal="customer-modal"><svg class="ui-icon"><use href="#icon-users"></use></svg>إضافة عميل سريع</button>
         <label><span>طريقة الدفع</span>{{ form.payment_method }}</label>
         <label class="wallet-field" hidden><span>محفظة العميل</span>{{ form.wallet_from_number }}</label>
         <label class="wallet-field" hidden><span>محفظة الشركة</span>{{ form.wallet_to_number }}</label>
@@ -27,12 +27,11 @@
         <label class="span-2"><span>بحث المنتج</span><input id="product-search" type="search" placeholder="اكتب اسم المنتج أو الكود"></label>
         <label><span>اللون والمقاس</span><select id="variant-select"><option value="">اختر المنتج أولا</option></select></label>
         <label><span>المخزن</span><select id="item-warehouse"><option value="">اختر المنتج أولا</option></select></label>
-        <label><span>دفعة السعر</span><select id="stock-batch"><option value="">أقدم كمية متاحة تلقائيا</option></select></label>
         <label><span>الكمية الموجودة</span><input id="available-stock" type="number" readonly></label>
         <label><span>الكمية المطلوبة</span><input id="item-quantity" type="number" min="1" value="1"></label>
         <label><span>سعر الوحدة</span><input id="unit-price" type="number" step="0.01"></label>
         <label><span>إجمالي الصنف</span><input id="line-total" type="number" step="0.01" readonly></label>
-        <button class="btn btn-primary span-2" type="button" id="add-item">إضافة للفاتورة</button>
+        <button class="btn btn-primary span-2" type="button" id="add-item"><svg class="ui-icon"><use href="#icon-plus"></use></svg>إضافة للفاتورة</button>
     </section>
 
     <section class="card span-all">
@@ -42,14 +41,14 @@
         </div>
         <div class="table-wrap">
             <table>
-                <thead><tr><th>المنتج</th><th>اللون</th><th>المقاس</th><th>المخزن</th><th>دفعة السعر</th><th>المتاح</th><th>المطلوب</th><th>السعر</th><th>الإجمالي</th><th>حذف</th></tr></thead>
-                <tbody id="order-items-body"><tr class="empty-row"><td colspan="10">لم تتم إضافة منتجات بعد</td></tr></tbody>
+                <thead><tr><th>المنتج</th><th>اللون</th><th>المقاس</th><th>المخزن</th><th>المتاح</th><th>المطلوب</th><th>السعر</th><th>الإجمالي</th><th>حذف</th></tr></thead>
+                <tbody id="order-items-body"><tr class="empty-row"><td colspan="9">لم تتم إضافة منتجات بعد</td></tr></tbody>
             </table>
         </div>
         {% include 'orders/partials/order_summary.html' %}
         <div class="form-actions">
-            <button class="btn btn-accent" name="action" value="confirm" type="submit">تأكيد وإصدار فاتورة</button>
-            <button class="btn btn-light" name="action" value="draft" type="submit">حفظ كتسعيرة بدون تأكيد</button>
+            <button class="btn btn-accent" name="action" value="confirm" type="submit"><svg class="ui-icon"><use href="#icon-invoice"></use></svg>تأكيد وإصدار فاتورة</button>
+            <button class="btn btn-light" name="action" value="draft" type="submit"><svg class="ui-icon"><use href="#icon-file"></use></svg>حفظ كتسعيرة بدون تأكيد</button>
             <a class="btn btn-secondary" href="{% url 'orders:list' %}">إلغاء</a>
         </div>
     </section>

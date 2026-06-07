@@ -77,6 +77,33 @@ iframe {
     max-width: 100%;
 }
 
+.icon-sprite {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+}
+
+.ui-icon {
+    display: inline-block;
+    flex: 0 0 auto;
+    inline-size: 1.05rem;
+    block-size: 1.05rem;
+    color: currentColor;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.btn .ui-icon,
+.nav-link .ui-icon,
+.nav-group-toggle .ui-icon {
+    inline-size: 1rem;
+    block-size: 1rem;
+}
+
 [hidden] {
     display: none !important;
 }
@@ -734,6 +761,8 @@ textarea::placeholder {
     background: #fff;
     color: var(--text-color);
     text-align: right;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .combo-option:last-child,
@@ -831,6 +860,108 @@ tbody tr:last-child td {
 
 tbody tr:hover {
     background: #f6fbff;
+}
+
+.export-actions {
+    margin-bottom: clamp(.75rem, 1.5vw, 1rem);
+}
+
+.workflow-panel {
+    display: grid;
+    gap: .65rem;
+    margin-bottom: clamp(.875rem, 1.5vw, 1rem);
+    padding: .85rem;
+    border: .0625rem solid var(--border-color);
+    background: var(--surface-color);
+    box-shadow: 0 .35rem 1rem rgba(6, 27, 51, .035);
+}
+
+.workflow-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.workflow-head h2 {
+    margin-bottom: 0;
+    color: #334155;
+    font-size: .95rem;
+}
+
+.workflow-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(9.5rem, 100%), 1fr));
+    gap: .5rem;
+}
+
+.workflow-action {
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    min-height: 2.9rem;
+    padding: .55rem .65rem;
+    border: .0625rem solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: #fbfdff;
+    color: var(--text-color);
+    font-size: .9rem;
+    font-weight: 700;
+    transition: border-color .16s ease, background .16s ease, color .16s ease;
+}
+
+.workflow-action:hover {
+    border-color: #c8d7e2;
+    background: #f6fbff;
+    color: var(--primary-color);
+}
+
+.workflow-icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    inline-size: 1.9rem;
+    block-size: 1.9rem;
+    border-radius: var(--radius-sm);
+    background: #eef8fc;
+    color: var(--accent-strong);
+}
+
+.workflow-action:nth-child(2) .workflow-icon {
+    background: #eefbf6;
+    color: #159875;
+}
+
+.workflow-action:nth-child(3) .workflow-icon {
+    background: #fff6e8;
+    color: #bd6c16;
+}
+
+.workflow-action:nth-child(4) .workflow-icon {
+    background: #f1edff;
+    color: #7658d6;
+}
+
+.workflow-action:nth-child(5) .workflow-icon {
+    background: #f5f7fa;
+    color: #334155;
+}
+
+.workflow-icon .ui-icon {
+    inline-size: 1rem;
+    block-size: 1rem;
+}
+
+.price-update-table .price-cell {
+    min-width: 10rem;
+}
+
+.price-update-table input[type="number"] {
+    width: 9rem;
+}
+
+.price-update-table tr:focus-within {
+    background: #eef8ff;
 }
 
 .thumb,
@@ -1034,6 +1165,55 @@ tbody tr:hover {
     align-items: start;
 }
 
+.order-layout-simple {
+    grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr);
+}
+
+.order-layout-simple .order-panel {
+    gap: .875rem;
+    padding: clamp(.95rem, 1.6vw, 1.15rem);
+    border: .0625rem solid var(--border-color);
+    box-shadow: 0 .35rem 1.2rem rgba(6, 27, 51, .04);
+}
+
+.order-layout-simple .order-panel h2 {
+    margin-bottom: .25rem;
+    color: #26384d;
+    font-size: 1rem;
+}
+
+.order-layout-simple .span-all {
+    grid-column: 1 / -1;
+}
+
+.order-layout-simple label span {
+    font-size: .8rem;
+}
+
+.order-layout-simple input,
+.order-layout-simple select {
+    min-height: 2.55rem;
+}
+
+.order-layout-simple .table-wrap {
+    margin-bottom: .875rem;
+}
+
+.order-layout-simple .summary-grid {
+    gap: .625rem;
+    margin-bottom: .875rem;
+}
+
+.order-layout-simple .summary-grid div {
+    padding: .75rem .85rem;
+}
+
+.order-layout-simple .summary-grid strong {
+    display: block;
+    margin-top: .25rem;
+    font-size: 1.05rem;
+}
+
 .results {
     display: none;
     max-height: min(15rem, 45dvh);
@@ -1124,24 +1304,103 @@ tbody tr:hover {
 }
 
 .invoice-box {
+    width: min(100%, 58rem);
+    margin-inline: auto;
     padding: clamp(1rem, 3vw, 1.75rem);
+    border: .0625rem solid var(--border-color);
+    background: #fff;
 }
 
 .invoice-head {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: clamp(.875rem, 2vw, 1.25rem);
+    padding-bottom: .9rem;
     margin-bottom: clamp(1rem, 3vw, 1.5rem);
+    border-bottom: .125rem solid var(--primary-color);
+}
+
+.invoice-brand {
+    display: flex;
+    align-items: flex-start;
+    gap: .875rem;
+    min-width: 0;
+}
+
+.invoice-head h1 {
+    margin-bottom: .15rem;
+    font-size: 1.25rem;
+}
+
+.invoice-head p {
+    margin: .2rem 0 0;
+    color: var(--muted-text);
 }
 
 .invoice-logo {
     object-fit: contain;
 }
 
+.invoice-number-box {
+    display: grid;
+    gap: .15rem;
+    min-width: 10rem;
+    padding: .65rem .8rem;
+    border: .0625rem solid var(--border-color);
+    background: var(--surface-muted);
+    text-align: center;
+}
+
+.invoice-number-box span {
+    color: var(--muted-text);
+    font-size: .78rem;
+    font-weight: 800;
+}
+
+.invoice-number-box strong {
+    color: var(--primary-color);
+    font-size: 1.05rem;
+}
+
+.invoice-number-box p {
+    margin: 0;
+    font-size: .8rem;
+}
+
+.invoice-items-table {
+    margin-top: 1rem;
+}
+
+.invoice-items-table th {
+    background: var(--primary-color);
+    color: #fff;
+}
+
 .invoice-totals {
+    display: grid;
+    gap: .35rem;
     width: min(100%, 21rem);
     margin-right: auto;
+    margin-top: 1rem;
+    padding: .8rem;
+    border: .0625rem solid var(--border-color);
+    background: var(--surface-muted);
+}
+
+.invoice-totals p {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 0;
+}
+
+.invoice-totals p:last-child {
+    padding-top: .45rem;
+    border-top: .0625rem solid var(--border-color);
+    color: var(--primary-color);
+    font-size: 1.05rem;
 }
 
 .stamp {
@@ -1616,22 +1875,75 @@ tbody tr:hover {
     body {
         background: #fff;
         overflow: visible;
+        color: #111827;
+        font-size: 11pt;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
     }
 
     .app-shell {
         display: block;
     }
 
+    .main-area {
+        background: #fff;
+    }
+
     .page-content {
         width: auto;
         max-width: none;
-        padding: 0;
+        padding: 0 !important;
     }
 
-    .invoice-box,
     .card,
     .table-wrap {
+        border: 0;
         box-shadow: none;
+    }
+
+    .invoice-box {
+        width: 100%;
+        padding: 8mm;
+        border: .0625rem solid #d1d5db;
+        background: #fff;
+        box-shadow: none;
+    }
+
+    .invoice-head {
+        page-break-inside: avoid;
+        gap: 7mm;
+        padding-bottom: 5mm;
+        margin-bottom: 5mm;
+        border-bottom-color: #071d35;
+    }
+
+    .invoice-brand {
+        gap: 4mm;
+    }
+
+    .invoice-logo,
+    .brand-mark {
+        inline-size: 16mm;
+        block-size: 16mm;
+    }
+
+    .invoice-number-box {
+        min-width: 38mm;
+        padding: 3mm 4mm;
+        border-color: #d1d5db;
+        background: #f8fafc;
+    }
+
+    .detail-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: .4rem;
+    }
+
+    .detail-grid div,
+    .summary-grid div {
+        padding: .45rem .55rem;
+        border-color: #d1d5db;
+        background: #f9fafb;
     }
 
     .table-wrap {
@@ -1640,5 +1952,47 @@ tbody tr:hover {
 
     table {
         width: 100%;
+        min-width: 0;
+        font-size: 9.5pt;
+        page-break-inside: auto;
+    }
+
+    thead {
+        display: table-header-group;
+    }
+
+    tr {
+        page-break-inside: avoid;
+    }
+
+    th {
+        background: #071d35 !important;
+        color: #fff !important;
+    }
+
+    th,
+    td {
+        padding: .35rem .45rem;
+        white-space: normal;
+        border-color: #d1d5db;
+    }
+
+    .invoice-totals {
+        width: 70mm;
+        padding: 4mm;
+        border-color: #d1d5db;
+        background: #f8fafc;
+        page-break-inside: avoid;
+    }
+
+    .stamp {
+        width: 55mm;
+        min-height: 22mm;
+        page-break-inside: avoid;
+    }
+
+    @page {
+        size: A4;
+        margin: 10mm;
     }
 }

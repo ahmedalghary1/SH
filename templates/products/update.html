@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load l10n %}
 {% block title %}تعديل منتج{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -21,8 +22,35 @@
 
     <section class="card">
         <div class="page-head compact-head">
-            <h2>المخازن والكميات</h2>
+            <h2>الألوان والمقاسات والأسعار</h2>
             <a class="btn btn-light" href="{% url 'products:variant_create' %}?product={{ product.pk }}">إضافة لون / مقاس</a>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>الكود</th><th>اللون</th><th>المقاس</th><th>السعر</th><th>الحالة</th></tr></thead>
+                <tbody>
+                {% for variant in variants %}
+                    <tr>
+                        <td>{{ variant.variant_sku }}</td>
+                        <td>{{ variant.color|default:'-' }}</td>
+                        <td>{{ variant.size|default:'-' }}</td>
+                        <td class="price-cell">
+                            <input type="hidden" name="variant_id" value="{{ variant.pk }}">
+                            <input type="number" min="0" step="0.01" name="variant_{{ variant.pk }}_sale_price" value="{{ variant.sale_price|unlocalize }}">
+                        </td>
+                        <td><span class="badge {% if variant.is_active %}success{% else %}danger{% endif %}">{% if variant.is_active %}نشط{% else %}متوقف{% endif %}</span></td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="5">لا توجد ألوان أو مقاسات لهذا المنتج بعد.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="page-head compact-head">
+            <h2>المخازن والكميات</h2>
         </div>
         <div class="table-wrap">
             <table>

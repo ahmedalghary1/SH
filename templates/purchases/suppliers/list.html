@@ -8,6 +8,7 @@
         <a class="btn btn-primary" href="{% url 'purchases:supplier_create' %}">إضافة مورد</a>
     </div>
 </div>
+{% include 'partials/export_buttons.html' %}
 <form class="card filter-form" method="get">
     <label><span>بحث</span><input type="search" name="q" value="{{ request.GET.q }}" placeholder="اسم المورد"></label>
     <button class="btn btn-primary" type="submit">بحث</button>

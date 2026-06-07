@@ -6,6 +6,7 @@ from django.urls import reverse_lazy
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView, View
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin
+from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
 
@@ -15,11 +16,22 @@ from .raw_material import RawMaterialPurchaseForm, record_raw_material_purchase
 from .services import cancel_purchase_order, create_purchase_order, pay_supplier, receive_purchase_order_items
 
 
-class SupplierListView(ManagerRequiredMixin, ListView):
+class SupplierListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = Supplier
     template_name = 'purchases/suppliers/list.html'
     context_object_name = 'suppliers'
     paginate_by = 20
+    export_title = 'قائمة الموردين'
+    export_filename = 'suppliers'
+    export_columns = (
+        ('اسم المورد', 'name'),
+        ('الشركة', 'company_name'),
+        ('الهاتف', 'phone'),
+        ('البريد', 'email'),
+        ('الرصيد الافتتاحي', 'opening_balance'),
+        ('الرصيد الحالي', 'current_balance'),
+        ('الحالة', lambda supplier: 'نشط' if supplier.is_active else 'متوقف'),
+    )
 
     def get_queryset(self):
         qs = Supplier.objects.order_by('-created_at')
@@ -105,11 +117,24 @@ class SupplierStatementView(ManagerRequiredMixin, DetailView):
         return context
 
 
-class PurchaseOrderListView(ManagerRequiredMixin, ListView):
+class PurchaseOrderListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = PurchaseOrder
     template_name = 'purchases/orders/list.html'
     context_object_name = 'purchase_orders'
     paginate_by = 20
+    export_title = 'قائمة أوامر الشراء'
+    export_filename = 'purchase-orders'
+    export_columns = (
+        ('رقم أمر الشراء', 'purchase_number'),
+        ('المورد', 'supplier'),
+        ('الحالة', 'get_status_display'),
+        ('تاريخ الطلب', 'order_date'),
+        ('التاريخ المتوقع', 'expected_date'),
+        ('الإجمالي', 'total_amount'),
+        ('المدفوع', 'paid_amount'),
+        ('المتبقي', 'remaining_amount'),
+        ('الموظف', 'created_by'),
+    )
 
     def get_queryset(self):
         qs = PurchaseOrder.objects.select_related('supplier', 'created_by').order_by('-created_at')

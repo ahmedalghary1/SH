@@ -5,6 +5,7 @@
     <h1>المقاسات</h1>
     <a class="btn btn-accent" href="{% url 'products:size_create' %}">إضافة مقاس</a>
 </div>
+{% include 'partials/export_buttons.html' %}
 <div class="table-wrap">
     <table>
         <thead><tr><th>المقاس</th><th>ترتيب العرض</th><th>إجراءات</th></tr></thead>

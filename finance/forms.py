@@ -1,4 +1,5 @@
 from django import forms
+from django.utils import timezone
 
 from accounts.models import User
 from customers.models import Customer
@@ -39,6 +40,7 @@ class CashAccountForm(forms.ModelForm):
 class ExpenseForm(forms.Form):
     cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة')
     amount = forms.DecimalField(min_value=0.01, label='المبلغ')
+    transaction_date = forms.DateField(label='تاريخ المصروف', initial=timezone.localdate, widget=forms.DateInput(attrs={'type': 'date'}))
     notes = forms.CharField(widget=forms.Textarea, required=False, label='بيان المصروف')
 
 
@@ -47,6 +49,7 @@ class CustomerCollectionForm(forms.Form):
     customer = forms.ModelChoiceField(queryset=Customer.objects.filter(is_active=True), label='العميل', required=False)
     order = forms.ModelChoiceField(queryset=Order.objects.exclude(remaining_amount=0), label='الطلب', required=False)
     amount = forms.DecimalField(min_value=0.01, label='المبلغ')
+    transaction_date = forms.DateField(label='تاريخ التحصيل', initial=timezone.localdate, widget=forms.DateInput(attrs={'type': 'date'}))
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
 
     def clean(self):
@@ -67,6 +70,7 @@ class TransferForm(forms.Form):
     from_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='من خزنة')
     to_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='إلى خزنة')
     amount = forms.DecimalField(min_value=0.01, label='المبلغ')
+    transaction_date = forms.DateField(label='تاريخ التحويل', initial=timezone.localdate, widget=forms.DateInput(attrs={'type': 'date'}))
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
 
 

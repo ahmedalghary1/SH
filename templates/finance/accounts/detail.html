@@ -64,7 +64,8 @@
                     <th>المرجع</th>
                     <th>البيان</th>
                     <th>المستخدم</th>
-                    <th>التاريخ</th>
+                    <th>تاريخ الحركة</th>
+                    <th>وقت التسجيل</th>
                 </tr>
             </thead>
             <tbody>
@@ -80,10 +81,11 @@
                     <td>{{ tx.reference|default:'-' }}</td>
                     <td>{{ tx.notes|default:'-' }}</td>
                     <td>{{ tx.created_by|default:'-' }}</td>
+                    <td>{{ tx.transaction_date }}</td>
                     <td>{{ tx.created_at }}</td>
                 </tr>
             {% empty %}
-                <tr><td colspan="11">لا توجد حركات على هذا الحساب</td></tr>
+                <tr><td colspan="12">لا توجد حركات على هذا الحساب</td></tr>
             {% endfor %}
             </tbody>
         </table>

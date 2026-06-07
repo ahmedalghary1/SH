@@ -48,6 +48,7 @@ class OrderForm(forms.ModelForm):
         self.fields['payment_method'].choices = (
             (Order.METHOD_CASH, 'نقدي'),
             (Order.METHOD_WALLET, 'تحويل عبر محفظة'),
+            (Order.METHOD_CREDIT, 'آجل'),
         )
         self.fields['payment_method'].initial = Order.METHOD_CASH
 
@@ -63,6 +64,8 @@ class OrderForm(forms.ModelForm):
             raise ValidationError('بيانات العميل مطلوبة عند البيع لشركة أو تاجر')
         if document_type == Order.DOCUMENT_QUOTE:
             return cleaned
+        if payment_method == Order.METHOD_CREDIT and not customer:
+            raise ValidationError('اختر العميل عند تسجيل فاتورة آجلة')
         if payment_method == Order.METHOD_WALLET and (not wallet_from or not wallet_to):
             raise ValidationError('أرقام المحافظ مطلوبة عند اختيار الدفع بمحفظة')
         return cleaned

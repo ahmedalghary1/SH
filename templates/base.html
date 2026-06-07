@@ -12,6 +12,7 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body>
+{% include 'partials/icon_sprite.html' %}
 {% if request.user.is_authenticated %}
 <div class="sidebar-backdrop" data-sidebar-close></div>
 <div class="app-shell">

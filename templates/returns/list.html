@@ -5,6 +5,7 @@
     <h1>المرتجعات</h1>
     <a class="btn btn-primary" href="{% url 'returns:create' %}">إنشاء مرتجع</a>
 </div>
+{% include 'partials/export_buttons.html' %}
 <div class="table-wrap card">
     <table>
         <thead><tr><th>رقم</th><th>الطلب</th><th>العميل</th><th>النوع</th><th>الحالة</th><th>المبلغ</th><th>التاريخ</th><th></th></tr></thead>

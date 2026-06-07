@@ -11,6 +11,7 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import DetailView, FormView, ListView, UpdateView, View
 
 from accounts.permissions import RoleRequiredMixin, SalesRequiredMixin, sales_required
+from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from customers.models import Customer
 from invoices.services import generate_invoice
@@ -59,12 +60,25 @@ def _available_products_for_user(user):
     return qs
 
 
-class OrderListView(RoleRequiredMixin, ListView):
+class OrderListView(RoleRequiredMixin, ExportListMixin, ListView):
     allowed_roles = ('manager', 'sales', 'warehouse')
     model = Order
     template_name = 'orders/list.html'
     context_object_name = 'orders'
     paginate_by = 20
+    export_title = 'قائمة الفواتير'
+    export_filename = 'orders'
+    export_columns = (
+        ('رقم الفاتورة', 'order_number'),
+        ('النوع', 'get_order_type_display'),
+        ('العميل', 'customer'),
+        ('الحالة', 'get_status_display'),
+        ('طريقة الدفع', 'get_payment_method_display'),
+        ('الإجمالي', 'total'),
+        ('الخصم', 'discount'),
+        ('الموظف', 'created_by'),
+        ('التاريخ', 'created_at'),
+    )
 
     def get_queryset(self):
         qs = Order.objects.select_related('customer', 'warehouse', 'created_by').order_by('-created_at')

@@ -1,7 +1,8 @@
 {% extends 'base.html' %}
 {% block title %}لوحة المبيعات{% endblock %}
 {% block content %}
-<div class="page-head"><h1>لوحة المبيعات</h1><a class="btn btn-accent" href="{% url 'orders:create' %}">فاتورة جديدة</a></div>
+<div class="page-head"><h1>لوحة المبيعات</h1><a class="btn btn-accent" href="{% url 'orders:create' %}"><svg class="ui-icon"><use href="#icon-plus"></use></svg>فاتورة جديدة</a></div>
+{% include 'partials/workflow_actions.html' %}
 <div class="stats-grid">
     <div class="stat-card"><span>طلباتي اليوم</span><strong>{{ my_orders_today }}</strong></div>
     <div class="stat-card"><span>مبيعاتي اليوم</span><strong>{{ my_sales_today }}</strong></div>

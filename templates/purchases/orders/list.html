@@ -5,6 +5,7 @@
     <h1>أوامر الشراء</h1>
     <a class="btn btn-primary" href="{% url 'purchases:order_create' %}">إنشاء أمر شراء</a>
 </div>
+{% include 'partials/export_buttons.html' %}
 <div class="table-wrap card">
     <table>
         <thead><tr><th>الرقم</th><th>المورد</th><th>الحالة</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th></th></tr></thead>

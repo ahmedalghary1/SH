@@ -7,6 +7,7 @@ from django.urls import reverse_lazy
 from django.views.generic import DetailView, FormView, ListView, TemplateView, View
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, SalesRequiredMixin
+from config.exports import ExportListMixin
 
 from .forms import CompleteReturnForm, ExchangeItemForm, ReturnItemForm, SalesReturnCreateForm
 from .models import SalesReturn, SalesReturnItem
@@ -20,12 +21,25 @@ from .services import (
 )
 
 
-class SalesReturnListView(RoleRequiredMixin, ListView):
+class SalesReturnListView(RoleRequiredMixin, ExportListMixin, ListView):
     allowed_roles = ('manager', 'sales', 'warehouse')
     model = SalesReturn
     template_name = 'returns/list.html'
     context_object_name = 'returns'
     paginate_by = 20
+    export_title = 'قائمة المرتجعات'
+    export_filename = 'returns'
+    export_columns = (
+        ('رقم المرتجع', 'id'),
+        ('رقم الطلب', 'order.order_number'),
+        ('العميل', 'customer'),
+        ('النوع', 'get_return_type_display'),
+        ('الحالة', 'get_status_display'),
+        ('قيمة الاسترداد', 'refund_amount'),
+        ('الموظف', 'created_by'),
+        ('التاريخ', 'created_at'),
+        ('السبب', 'reason'),
+    )
 
     def get_queryset(self):
         qs = SalesReturn.objects.select_related('order', 'customer', 'created_by').order_by('-created_at')

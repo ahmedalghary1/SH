@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.utils import timezone
 
 from customers.models import Customer
 from orders.models import Order
@@ -102,6 +103,7 @@ class PaymentTransaction(models.Model):
     related_supplier_name = models.CharField(max_length=200, blank=True, null=True)
     reference = models.CharField(max_length=80, blank=True, null=True, db_index=True)
     notes = models.TextField(blank=True, null=True)
+    transaction_date = models.DateField(default=timezone.localdate, db_index=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 

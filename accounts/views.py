@@ -4,6 +4,8 @@ from django.shortcuts import redirect
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, ListView, UpdateView, View
 
+from config.exports import ExportListMixin
+
 from .forms import ArabicAuthenticationForm, UserCreateForm, UserUpdateForm
 from .models import User
 from .permissions import ManagerRequiredMixin
@@ -19,11 +21,22 @@ class AppLogoutView(LogoutView):
     pass
 
 
-class UserListView(ManagerRequiredMixin, ListView):
+class UserListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = User
     template_name = 'accounts/users/list.html'
     context_object_name = 'users'
     paginate_by = 20
+    export_title = 'قائمة المستخدمين'
+    export_filename = 'users'
+    export_columns = (
+        ('اسم المستخدم', 'username'),
+        ('الاسم الأول', 'first_name'),
+        ('الاسم الأخير', 'last_name'),
+        ('الدور', 'get_role_display'),
+        ('الهاتف', 'phone'),
+        ('الحالة', lambda user: 'نشط' if user.is_active else 'متوقف'),
+        ('تاريخ الإضافة', 'created_at'),
+    )
 
     def get_queryset(self):
         return User.objects.order_by('-created_at')

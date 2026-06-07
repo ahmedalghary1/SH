@@ -2,3 +2,5 @@ Django==6.0.3
 Pillow>=11.0
 psycopg[binary]>=3.2
 reportlab>=4.2
+arabic-reshaper>=3.0
+python-bidi>=0.6

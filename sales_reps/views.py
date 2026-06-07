@@ -4,6 +4,7 @@ from django.shortcuts import redirect
 from django.views.generic import FormView, ListView, TemplateView
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin
+from config.exports import ExportListMixin
 
 from .forms import AssignStockForm, AssignmentActionForm, SalesRepCollectionForm, SalesRepHandoverForm, SalesRepStatementForm
 from .models import SalesRepCollection, SalesRepStockAssignment
@@ -117,12 +118,24 @@ class StatementView(RoleRequiredMixin, FormView):
         return self.render_to_response(self.get_context_data(form=form, sales_rep=sales_rep, statement=statement))
 
 
-class AssignmentListView(RoleRequiredMixin, ListView):
+class AssignmentListView(RoleRequiredMixin, ExportListMixin, ListView):
     allowed_roles = ('manager', 'sales', 'warehouse')
     model = SalesRepStockAssignment
     template_name = 'sales_reps/assignments.html'
     context_object_name = 'assignments'
     paginate_by = 30
+    export_title = 'قائمة عهد المناديب'
+    export_filename = 'sales-rep-assignments'
+    export_columns = (
+        ('المندوب', 'sales_rep'),
+        ('الصنف', 'product_variant'),
+        ('المخزن', 'source_warehouse'),
+        ('المسلم', 'quantity_assigned'),
+        ('المباع', 'quantity_sold'),
+        ('الراجع', 'quantity_returned'),
+        ('المتبقي', 'quantity_remaining'),
+        ('التاريخ', 'created_at'),
+    )
 
     def get_queryset(self):
         qs = SalesRepStockAssignment.objects.select_related('sales_rep', 'product_variant__product', 'source_warehouse').order_by('-created_at')

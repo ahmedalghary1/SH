@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -7,16 +9,17 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_GET
-from django.views.generic import CreateView, DetailView, FormView, ListView, UpdateView, View
+from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, role_required
+from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from inventory.models import Stock, StockBatch, Warehouse
 from inventory.models import StockMovement
 from inventory.services import adjust_stock, stock_in, transfer_stock
 from orders.models import Order, OrderItem
 
-from .forms import BulkPriceUpdateForm, CategoryForm, ColorForm, InitialProductVariantForm, InitialStockForm, ProductForm, ProductVariantForm, SizeForm
+from .forms import CategoryForm, ColorForm, InitialProductVariantForm, InitialStockForm, ProductForm, ProductVariantForm, SizeForm
 from .models import Category, Color, Product, ProductVariant, Size
 
 
@@ -36,12 +39,23 @@ def generate_variant_sku(product, color_id=None, size_id=None, current_pk=None):
     return sku
 
 
-class ProductListView(RoleRequiredMixin, ListView):
+class ProductListView(RoleRequiredMixin, ExportListMixin, ListView):
     allowed_roles = ('manager', 'sales', 'warehouse')
     model = Product
     template_name = 'products/list.html'
     context_object_name = 'products'
     paginate_by = 20
+    export_title = 'قائمة المنتجات'
+    export_filename = 'products'
+    export_columns = (
+        ('اسم المنتج', 'name'),
+        ('كود المنتج', 'sku'),
+        ('التصنيف', 'category'),
+        ('الخامة', 'material'),
+        ('عدد الألوان/المقاسات', 'variant_count'),
+        ('الكمية المتاحة', 'total_quantity'),
+        ('الحالة', lambda product: 'نشط' if product.is_active else 'متوقف'),
+    )
 
     def get_queryset(self):
         qs = Product.objects.select_related('category').prefetch_related('variants').annotate(
@@ -212,11 +226,15 @@ class ProductUpdateView(ManagerRequiredMixin, View):
             variant__product=product
         ).order_by('variant__variant_sku', 'warehouse__name')
 
+    def get_variants(self, product):
+        return product.variants.select_related('color', 'size').order_by('variant_sku', 'color__name', 'size__sort_order', 'size__name')
+
     def get(self, request, pk):
         product = self.get_product()
         return render(request, self.template_name, {
             'product': product,
             'form': ProductForm(instance=product),
+            'variants': self.get_variants(product),
             'stock_rows': self.get_stock_rows(product),
             'warehouses': Warehouse.objects.filter(is_active=True).order_by('warehouse_type', 'name'),
         })
@@ -230,6 +248,7 @@ class ProductUpdateView(ManagerRequiredMixin, View):
             try:
                 with transaction.atomic():
                     product = form.save()
+                    self.update_variant_prices(request, product)
                     self.update_stock_rows(request, product)
                 messages.success(request, 'تم تحديث المنتج والمخزون')
                 return redirect('products:detail', pk=product.pk)
@@ -239,9 +258,27 @@ class ProductUpdateView(ManagerRequiredMixin, View):
         return render(request, self.template_name, {
             'product': product,
             'form': form,
+            'variants': self.get_variants(product),
             'stock_rows': stock_rows,
             'warehouses': warehouses,
         })
+
+    def update_variant_prices(self, request, product):
+        variant_ids = request.POST.getlist('variant_id')
+        for variant_id in variant_ids:
+            variant = ProductVariant.objects.select_for_update().get(pk=variant_id, product=product)
+            raw_price = request.POST.get(f'variant_{variant_id}_sale_price', '').strip()
+            if raw_price == '':
+                raise ValidationError('أدخل سعر البيع لكل لون/مقاس')
+            try:
+                sale_price = Decimal(raw_price)
+            except (InvalidOperation, ValueError):
+                raise ValidationError('سعر البيع غير صحيح')
+            if sale_price < 0:
+                raise ValidationError('سعر البيع لا يمكن أن يكون سالبا')
+            if variant.sale_price != sale_price:
+                variant.sale_price = sale_price
+                variant.save(update_fields=['sale_price'])
 
     def update_stock_rows(self, request, product):
         stock_ids = request.POST.getlist('stock_id')
@@ -305,49 +342,92 @@ class ProductDeactivateView(ManagerRequiredMixin, View):
         return redirect('products:list')
 
 
-class BulkPriceUpdateView(ManagerRequiredMixin, FormView):
+class BulkPriceUpdateView(ManagerRequiredMixin, View):
     template_name = 'products/bulk_price_update.html'
-    form_class = BulkPriceUpdateForm
-    success_url = reverse_lazy('products:list')
 
-    def form_valid(self, form):
-        qs = ProductVariant.objects.select_related('product')
-        if not form.cleaned_data.get('include_inactive'):
-            qs = qs.filter(is_active=True, product__is_active=True)
-        category = form.cleaned_data.get('category')
-        if category:
-            qs = qs.filter(product__category=category)
-        mode = form.cleaned_data['mode']
-        sale_value = form.cleaned_data.get('sale_price')
-        cost_value = form.cleaned_data.get('cost_price')
-        count = 0
+    def get_queryset(self):
+        return ProductVariant.objects.select_related(
+            'product',
+            'product__category',
+            'color',
+            'size',
+        ).filter(
+            is_active=True,
+            product__is_active=True,
+        ).order_by('product__name', 'product__sku', 'color__name', 'size__sort_order', 'size__name')
+
+    def get_rows(self, posted_prices=None, errors=None):
+        rows = []
+        posted_prices = posted_prices or {}
+        errors = errors or {}
+        for variant in self.get_queryset():
+            variant_id = str(variant.pk)
+            rows.append({
+                'variant': variant,
+                'price_value': posted_prices.get(variant_id, variant.sale_price),
+                'error': errors.get(variant_id),
+            })
+        return rows
+
+    def get(self, request):
+        return render(request, self.template_name, {
+            'rows': self.get_rows(),
+        })
+
+    def post(self, request):
+        variant_ids = request.POST.getlist('variant_id')
+        posted_prices = {
+            variant_id: request.POST.get(f'price_{variant_id}', '').strip()
+            for variant_id in variant_ids
+        }
+        errors = {}
+        parsed_prices = {}
+
+        for variant_id, raw_price in posted_prices.items():
+            if raw_price == '':
+                errors[variant_id] = 'أدخل السعر'
+                continue
+            try:
+                price = Decimal(raw_price)
+            except (InvalidOperation, ValueError):
+                errors[variant_id] = 'السعر غير صحيح'
+                continue
+            if price < 0:
+                errors[variant_id] = 'السعر لا يمكن أن يكون سالبا'
+                continue
+            parsed_prices[variant_id] = price
+
+        if errors:
+            return render(request, self.template_name, {
+                'rows': self.get_rows(posted_prices=posted_prices, errors=errors),
+            })
+
+        updated_count = 0
         with transaction.atomic():
-            for variant in qs.select_for_update():
-                update_fields = []
-                if sale_value is not None:
-                    if mode == BulkPriceUpdateForm.MODE_PERCENT:
-                        variant.sale_price = max(variant.sale_price + (variant.sale_price * sale_value / 100), 0)
-                    else:
-                        variant.sale_price = max(sale_value, 0)
-                    update_fields.append('sale_price')
-                if cost_value is not None:
-                    if mode == BulkPriceUpdateForm.MODE_PERCENT:
-                        variant.cost_price = max(variant.cost_price + (variant.cost_price * cost_value / 100), 0)
-                    else:
-                        variant.cost_price = max(cost_value, 0)
-                    update_fields.append('cost_price')
-                if update_fields:
-                    variant.save(update_fields=update_fields)
-                    count += 1
-        messages.success(self.request, f'تم تحديث أسعار {count} لون/مقاس')
-        return super().form_valid(form)
+            variants = self.get_queryset().select_for_update().filter(pk__in=parsed_prices.keys())
+            for variant in variants:
+                new_price = parsed_prices[str(variant.pk)]
+                if variant.sale_price != new_price:
+                    variant.sale_price = new_price
+                    variant.save(update_fields=['sale_price'])
+                    updated_count += 1
+
+        messages.success(request, f'تم تحديث أسعار {updated_count} لون/مقاس')
+        return redirect('products:bulk_price_update')
 
 
-class CategoryListView(ManagerRequiredMixin, ListView):
+class CategoryListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = Category
     template_name = 'products/catalog/categories.html'
     context_object_name = 'categories'
     paginate_by = 20
+    export_title = 'قائمة التصنيفات'
+    export_filename = 'categories'
+    export_columns = (
+        ('اسم التصنيف', 'name'),
+        ('التصنيف الأب', 'parent'),
+        ('الحالة', lambda category: 'نشط' if category.is_active else 'متوقف'),
+    )
 
     def get_queryset(self):
         return Category.objects.select_related('parent').order_by('name')
@@ -375,12 +455,18 @@ class CategoryUpdateView(ManagerRequiredMixin, UpdateView):
         return super().form_valid(form)
 
 
-class ColorListView(ManagerRequiredMixin, ListView):
+class ColorListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = Color
     template_name = 'products/catalog/colors.html'
     context_object_name = 'colors'
     paginate_by = 20
     ordering = ('name',)
+    export_title = 'قائمة الألوان'
+    export_filename = 'colors'
+    export_columns = (
+        ('اسم اللون', 'name'),
+        ('كود اللون', 'hex_code'),
+    )
 
 
 class ColorCreateView(ManagerRequiredMixin, CreateView):
@@ -405,11 +491,17 @@ class ColorUpdateView(ManagerRequiredMixin, UpdateView):
         return super().form_valid(form)
 
 
-class SizeListView(ManagerRequiredMixin, ListView):
+class SizeListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = Size
     template_name = 'products/catalog/sizes.html'
     context_object_name = 'sizes'
     paginate_by = 20
+    export_title = 'قائمة المقاسات'
+    export_filename = 'sizes'
+    export_columns = (
+        ('اسم المقاس', 'name'),
+        ('ترتيب العرض', 'sort_order'),
+    )
 
 
 class SizeCreateView(ManagerRequiredMixin, CreateView):
