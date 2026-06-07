@@ -30,6 +30,18 @@ def env_list(name, default=''):
     return [item.strip() for item in value.split(',') if item.strip()]
 
 
+def env_url(name, default):
+    value = os.environ.get(name, default)
+    if not value:
+        value = default
+    value = value.strip()
+    if not value.startswith('/'):
+        value = '/' + value
+    if not value.endswith('/'):
+        value = value + '/'
+    return value
+
+
 load_dotenv(BASE_DIR / '.env')
 
 
@@ -72,6 +84,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -158,12 +171,13 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = os.environ.get('STATIC_URL', 'static/')
+STATIC_URL = env_url('STATIC_URL', 'static/')
 STATICFILES_DIRS = [BASE_DIR / 'static']
-STATIC_ROOT = Path(os.environ.get('STATIC_ROOT', BASE_DIR / 'staticfiles'))
+STATIC_ROOT = BASE_DIR / Path(os.environ.get('STATIC_ROOT', 'staticfiles'))
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-MEDIA_URL = os.environ.get('MEDIA_URL', 'media/')
-MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT', BASE_DIR / 'media'))
+MEDIA_URL = env_url('MEDIA_URL', 'media/')
+MEDIA_ROOT = BASE_DIR / Path(os.environ.get('MEDIA_ROOT', 'media'))
 
 AUTH_USER_MODEL = 'accounts.User'
 LOGIN_URL = 'accounts:login'
