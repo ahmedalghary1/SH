@@ -285,3 +285,5 @@ INFO 2026-06-07 11:18:47,068 django.utils.autoreload C:\Users\m\Desktop\projects
 INFO 2026-06-07 11:18:48,075 django.utils.autoreload Watching for file changes with StatReloader
 INFO 2026-06-07 11:32:27,773 django.utils.autoreload C:\Users\m\Desktop\projects\SH\orders\models.py changed, reloading.
 INFO 2026-06-07 11:32:28,855 django.utils.autoreload Watching for file changes with StatReloader
+INFO 2026-06-07 11:38:43,945 django.utils.autoreload C:\Users\m\Desktop\projects\SH\orders\models.py changed, reloading.
+INFO 2026-06-07 11:38:45,019 django.utils.autoreload Watching for file changes with StatReloader
