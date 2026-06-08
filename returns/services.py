@@ -2,8 +2,10 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import F, Sum
 
+from audit.models import AuditLog
+from audit.services import log_audit
 from finance.models import PaymentTransaction
 from finance.services import record_transaction
 from inventory.models import Stock, StockMovement
@@ -31,13 +33,27 @@ def calculate_available_return_quantity(order_item):
 def create_sales_return(*, order, return_type, reason='', user):
     if order.status in {Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED}:
         raise ValidationError('لا يمكن إنشاء مرتجع لهذا الطلب في حالته الحالية')
-    return SalesReturn.objects.create(
+    sales_return = SalesReturn.objects.create(
         order=order,
         customer=order.customer,
         return_type=return_type,
         reason=reason,
         created_by=user,
     )
+    
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_CREATE,
+        section=AuditLog.SECTION_RETURNS,
+        model_name='SalesReturn',
+        object_id=sales_return.pk,
+        object_repr=str(sales_return),
+        changes_before={},
+        changes_after={'order': str(order), 'return_type': return_type},
+        notes=f'إنشاء مرتجع للطلب {order.order_number} - النوع: {return_type}',
+    )
+    
+    return sales_return
 
 
 @transaction.atomic
@@ -68,6 +84,19 @@ def add_return_item(*, sales_return, original_order_item, quantity, condition=Sa
         notes=notes,
     )
     _recalculate_refund_amount(sales_return)
+    
+    log_audit(
+        user=sales_return.created_by,
+        action=AuditLog.ACTION_CREATE,
+        section=AuditLog.SECTION_RETURNS,
+        model_name='SalesReturnItem',
+        object_id=item.pk,
+        object_repr=str(item),
+        changes_before={},
+        changes_after={'quantity': quantity, 'refund_amount': str(refund_amount)},
+        notes=f'إضافة صنف مرتجع: {original_order_item.variant} - الكمية: {quantity}',
+    )
+    
     return item
 
 
@@ -89,7 +118,7 @@ def add_exchange_item(*, sales_return, old_order_item, new_product_variant, quan
     old_unit_price = _line_refund_unit_price(old_order_item)
     new_unit_price = Decimal(str(new_unit_price))
     price_difference = (new_unit_price - old_unit_price) * quantity
-    return ExchangeItem.objects.create(
+    item = ExchangeItem.objects.create(
         sales_return=sales_return,
         old_order_item=old_order_item,
         new_product_variant=new_product_variant,
@@ -99,11 +128,31 @@ def add_exchange_item(*, sales_return, old_order_item, new_product_variant, quan
         price_difference=price_difference,
         notes=notes,
     )
+    
+    log_audit(
+        user=sales_return.created_by,
+        action=AuditLog.ACTION_CREATE,
+        section=AuditLog.SECTION_RETURNS,
+        model_name='ExchangeItem',
+        object_id=item.pk,
+        object_repr=str(item),
+        changes_before={},
+        changes_after={
+            'old_variant': str(old_order_item.variant),
+            'new_variant': str(new_product_variant),
+            'quantity': quantity,
+            'price_difference': str(price_difference),
+        },
+        notes=f'إضافة صنف استبدال: {old_order_item.variant} إلى {new_product_variant}',
+    )
+    
+    return item
 
 
 @transaction.atomic
 def approve_sales_return(*, sales_return, user):
     sales_return = SalesReturn.objects.select_for_update().get(pk=sales_return.pk)
+    old_status = sales_return.status
     if sales_return.status != SalesReturn.STATUS_DRAFT:
         raise ValidationError('يمكن اعتماد المرتجع من حالة المسودة فقط')
     if not sales_return.items.exists():
@@ -111,12 +160,26 @@ def approve_sales_return(*, sales_return, user):
     sales_return.status = SalesReturn.STATUS_APPROVED
     sales_return.approved_by = user
     sales_return.save(update_fields=['status', 'approved_by'])
+    
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_CONFIRM,
+        section=AuditLog.SECTION_RETURNS,
+        model_name='SalesReturn',
+        object_id=sales_return.pk,
+        object_repr=str(sales_return),
+        changes_before={'status': old_status},
+        changes_after={'status': sales_return.status},
+        notes=f'اعتماد مرتجع للطلب {sales_return.order.order_number}',
+    )
+    
     return sales_return
 
 
 @transaction.atomic
 def complete_sales_return(*, sales_return, user, cash_account=None):
     sales_return = SalesReturn.objects.select_for_update().select_related('order', 'customer').get(pk=sales_return.pk)
+    old_status = sales_return.status
     if sales_return.status != SalesReturn.STATUS_APPROVED:
         raise ValidationError('يجب اعتماد المرتجع قبل إكماله')
 
@@ -142,6 +205,19 @@ def complete_sales_return(*, sales_return, user, cash_account=None):
     sales_return.completed_by = user
     sales_return.save(update_fields=['status', 'completed_by'])
     _update_order_return_status(order)
+    
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_RETURN,
+        section=AuditLog.SECTION_RETURNS,
+        model_name='SalesReturn',
+        object_id=sales_return.pk,
+        object_repr=str(sales_return),
+        changes_before={'status': old_status},
+        changes_after={'status': sales_return.status},
+        notes=f'إكمال مرتجع للطلب {order.order_number} - المبلغ: {sales_return.refund_amount}',
+    )
+    
     return sales_return
 
 
@@ -160,7 +236,7 @@ def _increase_stock_for_return(*, order, item, user):
         variant=item.product_variant,
         defaults={'quantity': 0},
     )
-    stock.quantity += item.quantity
+    stock.quantity = F('quantity') + item.quantity
     stock.save(update_fields=['quantity'])
     StockMovement.objects.create(
         movement_type=StockMovement.TYPE_SALES_RETURN,
@@ -199,7 +275,7 @@ def _process_exchange_stock_and_money(*, sales_return, order, user, cash_account
         ).first()
         if not stock or stock.quantity < exchange.quantity:
             raise ValidationError('مخزون صنف الاستبدال غير كاف')
-        stock.quantity -= exchange.quantity
+        stock.quantity = F('quantity') - exchange.quantity
         stock.save(update_fields=['quantity'])
         StockMovement.objects.create(
             movement_type=StockMovement.TYPE_EXCHANGE_OUT,

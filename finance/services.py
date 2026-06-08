@@ -3,8 +3,11 @@ from uuid import uuid4
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import F, Sum
 from django.utils import timezone
+
+from audit.models import AuditLog
+from audit.services import log_audit
 
 from .models import CashAccount, PaymentTransaction
 
@@ -41,16 +44,18 @@ def record_transaction(
 ):
     amount = _as_decimal(amount)
     account = _locked_account(cash_account)
+    old_balance = account.balance
     if direction == PaymentTransaction.DIRECTION_IN:
-        account.balance += amount
+        account.balance = F('balance') + amount
     elif direction == PaymentTransaction.DIRECTION_OUT:
         if not account.allow_overdraft and account.balance < amount:
             raise ValidationError('رصيد الخزنة غير كاف لتنفيذ الحركة')
-        account.balance -= amount
+        account.balance = F('balance') - amount
     else:
         raise ValidationError('اتجاه الحركة المالية غير صحيح')
     account.save(update_fields=['balance'])
-    return PaymentTransaction.objects.create(
+    account.refresh_from_db(fields=['balance'])
+    tx = PaymentTransaction.objects.create(
         transaction_type=transaction_type,
         direction=direction,
         amount=amount,
@@ -65,6 +70,24 @@ def record_transaction(
         created_by=created_by,
         reference=reference or '',
     )
+    
+    # Determine section based on transaction type
+    section = AuditLog.SECTION_FINANCE
+    action = AuditLog.ACTION_PAY if direction == PaymentTransaction.DIRECTION_OUT else AuditLog.ACTION_COLLECT
+    
+    log_audit(
+        user=created_by,
+        action=action,
+        section=section,
+        model_name='PaymentTransaction',
+        object_id=tx.pk,
+        object_repr=str(tx),
+        changes_before={'account_balance': str(old_balance)},
+        changes_after={'account_balance': str(account.balance)},
+        notes=f'{tx.get_transaction_type_display()} - المبلغ: {amount}',
+    )
+    
+    return tx
 
 
 def record_customer_payment(*, order, customer, amount, user, cash_account=None, notes='', transaction_date=None):
@@ -171,7 +194,9 @@ def collect_order_payment(*, order, amount, user, cash_account=None, notes='', t
         notes=notes,
         transaction_date=transaction_date,
     )
-    order.paid_amount += amount
+    order.paid_amount = F('paid_amount') + amount
+    order.save(update_fields=['paid_amount'])
+    order.refresh_from_db(fields=['paid_amount'])
     order.remaining_amount = max(order.total - order.paid_amount, Decimal('0'))
     if order.paid_amount <= 0:
         order.payment_status = Order.PAYMENT_UNPAID
@@ -179,7 +204,7 @@ def collect_order_payment(*, order, amount, user, cash_account=None, notes='', t
         order.payment_status = Order.PAYMENT_PAID
     else:
         order.payment_status = Order.PAYMENT_PARTIAL
-    order.save(update_fields=['paid_amount', 'remaining_amount', 'payment_status'])
+    order.save(update_fields=['remaining_amount', 'payment_status'])
     return tx
 
 

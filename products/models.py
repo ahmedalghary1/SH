@@ -1,3 +1,4 @@
+from django.core.validators import MinValueValidator
 from django.db import models
 
 
@@ -62,8 +63,8 @@ class ProductVariant(models.Model):
     size = models.ForeignKey(Size, on_delete=models.SET_NULL, null=True)
     variant_sku = models.CharField(max_length=120, unique=True, db_index=True)
     barcode = models.CharField(max_length=120, blank=True, null=True, db_index=True)
-    cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    sale_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    sale_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     is_active = models.BooleanField(default=True, db_index=True)
 
     class Meta:
@@ -71,6 +72,16 @@ class ProductVariant(models.Model):
             models.Index(fields=['variant_sku']),
             models.Index(fields=['barcode']),
             models.Index(fields=['is_active']),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(cost_price__gte=0),
+                name='products_productvariant_cost_price_gte_0'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(sale_price__gte=0),
+                name='products_productvariant_sale_price_gte_0'
+            ),
         ]
 
     def __str__(self):

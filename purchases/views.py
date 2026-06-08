@@ -5,7 +5,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView, View
 
-from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin
+from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin, can_view_costs
 from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
@@ -178,6 +178,11 @@ class PurchaseOrderDetailView(RoleRequiredMixin, DetailView):
 
     def get_queryset(self):
         return PurchaseOrder.objects.select_related('supplier', 'created_by').prefetch_related('items__product_variant__product')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['can_view_costs'] = can_view_costs(self.request.user)
+        return context
 
 
 class PurchaseReceiveView(WarehouseRequiredMixin, FormView):

@@ -5,6 +5,8 @@ from django.urls import reverse_lazy
 from django.views.generic import CreateView, ListView, UpdateView, View
 
 from config.exports import ExportListMixin
+from config.ratelimit import RateLimitExceeded, rate_limit
+from config.security_logger import log_failed_login
 
 from .forms import ArabicAuthenticationForm, UserCreateForm, UserUpdateForm
 from .models import User
@@ -15,6 +17,20 @@ class AppLoginView(LoginView):
     template_name = 'accounts/login.html'
     authentication_form = ArabicAuthenticationForm
     redirect_authenticated_user = True
+    
+    def dispatch(self, request, *args, **kwargs):
+        try:
+            rate_limit(request, 'login', max_requests=10, period=60)
+        except RateLimitExceeded:
+            log_failed_login(request, reason='rate_limit_exceeded')
+            messages.error(request, 'تجاوزت الحد المسموح من محاولات تسجيل الدخول. يرجى المحاولة مرة أخرى بعد دقيقة.')
+            return redirect(self.get_success_url())
+        return super().dispatch(request, *args, **kwargs)
+
+    def form_invalid(self, form):
+        """Log failed authentication attempts."""
+        log_failed_login(self.request, reason='invalid_credentials')
+        return super().form_invalid(form)
 
 
 class AppLogoutView(LogoutView):

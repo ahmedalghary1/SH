@@ -5,6 +5,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from accounts.models import User
+from audit.models import AuditLog
+from audit.services import log_audit
 from customers.models import Customer
 from inventory.models import Stock, StockMovement
 from inventory.services import return_stock, sale_stock
@@ -105,6 +107,8 @@ def prepare_order_item_pricing(*, variant, quantity, user, customer=None, order_
 
 
 def calculate_order_totals(order):
+    if not transaction.get_connection().in_atomic_block:
+        raise RuntimeError('calculate_order_totals must be called within an active transaction.')
     subtotal = Decimal('0')
     item_discounts = Decimal('0')
     total_cost = Decimal('0')
@@ -308,15 +312,42 @@ def confirm_order(*, order, user):
         )
     order.status = Order.STATUS_CONFIRMED
     order.save(update_fields=['status'])
+    
+    # Audit log
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_CONFIRM,
+        section=AuditLog.SECTION_ORDERS,
+        model_name='Order',
+        object_id=order.pk,
+        object_repr=str(order),
+        changes_before={'status': Order.STATUS_DRAFT},
+        changes_after={'status': order.status},
+        notes=f'تأكيد الطلب {order.order_number}',
+    )
+    
     return order
 
 
 @transaction.atomic
 def cancel_order(*, order, user):
     order = Order.objects.select_for_update().get(pk=order.pk)
+    old_status = order.status
     if order.status == Order.STATUS_DRAFT:
         order.status = Order.STATUS_CANCELLED
         order.save(update_fields=['status'])
+        
+        log_audit(
+            user=user,
+            action=AuditLog.ACTION_CANCEL,
+            section=AuditLog.SECTION_ORDERS,
+            model_name='Order',
+            object_id=order.pk,
+            object_repr=str(order),
+            changes_before={'status': old_status},
+            changes_after={'status': order.status},
+            notes=f'إلغاء الطلب المسودة {order.order_number}',
+        )
         return order
     if order.status not in {Order.STATUS_CONFIRMED, Order.STATUS_PREPARING, Order.STATUS_READY, Order.STATUS_COMPLETED}:
         raise ValidationError('لا يمكن إلغاء هذا الطلب')
@@ -336,12 +367,25 @@ def cancel_order(*, order, user):
         record_order_refund(order=order, user=user, notes=f'رد تلقائي لإلغاء الطلب {order.order_number}')
     order.status = Order.STATUS_CANCELLED
     order.save(update_fields=['status'])
+    
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_CANCEL,
+        section=AuditLog.SECTION_ORDERS,
+        model_name='Order',
+        object_id=order.pk,
+        object_repr=str(order),
+        changes_before={'status': old_status},
+        changes_after={'status': order.status},
+        notes=f'إلغاء الطلب {order.order_number}',
+    )
     return order
 
 
 @transaction.atomic
 def return_order(*, order, user):
     order = Order.objects.select_for_update().get(pk=order.pk)
+    old_status = order.status
     if order.status not in {Order.STATUS_CONFIRMED, Order.STATUS_PREPARING, Order.STATUS_READY, Order.STATUS_COMPLETED}:
         raise ValidationError('لا يمكن عمل مرتجع لهذا الطلب')
     for item in order.items.select_related('variant', 'warehouse'):
@@ -356,4 +400,16 @@ def return_order(*, order, user):
         )
     order.status = Order.STATUS_RETURNED
     order.save(update_fields=['status'])
+    
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_RETURN,
+        section=AuditLog.SECTION_ORDERS,
+        model_name='Order',
+        object_id=order.pk,
+        object_repr=str(order),
+        changes_before={'status': old_status},
+        changes_after={'status': order.status},
+        notes=f'مرتجع الطلب {order.order_number}',
+    )
     return order

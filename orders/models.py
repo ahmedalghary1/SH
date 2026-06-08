@@ -100,8 +100,19 @@ class Order(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=['order_number']),
+            models.Index(fields=['customer', 'status', 'created_at']),
             models.Index(fields=['status', 'created_at']),
             models.Index(fields=['created_at']),
+        ]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(discount_amount__gte=0), name='orders_order_discount_amount_gte_0'),
+            models.CheckConstraint(condition=models.Q(discount_percentage__gte=0, discount_percentage__lte=100), name='orders_order_discount_percentage_0_100'),
+            models.CheckConstraint(condition=models.Q(subtotal__gte=0), name='orders_order_subtotal_gte_0'),
+            models.CheckConstraint(condition=models.Q(discount__gte=0), name='orders_order_discount_gte_0'),
+            models.CheckConstraint(condition=models.Q(total__gte=0), name='orders_order_total_gte_0'),
+            models.CheckConstraint(condition=models.Q(total_cost__gte=0), name='orders_order_total_cost_gte_0'),
+            models.CheckConstraint(condition=models.Q(paid_amount__gte=0), name='orders_order_paid_amount_gte_0'),
+            models.CheckConstraint(condition=models.Q(remaining_amount__gte=0), name='orders_order_remaining_amount_gte_0'),
         ]
 
     def __str__(self):
@@ -138,6 +149,20 @@ class OrderItem(models.Model):
     total = models.DecimalField(max_digits=12, decimal_places=2)
     cost_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     profit_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=models.Q(quantity__gt=0), name='orders_orderitem_quantity_gt_0'),
+            models.CheckConstraint(condition=models.Q(discount_amount__gte=0), name='orders_orderitem_discount_amount_gte_0'),
+            models.CheckConstraint(condition=models.Q(discount_percentage__gte=0, discount_percentage__lte=100), name='orders_orderitem_discount_percentage_0_100'),
+            models.CheckConstraint(condition=models.Q(final_unit_price__gte=0), name='orders_orderitem_final_unit_price_gte_0'),
+            models.CheckConstraint(condition=models.Q(unit_price__gte=0), name='orders_orderitem_unit_price_gte_0'),
+            models.CheckConstraint(condition=models.Q(original_unit_price__gte=0), name='orders_orderitem_original_unit_price_gte_0'),
+            models.CheckConstraint(condition=models.Q(unit_cost__gte=0), name='orders_orderitem_unit_cost_gte_0'),
+            models.CheckConstraint(condition=models.Q(discount__gte=0), name='orders_orderitem_discount_gte_0'),
+            models.CheckConstraint(condition=models.Q(total__gte=0), name='orders_orderitem_total_gte_0'),
+            models.CheckConstraint(condition=models.Q(cost_total__gte=0), name='orders_orderitem_cost_total_gte_0'),
+        ]
 
     def __str__(self):
         return f'{self.order.order_number} - {self.variant}'

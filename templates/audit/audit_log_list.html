@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>سجلات التدقيق</h2>
+    
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">تصفية السجلات</h5>
+        </div>
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-3">
+                    <label for="user" class="form-label">المستخدم</label>
+                    <select name="user" id="user" class="form-select">
+                        <option value="">الكل</option>
+                        {% for username, user_id in users %}
+                        <option value="{{ user_id }}" {% if filters.user == user_id|stringformat:"s" %}selected{% endif %}>{{ username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="section" class="form-label">القسم</label>
+                    <select name="section" id="section" class="form-select">
+                        <option value="">الكل</option>
+                        {% for value, label in sections %}
+                        <option value="{{ value }}" {% if filters.section == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="action" class="form-label">الإجراء</label>
+                    <select name="action" id="action" class="form-select">
+                        <option value="">الكل</option>
+                        {% for value, label in actions %}
+                        <option value="{{ value }}" {% if filters.action == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="date_from" class="form-label">من تاريخ</label>
+                    <input type="date" name="date_from" id="date_from" class="form-control" value="{{ filters.date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label for="date_to" class="form-label">إلى تاريخ</label>
+                    <input type="date" name="date_to" id="date_to" class="form-control" value="{{ filters.date_to }}">
+                </div>
+                <div class="col-md-2">
+                    <label for="q" class="form-label">بحث</label>
+                    <input type="text" name="q" id="q" class="form-control" value="{{ filters.q }}" placeholder="بحث...">
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary">تصفية</button>
+                    <a href="{% url 'audit:audit_log_list' %}" class="btn btn-secondary">إعادة تعيين</a>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div class="card">
+        <div class="card-body">
+            {% if logs %}
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>التاريخ والوقت</th>
+                            <th>المستخدم</th>
+                            <th>الإجراء</th>
+                            <th>القسم</th>
+                            <th>الموديل</th>
+                            <th>الكائن</th>
+                            <th>ملاحظات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in logs %}
+                        <tr>
+                            <td>{{ log.created_at }}</td>
+                            <td>{{ log.user.username|default:"-" }}</td>
+                            <td>{{ log.get_action_display }}</td>
+                            <td>{{ log.get_section_display }}</td>
+                            <td>{{ log.model_name|default:"-" }}</td>
+                            <td>{{ log.object_repr|default:log.object_id|default:"-" }}</td>
+                            <td>{{ log.notes|default:"-" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted">لا توجد سجلات</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

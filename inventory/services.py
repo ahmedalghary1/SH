@@ -1,5 +1,9 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import F
+
+from audit.models import AuditLog
+from audit.services import log_audit
 
 from .models import Stock, StockBatch, StockMovement
 
@@ -35,8 +39,9 @@ def _consume_batches(*, variant, warehouse, quantity, batch=None):
             raise ValidationError('دفعة المخزون لا تخص هذا المنتج أو المخزن')
         if batch.remaining_quantity < quantity:
             raise ValidationError('الكمية غير متاحة في دفعة السعر المختارة')
-        batch.remaining_quantity -= quantity
+        batch.remaining_quantity = F('remaining_quantity') - quantity
         batch.save(update_fields=['remaining_quantity'])
+        batch.refresh_from_db(fields=['remaining_quantity'])
         return batch
 
     remaining = quantity
@@ -48,8 +53,9 @@ def _consume_batches(*, variant, warehouse, quantity, batch=None):
     ).order_by('received_at', 'pk')
     for stock_batch in batches:
         take = min(remaining, stock_batch.remaining_quantity)
-        stock_batch.remaining_quantity -= take
+        stock_batch.remaining_quantity = F('remaining_quantity') - take
         stock_batch.save(update_fields=['remaining_quantity'])
+        stock_batch.refresh_from_db(fields=['remaining_quantity'])
         first_consumed = first_consumed or stock_batch
         remaining -= take
         if remaining <= 0:
@@ -62,8 +68,10 @@ def stock_in(*, variant, warehouse, quantity, user, note='', unit_cost=None, sou
     if quantity <= 0:
         raise ValidationError('الكمية يجب أن تكون أكبر من صفر')
     stock = _get_locked_stock(warehouse, variant)
-    stock.quantity += quantity
+    old_quantity = stock.quantity
+    stock.quantity = F('quantity') + quantity
     stock.save(update_fields=['quantity'])
+    stock.refresh_from_db(fields=['quantity'])
     batch = _create_batch(
         variant=variant,
         warehouse=warehouse,
@@ -73,7 +81,7 @@ def stock_in(*, variant, warehouse, quantity, user, note='', unit_cost=None, sou
         note=note,
         user=user,
     )
-    return StockMovement.objects.create(
+    movement = StockMovement.objects.create(
         movement_type=StockMovement.TYPE_IN,
         variant=variant,
         to_warehouse=warehouse,
@@ -82,6 +90,20 @@ def stock_in(*, variant, warehouse, quantity, user, note='', unit_cost=None, sou
         note=note,
         created_by=user,
     )
+    
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_CREATE,
+        section=AuditLog.SECTION_INVENTORY,
+        model_name='StockMovement',
+        object_id=movement.pk,
+        object_repr=str(movement),
+        changes_before={'quantity': old_quantity},
+        changes_after={'quantity': stock.quantity},
+        notes=f'دخول مخزون: {variant} في {warehouse} - الكمية: {quantity}',
+    )
+    
+    return movement
 
 
 @transaction.atomic
@@ -91,10 +113,12 @@ def stock_out(*, variant, warehouse, quantity, user, note='', batch=None):
     stock = _get_locked_stock(warehouse, variant)
     if stock.quantity < quantity:
         raise ValidationError('الكمية غير متاحة')
-    stock.quantity -= quantity
+    old_quantity = stock.quantity
+    stock.quantity = F('quantity') - quantity
     stock.save(update_fields=['quantity'])
+    stock.refresh_from_db(fields=['quantity'])
     consumed_batch = _consume_batches(variant=variant, warehouse=warehouse, quantity=quantity, batch=batch)
-    return StockMovement.objects.create(
+    movement = StockMovement.objects.create(
         movement_type=StockMovement.TYPE_OUT,
         variant=variant,
         from_warehouse=warehouse,
@@ -103,6 +127,20 @@ def stock_out(*, variant, warehouse, quantity, user, note='', batch=None):
         note=note,
         created_by=user,
     )
+    
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_CREATE,
+        section=AuditLog.SECTION_INVENTORY,
+        model_name='StockMovement',
+        object_id=movement.pk,
+        object_repr=str(movement),
+        changes_before={'quantity': old_quantity},
+        changes_after={'quantity': stock.quantity},
+        notes=f'خروج مخزون: {variant} من {warehouse} - الكمية: {quantity}',
+    )
+    
+    return movement
 
 
 @transaction.atomic
@@ -115,10 +153,14 @@ def transfer_stock(*, variant, from_warehouse, to_warehouse, quantity, user, not
     if source.quantity < quantity:
         raise ValidationError('الكمية غير متاحة للتحويل')
     target = _get_locked_stock(to_warehouse, variant)
-    source.quantity -= quantity
-    target.quantity += quantity
+    source_old_quantity = source.quantity
+    target_old_quantity = target.quantity
+    source.quantity = F('quantity') - quantity
+    target.quantity = F('quantity') + quantity
     source.save(update_fields=['quantity'])
     target.save(update_fields=['quantity'])
+    source.refresh_from_db(fields=['quantity'])
+    target.refresh_from_db(fields=['quantity'])
     source_batch = _consume_batches(variant=variant, warehouse=from_warehouse, quantity=quantity)
     target_batch = None
     if source_batch:
@@ -131,7 +173,7 @@ def transfer_stock(*, variant, from_warehouse, to_warehouse, quantity, user, not
             note=note,
             user=user,
         )
-    return StockMovement.objects.create(
+    movement = StockMovement.objects.create(
         movement_type=StockMovement.TYPE_TRANSFER,
         variant=variant,
         from_warehouse=from_warehouse,
@@ -141,6 +183,26 @@ def transfer_stock(*, variant, from_warehouse, to_warehouse, quantity, user, not
         note=note,
         created_by=user,
     )
+    
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_TRANSFER,
+        section=AuditLog.SECTION_INVENTORY,
+        model_name='StockMovement',
+        object_id=movement.pk,
+        object_repr=str(movement),
+        changes_before={
+            'from_warehouse_quantity': source_old_quantity,
+            'to_warehouse_quantity': target_old_quantity,
+        },
+        changes_after={
+            'from_warehouse_quantity': source.quantity,
+            'to_warehouse_quantity': target.quantity,
+        },
+        notes=f'تحويل مخزون: {variant} من {from_warehouse} إلى {to_warehouse} - الكمية: {quantity}',
+    )
+    
+    return movement
 
 
 @transaction.atomic
@@ -148,6 +210,7 @@ def adjust_stock(*, variant, warehouse, new_quantity, user, note=''):
     if new_quantity < 0:
         raise ValidationError('لا يمكن أن تكون الكمية سالبة')
     stock = _get_locked_stock(warehouse, variant)
+    old_quantity = stock.quantity
     diff = new_quantity - stock.quantity
     stock.quantity = new_quantity
     stock.save(update_fields=['quantity'])
@@ -164,7 +227,7 @@ def adjust_stock(*, variant, warehouse, new_quantity, user, note=''):
         )
     elif diff < 0:
         batch = _consume_batches(variant=variant, warehouse=warehouse, quantity=abs(diff))
-    return StockMovement.objects.create(
+    movement = StockMovement.objects.create(
         movement_type=StockMovement.TYPE_ADJUSTMENT,
         variant=variant,
         to_warehouse=warehouse if diff >= 0 else None,
@@ -174,6 +237,20 @@ def adjust_stock(*, variant, warehouse, new_quantity, user, note=''):
         note=note,
         created_by=user,
     )
+    
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_ADJUST,
+        section=AuditLog.SECTION_INVENTORY,
+        model_name='StockMovement',
+        object_id=movement.pk,
+        object_repr=str(movement),
+        changes_before={'quantity': old_quantity},
+        changes_after={'quantity': new_quantity},
+        notes=f'تسوية مخزون: {variant} في {warehouse} - الكمية الجديدة: {new_quantity}',
+    )
+    
+    return movement
 
 
 @transaction.atomic
@@ -181,10 +258,12 @@ def sale_stock(*, variant, warehouse, quantity, user, note='', batch=None, movem
     stock = _get_locked_stock(warehouse, variant)
     if stock.quantity < quantity:
         raise ValidationError('الكمية غير متاحة')
-    stock.quantity -= quantity
+    old_quantity = stock.quantity
+    stock.quantity = F('quantity') - quantity
     stock.save(update_fields=['quantity'])
+    stock.refresh_from_db(fields=['quantity'])
     consumed_batch = _consume_batches(variant=variant, warehouse=warehouse, quantity=quantity, batch=batch)
-    return StockMovement.objects.create(
+    movement = StockMovement.objects.create(
         movement_type=movement_type,
         variant=variant,
         from_warehouse=warehouse,
@@ -193,13 +272,29 @@ def sale_stock(*, variant, warehouse, quantity, user, note='', batch=None, movem
         note=note,
         created_by=user,
     )
+    
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_CREATE,
+        section=AuditLog.SECTION_INVENTORY,
+        model_name='StockMovement',
+        object_id=movement.pk,
+        object_repr=str(movement),
+        changes_before={'quantity': old_quantity},
+        changes_after={'quantity': stock.quantity},
+        notes=f'بيع مخزون: {variant} من {warehouse} - الكمية: {quantity}',
+    )
+    
+    return movement
 
 
 @transaction.atomic
 def return_stock(*, variant, warehouse, quantity, user, note='', unit_cost=None):
     stock = _get_locked_stock(warehouse, variant)
-    stock.quantity += quantity
+    old_quantity = stock.quantity
+    stock.quantity = F('quantity') + quantity
     stock.save(update_fields=['quantity'])
+    stock.refresh_from_db(fields=['quantity'])
     batch = _create_batch(
         variant=variant,
         warehouse=warehouse,
@@ -209,7 +304,7 @@ def return_stock(*, variant, warehouse, quantity, user, note='', unit_cost=None)
         note=note,
         user=user,
     )
-    return StockMovement.objects.create(
+    movement = StockMovement.objects.create(
         movement_type=StockMovement.TYPE_RETURN,
         variant=variant,
         to_warehouse=warehouse,
@@ -218,3 +313,17 @@ def return_stock(*, variant, warehouse, quantity, user, note='', unit_cost=None)
         note=note,
         created_by=user,
     )
+    
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_RETURN,
+        section=AuditLog.SECTION_INVENTORY,
+        model_name='StockMovement',
+        object_id=movement.pk,
+        object_repr=str(movement),
+        changes_before={'quantity': old_quantity},
+        changes_after={'quantity': stock.quantity},
+        notes=f'مرتجع مخزون: {variant} إلى {warehouse} - الكمية: {quantity}',
+    )
+    
+    return movement

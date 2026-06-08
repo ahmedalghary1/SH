@@ -110,12 +110,17 @@ class PaymentTransaction(models.Model):
     class Meta:
         ordering = ['-created_at']
         indexes = [
+            models.Index(fields=['transaction_type', 'direction', 'transaction_date']),
             models.Index(fields=['transaction_type', 'created_at']),
             models.Index(fields=['direction', 'created_at']),
             models.Index(fields=['cash_account', 'created_at']),
             models.Index(fields=['related_order']),
             models.Index(fields=['related_customer']),
             models.Index(fields=['related_supplier']),
+            models.Index(fields=['created_at']),
+        ]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name='finance_paymenttransaction_amount_gt_0'),
         ]
 
     def __str__(self):

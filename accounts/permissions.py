@@ -4,6 +4,8 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.exceptions import PermissionDenied
 
+from config.security_logger import log_permission_denied
+
 
 def has_role(user, *roles):
     if not user.is_authenticated:
@@ -69,6 +71,11 @@ class RoleRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
 
     def test_func(self):
         return has_role(self.request.user, *self.allowed_roles)
+
+    def handle_no_permission(self):
+        """Log permission denials to security.log before raising."""
+        log_permission_denied(self.request)
+        return super().handle_no_permission()
 
 
 class ManagerRequiredMixin(RoleRequiredMixin):

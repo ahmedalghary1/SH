@@ -25,7 +25,7 @@
     <div class="stat-card"><span>إجمالي الكمية المباعة</span><strong>{{ sold_quantity }}</strong></div>
     <div class="stat-card"><span>عدد مرات البيع</span><strong>{{ sales_count }}</strong></div>
     <div class="stat-card"><span>إجمالي المبيعات</span><strong>{{ product_sales_total }}</strong></div>
-    {% if request.user.is_manager %}
+    {% if can_view_costs %}
         <div class="stat-card"><span>إجمالي الربح</span><strong>{{ product_profit_total }}</strong></div>
     {% endif %}
 </div>
@@ -34,14 +34,14 @@
     <h2>الألوان والمقاسات</h2>
     <div class="table-wrap">
         <table>
-            <thead><tr><th>الكود</th><th>اللون</th><th>المقاس</th><th>سعر الشراء</th><th>سعر البيع</th><th>الحالة</th>{% if request.user.is_manager %}<th>إجراءات</th>{% endif %}</tr></thead>
+            <thead><tr><th>الكود</th><th>اللون</th><th>المقاس</th>{% if can_view_costs %}<th>سعر الشراء</th>{% endif %}<th>سعر البيع</th><th>الحالة</th>{% if request.user.is_manager %}<th>إجراءات</th>{% endif %}</tr></thead>
             <tbody>
                 {% for variant in variants %}
                     <tr>
                         <td>{{ variant.variant_sku }}</td>
                         <td>{{ variant.color|default:'-' }}</td>
                         <td>{{ variant.size|default:'-' }}</td>
-                        <td>{% if request.user.is_manager or request.user.is_warehouse %}{{ variant.cost_price }}{% else %}-{% endif %}</td>
+                        {% if can_view_costs %}<td>{{ variant.cost_price }}</td>{% endif %}
                         <td>{{ variant.sale_price }}</td>
                         <td><span class="badge {% if variant.is_active %}success{% else %}danger{% endif %}">{% if variant.is_active %}نشط{% else %}متوقف{% endif %}</span></td>
                         {% if request.user.is_manager %}
@@ -52,7 +52,7 @@
                         {% endif %}
                     </tr>
                 {% empty %}
-                    <tr><td colspan="{% if request.user.is_manager %}7{% else %}6{% endif %}">لا توجد ألوان أو مقاسات</td></tr>
+                    <tr><td colspan="7">لا توجد ألوان أو مقاسات</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -79,7 +79,7 @@
     <h2>الفواتير التي ظهر فيها المنتج</h2>
     <div class="table-wrap">
         <table>
-            <thead><tr><th>التاريخ والوقت</th><th>رقم الفاتورة</th><th>العميل</th><th>اللون</th><th>المقاس</th><th>الكمية</th><th>سعر البيع</th><th>الخصم</th>{% if request.user.is_manager %}<th>الربح</th>{% endif %}<th>الموظف</th></tr></thead>
+            <thead><tr><th>التاريخ والوقت</th><th>رقم الفاتورة</th><th>العميل</th><th>اللون</th><th>المقاس</th><th>الكمية</th><th>سعر البيع</th><th>الخصم</th>{% if can_view_costs %}<th>الربح</th>{% endif %}<th>الموظف</th></tr></thead>
             <tbody>
                 {% for item in order_items %}
                     <tr>
@@ -91,11 +91,11 @@
                         <td>{{ item.quantity }}</td>
                         <td>{{ item.final_unit_price }}</td>
                         <td>{{ item.discount }}</td>
-                        {% if request.user.is_manager %}<td>{{ item.profit_total }}</td>{% endif %}
+                        {% if can_view_costs %}<td>{{ item.profit_total }}</td>{% endif %}
                         <td>{{ item.order.created_by|default:'-' }}</td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="{% if request.user.is_manager %}10{% else %}9{% endif %}">لم يتم بيع هذا المنتج بعد</td></tr>
+                    <tr><td colspan="9">لم يتم بيع هذا المنتج بعد</td></tr>
                 {% endfor %}
             </tbody>
         </table>

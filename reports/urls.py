@@ -26,4 +26,5 @@ urlpatterns = [
     path('inventory/', views.InventoryReportView.as_view(), name='inventory'),
     path('customers/', views.CustomerReportView.as_view(), name='customers'),
     path('employees/', views.EmployeeSalesReportView.as_view(), name='employees'),
+    path('stock-movement/', views.StockMovementReportView.as_view(), name='stock_movement'),
 ]

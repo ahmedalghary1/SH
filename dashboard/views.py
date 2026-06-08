@@ -3,9 +3,9 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import TemplateView
 
-from accounts.permissions import RoleRequiredMixin
+from accounts.permissions import RoleRequiredMixin, can_view_costs
 from customers.models import Customer
-from inventory.models import Stock, StockMovement
+from inventory.models import Stock, StockMovement, Warehouse
 from orders.models import Order
 from reports.services import manager_dashboard_kpis
 
@@ -23,6 +23,7 @@ class DashboardView(RoleRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context['can_view_costs'] = can_view_costs(self.request.user)
         today = timezone.localdate()
         user = self.request.user
         if user.is_superuser or user.role == 'manager':
@@ -40,6 +41,14 @@ class DashboardView(RoleRequiredMixin, TemplateView):
             context['cash_balance'] = sum(account.balance for account in kpis['cash_accounts'])
             context['paid_total'] = kpis['collections_total']
             context['remaining_total'] = kpis['customer_remaining_total']
+            
+            # Low stock notifications for manager
+            warehouse_filter = self.request.GET.get('warehouse')
+            low_stocks = Stock.objects.select_related('warehouse', 'variant__product').filter(quantity__lte=F('min_quantity'))
+            if warehouse_filter:
+                low_stocks = low_stocks.filter(warehouse_id=warehouse_filter)
+            context['low_stocks'] = low_stocks[:20]
+            context['warehouses'] = Warehouse.objects.filter(is_active=True)
         elif user.role == 'warehouse':
             context['workflow_title'] = 'المخزون اليوم'
             context['workflow_actions'] = [

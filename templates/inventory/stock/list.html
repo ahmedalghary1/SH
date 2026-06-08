@@ -34,7 +34,7 @@
                 <th>التصنيف</th>
                 <th>اللون</th>
                 <th>المقاس</th>
-                <th>سعر الشراء</th>
+                {% if can_view_costs %}<th>سعر الشراء</th>{% endif %}
                 <th>سعر البيع</th>
                 <th>الكمية</th>
                 <th>الحد الأدنى</th>
@@ -51,7 +51,7 @@
                     <td>{{ stock.variant.product.category|default:'-' }}</td>
                     <td>{{ stock.variant.color|default:'-' }}</td>
                     <td>{{ stock.variant.size|default:'-' }}</td>
-                    <td>{{ stock.variant.cost_price }}</td>
+                    {% if can_view_costs %}<td>{{ stock.variant.cost_price }}</td>{% endif %}
                     <td>{{ stock.variant.sale_price }}</td>
                     <td>{{ stock.quantity }}</td>
                     <td>{{ stock.min_quantity }}</td>
@@ -64,7 +64,7 @@
                     </td>
                 </tr>
             {% empty %}
-                <tr><td colspan="12">لا توجد كميات مطابقة للفلاتر الحالية</td></tr>
+                <tr><td colspan="{% if can_view_costs %}12{% else %}11{% endif %}">لا توجد كميات مطابقة للفلاتر الحالية</td></tr>
             {% endfor %}
         </tbody>
     </table>

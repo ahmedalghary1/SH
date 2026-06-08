@@ -7,7 +7,7 @@ from django.urls import reverse_lazy
 from django.views.decorators.http import require_GET
 from django.views.generic import CreateView, FormView, ListView
 
-from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin, role_required
+from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin, can_view_costs, role_required
 from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from products.models import ProductVariant
@@ -52,20 +52,24 @@ class StockListView(RoleRequiredMixin, ExportListMixin, ListView):
     paginate_by = 30
     export_title = 'قائمة المخزون'
     export_filename = 'stock'
-    export_columns = (
-        ('المخزن', 'warehouse.name'),
-        ('المنتج', 'variant.product.name'),
-        ('كود المنتج', 'variant.product.sku'),
-        ('كود اللون/المقاس', 'variant.variant_sku'),
-        ('التصنيف', 'variant.product.category'),
-        ('اللون', 'variant.color'),
-        ('المقاس', 'variant.size'),
-        ('سعر الشراء', 'variant.cost_price'),
-        ('سعر البيع', 'variant.sale_price'),
-        ('الكمية', 'quantity'),
-        ('الحد الأدنى', 'min_quantity'),
-        ('تنبيه', lambda stock: 'منخفض' if stock.is_low else 'جيد'),
-    )
+    
+    def get_export_columns(self):
+        base_columns = [
+            ('المخزن', 'warehouse.name'),
+            ('المنتج', 'variant.product.name'),
+            ('كود المنتج', 'variant.product.sku'),
+            ('كود اللون/المقاس', 'variant.variant_sku'),
+            ('التصنيف', 'variant.product.category'),
+            ('اللون', 'variant.color'),
+            ('المقاس', 'variant.size'),
+            ('سعر البيع', 'variant.sale_price'),
+            ('الكمية', 'quantity'),
+            ('الحد الأدنى', 'min_quantity'),
+            ('تنبيه', lambda stock: 'منخفض' if stock.is_low else 'جيد'),
+        ]
+        if can_view_costs(self.request.user):
+            base_columns.insert(7, ('سعر الشراء', 'variant.cost_price'))
+        return base_columns
 
     def get_allowed_warehouses(self):
         qs = Warehouse.objects.filter(is_active=True)
@@ -115,6 +119,7 @@ class StockListView(RoleRequiredMixin, ExportListMixin, ListView):
         context['search_query'] = self.request.GET.get('q', '')
         context['low_only'] = self.request.GET.get('low', '')
         context['pagination_query'] = pagination_params.urlencode()
+        context['can_view_costs'] = can_view_costs(self.request.user)
         return context
 
 

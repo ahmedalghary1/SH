@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.validators import MinValueValidator
 from django.db import models
 
 from products.models import ProductVariant
@@ -33,14 +34,18 @@ class Warehouse(models.Model):
 class Stock(models.Model):
     warehouse = models.ForeignKey(Warehouse, on_delete=models.CASCADE)
     variant = models.ForeignKey(ProductVariant, on_delete=models.CASCADE)
-    quantity = models.IntegerField(default=0)
-    min_quantity = models.IntegerField(default=0)
+    quantity = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    min_quantity = models.IntegerField(default=0, validators=[MinValueValidator(0)])
 
     class Meta:
         unique_together = ('warehouse', 'variant')
         indexes = [
             models.Index(fields=['warehouse', 'variant']),
             models.Index(fields=['quantity']),
+        ]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(quantity__gte=0), name='stock_quantity_non_negative'),
+            models.CheckConstraint(condition=models.Q(min_quantity__gte=0), name='stock_min_quantity_non_negative'),
         ]
 
     def __str__(self):
@@ -112,15 +117,21 @@ class StockMovement(models.Model):
     from_warehouse = models.ForeignKey(Warehouse, on_delete=models.SET_NULL, null=True, blank=True, related_name='out_movements')
     to_warehouse = models.ForeignKey(Warehouse, on_delete=models.SET_NULL, null=True, blank=True, related_name='in_movements')
     batch = models.ForeignKey(StockBatch, on_delete=models.SET_NULL, null=True, blank=True, related_name='movements')
-    quantity = models.IntegerField()
+    quantity = models.IntegerField(validators=[MinValueValidator(1)])
     note = models.TextField(blank=True, null=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
         indexes = [
+            models.Index(fields=['variant', 'created_at']),
+            models.Index(fields=['from_warehouse', 'created_at']),
+            models.Index(fields=['to_warehouse', 'created_at']),
             models.Index(fields=['movement_type', 'created_at']),
             models.Index(fields=['created_at']),
+        ]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(quantity__gt=0), name='stock_movement_quantity_positive'),
         ]
 
     def __str__(self):

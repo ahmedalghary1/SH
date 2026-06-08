@@ -80,6 +80,7 @@ INSTALLED_APPS = [
     'reports',
     'dashboard',
     'settings_app',
+    'audit',
 ]
 
 MIDDLEWARE = [
@@ -193,24 +194,52 @@ SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '0' if DEBUG els
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', not DEBUG)
 SECURE_HSTS_PRELOAD = env_bool('SECURE_HSTS_PRELOAD', False)
 X_FRAME_OPTIONS = os.environ.get('X_FRAME_OPTIONS', 'DENY')
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
 
 LOG_DIR = Path(os.environ.get('LOG_DIR', BASE_DIR / 'logs'))
-if not DEBUG:
-    LOG_DIR.mkdir(exist_ok=True)
+LOG_DIR.mkdir(exist_ok=True)
 
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '{levelname} {asctime} {name} {message}',
+            'format': '{levelname} {asctime} {name} {module} {message}',
             'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {asctime} {message}',
+            'style': '{',
+        },
+    },
+    'filters': {
+        'sanitize': {
+            '()': 'config.log_sanitizer.SanitizingFilter',
         },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
+            'filters': ['sanitize'],
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': os.environ.get('LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+        'business': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'security': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
         },
     },
     'root': {
@@ -220,11 +249,85 @@ LOGGING = {
 }
 
 if not DEBUG:
-    LOGGING['handlers']['file'] = {
+    LOGGING['handlers']['django_file'] = {
         'class': 'logging.handlers.RotatingFileHandler',
         'filename': LOG_DIR / 'django.log',
-        'maxBytes': 1024 * 1024 * 5,
-        'backupCount': 5,
+        'maxBytes': 1024 * 1024 * 10,
+        'backupCount': 10,
         'formatter': 'verbose',
+        'filters': ['sanitize'],
     }
-    LOGGING['root']['handlers'].append('file')
+    LOGGING['handlers']['error_file'] = {
+        'class': 'logging.handlers.RotatingFileHandler',
+        'filename': LOG_DIR / 'errors.log',
+        'maxBytes': 1024 * 1024 * 10,
+        'backupCount': 10,
+        'formatter': 'verbose',
+        'level': 'ERROR',
+        'filters': ['sanitize'],
+    }
+    LOGGING['handlers']['business_file'] = {
+        'class': 'logging.handlers.RotatingFileHandler',
+        'filename': LOG_DIR / 'business.log',
+        'maxBytes': 1024 * 1024 * 10,
+        'backupCount': 10,
+        'formatter': 'simple',
+        'filters': ['sanitize'],
+    }
+    LOGGING['handlers']['security_file'] = {
+        'class': 'logging.handlers.RotatingFileHandler',
+        'filename': LOG_DIR / 'security.log',
+        'maxBytes': 1024 * 1024 * 5,
+        'backupCount': 30,  # Keep more security log rotations
+        'formatter': 'verbose',
+        'filters': ['sanitize'],
+    }
+    LOGGING['loggers']['django']['handlers'].append('django_file')
+    LOGGING['loggers']['django']['handlers'].append('error_file')
+    LOGGING['loggers']['business']['handlers'].append('business_file')
+    LOGGING['loggers']['security']['handlers'].append('security_file')
+    LOGGING['root']['handlers'].append('django_file')
+
+
+# ------------------------------------------------------------------ #
+#  Optional Sentry integration                                        #
+#  Set SENTRY_DSN env var to enable. No error if sentry_sdk absent.  #
+# ------------------------------------------------------------------ #
+_SENTRY_DSN = os.environ.get('SENTRY_DSN', '').strip()
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.django import DjangoIntegration
+        from config.log_sanitizer import sanitize as _sanitize_log
+
+        _SENTRY_SAMPLE_RATE = float(os.environ.get('SENTRY_TRACES_SAMPLE_RATE', '0.1'))
+
+        def _sentry_before_send(event, hint):
+            """Strip sensitive data before sending events to Sentry."""
+            # Sanitize request data
+            request_data = event.get('request', {})
+            if 'data' in request_data:
+                request_data['data'] = _sanitize_log(request_data['data'])
+            if 'cookies' in request_data:
+                request_data['cookies'] = '***REDACTED***'
+            if 'headers' in request_data:
+                headers = request_data['headers']
+                for sensitive in ('Authorization', 'Cookie', 'X-Api-Key'):
+                    if sensitive in headers:
+                        headers[sensitive] = '***REDACTED***'
+            # Sanitize extra context
+            if 'extra' in event:
+                event['extra'] = _sanitize_log(event['extra'])
+            return event
+
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            integrations=[DjangoIntegration()],
+            traces_sample_rate=_SENTRY_SAMPLE_RATE,
+            send_default_pii=False,  # Never send PII
+            before_send=_sentry_before_send,
+            environment='production' if not DEBUG else 'development',
+            release=os.environ.get('APP_VERSION', 'unknown'),
+        )
+    except ImportError:
+        pass  # sentry_sdk not installed — silently skip

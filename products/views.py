@@ -11,7 +11,7 @@ from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_GET
 from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
 
-from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, role_required
+from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, can_view_costs, role_required
 from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from inventory.models import Stock, StockBatch, Warehouse
@@ -90,6 +90,7 @@ class ProductDetailView(RoleRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context['can_view_costs'] = can_view_costs(self.request.user)
         variants = self.object.variants.all()
         stocks = Stock.objects.filter(variant__product=self.object).select_related('warehouse', 'variant__color', 'variant__size')
         order_items = OrderItem.objects.filter(variant__product=self.object).exclude(
@@ -118,6 +119,7 @@ class ProductMovementReportView(RoleRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context['can_view_costs'] = can_view_costs(self.request.user)
         variant_id = self.request.GET.get('variant')
         day = parse_date(self.request.GET.get('day') or '')
         date_from = parse_date(self.request.GET.get('date_from') or '')
@@ -171,6 +173,7 @@ class ProductCreateView(ManagerRequiredMixin, View):
             'variant_form': InitialProductVariantForm(),
             'stock_form': InitialStockForm(),
             'product_names': Product.objects.filter(is_active=True).order_by('name').values_list('name', flat=True).distinct()[:200],
+            'can_view_costs': can_view_costs(request.user),
         })
 
     def post(self, request):

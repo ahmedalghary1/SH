@@ -11,12 +11,14 @@
             <div class="metric-percent">50%</div>
             <div class="metric-progress"><span style="width: 92%"></span></div>
         </article>
+        {% if can_view_costs %}
         <article class="metric-card">
             <div class="metric-title">مجمل الربح</div>
             <div class="metric-value"><span>{{ today_gross_profit }}</span><b class="trend-up">↑</b></div>
             <div class="metric-percent">ربح اليوم</div>
             <div class="metric-progress"><span style="width: 68%"></span></div>
         </article>
+        {% endif %}
         <article class="metric-card">
             <div class="metric-title">رصيد الخزن</div>
             <div class="metric-value"><span>{{ cash_balance }}</span><b class="trend-up">↑</b></div>
@@ -94,6 +96,14 @@
         </section>
         <section class="card">
             <h2>تنبيهات المخزون</h2>
+            <form method="get" class="mb-3">
+                <select name="warehouse" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">كل المخازن</option>
+                    {% for warehouse in warehouses %}
+                    <option value="{{ warehouse.id }}" {% if request.GET.warehouse == warehouse.id|stringformat:"s" %}selected{% endif %}>{{ warehouse.name }}</option>
+                    {% endfor %}
+                </select>
+            </form>
             <div class="table-wrap">
                 <table>
                     <thead><tr><th>المخزن</th><th>المنتج</th><th>الكمية</th><th>الحد الأدنى</th></tr></thead>

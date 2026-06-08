@@ -9,3 +9,4 @@ staticfiles/
 media/
 logs/
 media/products/
+backups/

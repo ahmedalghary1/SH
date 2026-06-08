@@ -1,15 +1,16 @@
 import csv
 
+from django.db import models
 from django.db.models import Avg, Count, F, Sum
 from django.db.models.functions import ExtractYear, TruncMonth
 from django.http import HttpResponse
 from django.utils import timezone
 from django.views.generic import TemplateView, View
 
-from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin
+from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, can_view_costs
 from customers.models import Customer
 from finance.models import PaymentTransaction
-from inventory.models import Stock
+from inventory.models import Stock, StockMovement, Warehouse
 from orders.models import Order, OrderItem
 from . import services
 
@@ -41,14 +42,14 @@ class SalesReportView(RoleRequiredMixin, GenericReportMixin, TemplateView):
     report_title = 'تقرير المبيعات'
 
     def get_report(self):
-        return services.sales_report(self.request)
+        return services.sales_report(self.request, can_view_costs=self.request.user)
 
 
 class SalesReportExportView(RoleRequiredMixin, View):
     allowed_roles = ('manager', 'sales')
 
     def get(self, request):
-        report = services.sales_report(request)
+        report = services.sales_report(request, can_view_costs=can_view_costs(request.user))
         return export_rows('sales-report.csv', report['rows'])
 
 
@@ -222,13 +223,15 @@ class DailySalesReportView(ManagerRequiredMixin, TemplateView):
         orders = Order.objects.filter(created_at__date=today).exclude(status__in=[Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
         context['orders_count'] = orders.count()
         context['total_sales'] = orders.aggregate(v=Sum('total'))['v'] or 0
-        context['total_cost'] = orders.aggregate(v=Sum('total_cost'))['v'] or 0
-        context['gross_profit'] = orders.aggregate(v=Sum('gross_profit'))['v'] or 0
-        context['expenses_total'] = PaymentTransaction.objects.filter(
-            transaction_type=PaymentTransaction.TYPE_EXPENSE,
-            created_at__date=today,
-        ).aggregate(v=Sum('amount'))['v'] or 0
-        context['net_profit'] = context['gross_profit'] - context['expenses_total']
+        context['can_view_costs'] = can_view_costs(self.request.user)
+        if can_view_costs(self.request.user):
+            context['total_cost'] = orders.aggregate(v=Sum('total_cost'))['v'] or 0
+            context['gross_profit'] = orders.aggregate(v=Sum('gross_profit'))['v'] or 0
+            context['expenses_total'] = PaymentTransaction.objects.filter(
+                transaction_type=PaymentTransaction.TYPE_EXPENSE,
+                created_at__date=today,
+            ).aggregate(v=Sum('amount'))['v'] or 0
+            context['net_profit'] = context['gross_profit'] - context['expenses_total']
         context['paid_total'] = orders.aggregate(v=Sum('paid_amount'))['v'] or 0
         context['remaining_total'] = orders.aggregate(v=Sum('remaining_amount'))['v'] or 0
         context['top_products'] = OrderItem.objects.filter(order__in=orders).values('variant__product__name').annotate(qty=Sum('quantity')).order_by('-qty')[:10]
@@ -242,12 +245,19 @@ class MonthlySalesReportView(ManagerRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         orders = Order.objects.exclude(status__in=[Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
-        context['months'] = orders.annotate(month=TruncMonth('created_at')).values('month').annotate(
-            total=Sum('total'),
-            cost=Sum('total_cost'),
-            profit=Sum('gross_profit'),
-            count=Count('id'),
-        ).order_by('-month')
+        context['can_view_costs'] = can_view_costs(self.request.user)
+        if can_view_costs(self.request.user):
+            context['months'] = orders.annotate(month=TruncMonth('created_at')).values('month').annotate(
+                total=Sum('total'),
+                cost=Sum('total_cost'),
+                profit=Sum('gross_profit'),
+                count=Count('id'),
+            ).order_by('-month')
+        else:
+            context['months'] = orders.annotate(month=TruncMonth('created_at')).values('month').annotate(
+                total=Sum('total'),
+                count=Count('id'),
+            ).order_by('-month')
         context['b2b_total'] = orders.filter(order_type=Order.TYPE_B2B).aggregate(v=Sum('total'))['v'] or 0
         context['b2c_total'] = orders.filter(order_type=Order.TYPE_B2C).aggregate(v=Sum('total'))['v'] or 0
         return context
@@ -280,14 +290,23 @@ class EmployeeSalesReportView(ManagerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['employees'] = Order.objects.values('created_by__username').annotate(
-            sales_total=Sum('total'),
-            total_cost=Sum('total_cost'),
-            gross_profit=Sum('gross_profit'),
-            paid=Sum('paid_amount'),
-            count=Count('id'),
-            avg_order=Avg('total'),
-        ).order_by('-sales_total')
+        context['can_view_costs'] = can_view_costs(self.request.user)
+        if can_view_costs(self.request.user):
+            context['employees'] = Order.objects.values('created_by__username').annotate(
+                sales_total=Sum('total'),
+                total_cost=Sum('total_cost'),
+                gross_profit=Sum('gross_profit'),
+                paid=Sum('paid_amount'),
+                count=Count('id'),
+                avg_order=Avg('total'),
+            ).order_by('-sales_total')
+        else:
+            context['employees'] = Order.objects.values('created_by__username').annotate(
+                sales_total=Sum('total'),
+                paid=Sum('paid_amount'),
+                count=Count('id'),
+                avg_order=Avg('total'),
+            ).order_by('-sales_total')
         return context
 
 
@@ -297,14 +316,62 @@ class YearlySalesReportView(ManagerRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         orders = Order.objects.exclude(status__in=[Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
-        context['years'] = orders.annotate(year=ExtractYear('created_at')).values('year').annotate(
-            total=Sum('total'),
-            cost=Sum('total_cost'),
-            profit=Sum('gross_profit'),
-            paid=Sum('paid_amount'),
-            remaining=Sum('remaining_amount'),
-            count=Count('id'),
-        ).order_by('-year')
+        context['can_view_costs'] = can_view_costs(self.request.user)
+        if can_view_costs(self.request.user):
+            context['years'] = orders.annotate(year=ExtractYear('created_at')).values('year').annotate(
+                total=Sum('total'),
+                cost=Sum('total_cost'),
+                profit=Sum('gross_profit'),
+                paid=Sum('paid_amount'),
+                remaining=Sum('remaining_amount'),
+                count=Count('id'),
+            ).order_by('-year')
+        else:
+            context['years'] = orders.annotate(year=ExtractYear('created_at')).values('year').annotate(
+                total=Sum('total'),
+                paid=Sum('paid_amount'),
+                remaining=Sum('remaining_amount'),
+                count=Count('id'),
+            ).order_by('-year')
+        return context
+
+
+class StockMovementReportView(ManagerRequiredMixin, TemplateView):
+    template_name = 'reports/stock_movement.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        movements = StockMovement.objects.select_related(
+            'variant__product', 'variant__color', 'variant__size',
+            'from_warehouse', 'to_warehouse', 'created_by'
+        ).order_by('-created_at')
+        
+        # Filtering
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+        warehouse_id = self.request.GET.get('warehouse')
+        movement_type = self.request.GET.get('movement_type')
+        
+        if date_from:
+            movements = movements.filter(created_at__date__gte=date_from)
+        if date_to:
+            movements = movements.filter(created_at__date__lte=date_to)
+        if warehouse_id:
+            movements = movements.filter(
+                models.Q(from_warehouse_id=warehouse_id) | models.Q(to_warehouse_id=warehouse_id)
+            )
+        if movement_type:
+            movements = movements.filter(movement_type=movement_type)
+        
+        context['movements'] = movements[:500]  # Limit for performance
+        context['warehouses'] = Warehouse.objects.filter(is_active=True)
+        context['movement_types'] = StockMovement.MOVEMENT_TYPES if hasattr(StockMovement, 'MOVEMENT_TYPES') else []
+        context['filters'] = {
+            'date_from': date_from,
+            'date_to': date_to,
+            'warehouse': warehouse_id,
+            'movement_type': movement_type,
+        }
         return context
 
 # Create your views here.

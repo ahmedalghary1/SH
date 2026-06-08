@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>تقرير حركة المخزون</h2>
+    
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">تصفية الحركات</h5>
+        </div>
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-3">
+                    <label for="date_from" class="form-label">من تاريخ</label>
+                    <input type="date" name="date_from" id="date_from" class="form-control" value="{{ filters.date_from }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="date_to" class="form-label">إلى تاريخ</label>
+                    <input type="date" name="date_to" id="date_to" class="form-control" value="{{ filters.date_to }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="warehouse" class="form-label">المخزن</label>
+                    <select name="warehouse" id="warehouse" class="form-select">
+                        <option value="">الكل</option>
+                        {% for warehouse in warehouses %}
+                        <option value="{{ warehouse.id }}" {% if filters.warehouse == warehouse.id|stringformat:"s" %}selected{% endif %}>{{ warehouse.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="movement_type" class="form-label">نوع الحركة</label>
+                    <select name="movement_type" id="movement_type" class="form-select">
+                        <option value="">الكل</option>
+                        {% if movement_types %}
+                        {% for value, label in movement_types %}
+                        <option value="{{ value }}" {% if filters.movement_type == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary">تصفية</button>
+                    <a href="{% url 'reports:stock_movement' %}" class="btn btn-secondary">إعادة تعيين</a>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div class="card">
+        <div class="card-body">
+            {% if movements %}
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>التاريخ</th>
+                            <th>المنتج</th>
+                            <th>المتغير</th>
+                            <th>نوع الحركة</th>
+                            <th>من مخزن</th>
+                            <th>إلى مخزن</th>
+                            <th>الكمية</th>
+                            <th>المستخدم</th>
+                            <th>ملاحظات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for movement in movements %}
+                        <tr>
+                            <td>{{ movement.created_at }}</td>
+                            <td>{{ movement.variant.product.name|default:"-" }}</td>
+                            <td>{{ movement.variant.variant_sku|default:"-" }}</td>
+                            <td>{{ movement.movement_type|default:"-" }}</td>
+                            <td>{{ movement.from_warehouse.name|default:"-" }}</td>
+                            <td>{{ movement.to_warehouse.name|default:"-" }}</td>
+                            <td>{{ movement.quantity }}</td>
+                            <td>{{ movement.created_by.username|default:"-" }}</td>
+                            <td>{{ movement.note|default:"-" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted">لا توجد حركات</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

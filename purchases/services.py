@@ -2,8 +2,11 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
+from audit.models import AuditLog
+from audit.services import log_audit
 from finance.models import PaymentTransaction
 from finance.services import record_transaction
 from inventory.services import stock_in
@@ -59,16 +62,32 @@ def create_purchase_order(*, supplier, items, user, status=PurchaseOrder.STATUS_
             total_cost=unit_cost * quantity,
         )
     recalculate_purchase_order(purchase_order)
+    old_supplier_balance = supplier.current_balance
     if status != PurchaseOrder.STATUS_DRAFT:
         supplier = Supplier.objects.select_for_update().get(pk=supplier.pk)
-        supplier.current_balance += purchase_order.remaining_amount
+        supplier.current_balance = F('current_balance') + purchase_order.remaining_amount
         supplier.save(update_fields=['current_balance'])
+        supplier.refresh_from_db(fields=['current_balance'])
+    
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_CREATE,
+        section=AuditLog.SECTION_PURCHASES,
+        model_name='PurchaseOrder',
+        object_id=purchase_order.pk,
+        object_repr=str(purchase_order),
+        changes_before={'supplier_balance': str(old_supplier_balance)},
+        changes_after={'supplier_balance': str(supplier.current_balance)},
+        notes=f'إنشاء أمر شراء: {purchase_order.purchase_number} - المورد: {supplier}',
+    )
+    
     return purchase_order
 
 
 @transaction.atomic
 def receive_purchase_order_items(*, purchase_order, warehouse, received_items, user, note=''):
     purchase_order = PurchaseOrder.objects.select_for_update().get(pk=purchase_order.pk)
+    old_status = purchase_order.status
     if purchase_order.status in {PurchaseOrder.STATUS_DRAFT, PurchaseOrder.STATUS_CANCELLED, PurchaseOrder.STATUS_RECEIVED}:
         raise ValidationError('لا يمكن استلام بضاعة لهذا الأمر في حالته الحالية')
     if not received_items:
@@ -96,8 +115,9 @@ def receive_purchase_order_items(*, purchase_order, warehouse, received_items, u
         )
         movement.movement_type = movement.TYPE_PURCHASE_RECEIVE
         movement.save(update_fields=['movement_type'])
-        item.received_quantity += quantity
+        item.received_quantity = F('received_quantity') + quantity
         item.save(update_fields=['received_quantity'])
+        item.refresh_from_db(fields=['received_quantity'])
         item.product_variant.cost_price = item.unit_cost
         item.product_variant.save(update_fields=['cost_price'])
 
@@ -107,6 +127,19 @@ def receive_purchase_order_items(*, purchase_order, warehouse, received_items, u
     elif any(item.received_quantity > 0 for item in items):
         purchase_order.status = PurchaseOrder.STATUS_PARTIALLY_RECEIVED
     purchase_order.save(update_fields=['status'])
+    
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_RECEIVE,
+        section=AuditLog.SECTION_PURCHASES,
+        model_name='PurchaseOrder',
+        object_id=purchase_order.pk,
+        object_repr=str(purchase_order),
+        changes_before={'status': old_status},
+        changes_after={'status': purchase_order.status},
+        notes=f'استلام بضاعة من أمر الشراء {purchase_order.purchase_number}',
+    )
+    
     return purchase_order
 
 
@@ -135,22 +168,58 @@ def pay_supplier(*, purchase_order, amount, cash_account, user, notes=''):
     purchase_order.remaining_amount = max(purchase_order.total_amount - purchase_order.paid_amount, Decimal('0'))
     purchase_order.save(update_fields=['paid_amount', 'remaining_amount'])
     supplier = Supplier.objects.select_for_update().get(pk=purchase_order.supplier_id)
+    old_balance = supplier.current_balance
     supplier.current_balance -= amount
     supplier.save(update_fields=['current_balance'])
+    
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_PAY,
+        section=AuditLog.SECTION_PURCHASES,
+        model_name='PaymentTransaction',
+        object_id=tx.pk,
+        object_repr=str(tx),
+        changes_before={'supplier_balance': str(old_balance)},
+        changes_after={'supplier_balance': str(supplier.current_balance)},
+        notes=f'دفع للمورد {purchase_order.supplier} - المبلغ: {amount}',
+    )
+    
     return tx
 
 
 @transaction.atomic
 def cancel_purchase_order(*, purchase_order, user=None):
     purchase_order = PurchaseOrder.objects.select_for_update().select_related('supplier').get(pk=purchase_order.pk)
+    old_status = purchase_order.status
     if purchase_order.items.filter(received_quantity__gt=0).exists():
         raise ValidationError('لا يمكن إلغاء أمر شراء تم استلام بضاعة منه')
     if purchase_order.paid_amount > 0:
         raise ValidationError('لا يمكن إلغاء أمر شراء عليه مدفوعات')
+    old_supplier_balance = purchase_order.supplier.current_balance
     if purchase_order.status != PurchaseOrder.STATUS_DRAFT:
         supplier = Supplier.objects.select_for_update().get(pk=purchase_order.supplier_id)
-        supplier.current_balance -= purchase_order.remaining_amount
+        supplier.current_balance = F('current_balance') - purchase_order.remaining_amount
         supplier.save(update_fields=['current_balance'])
+        supplier.refresh_from_db(fields=['current_balance'])
     purchase_order.status = PurchaseOrder.STATUS_CANCELLED
     purchase_order.save(update_fields=['status'])
+    
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_CANCEL,
+        section=AuditLog.SECTION_PURCHASES,
+        model_name='PurchaseOrder',
+        object_id=purchase_order.pk,
+        object_repr=str(purchase_order),
+        changes_before={
+            'status': old_status,
+            'supplier_balance': str(old_supplier_balance),
+        },
+        changes_after={
+            'status': purchase_order.status,
+            'supplier_balance': str(purchase_order.supplier.current_balance),
+        },
+        notes=f'إلغاء أمر الشراء: {purchase_order.purchase_number}',
+    )
+    
     return purchase_order

@@ -35,11 +35,13 @@
         {% if product_form.material.errors %}<small class="error">{{ product_form.material.errors|join:', ' }}</small>{% endif %}
     </label>
 
+    {% if can_view_costs %}
     <label>
         <span>{{ variant_form.cost_price.label }}</span>
         {{ variant_form.cost_price }}
         {% if variant_form.cost_price.errors %}<small class="error">{{ variant_form.cost_price.errors|join:', ' }}</small>{% endif %}
     </label>
+    {% endif %}
 
     <label>
         <span>{{ variant_form.sale_price.label }}</span>

@@ -10,8 +10,9 @@ from django.urls import reverse_lazy
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import DetailView, FormView, ListView, UpdateView, View
 
-from accounts.permissions import RoleRequiredMixin, SalesRequiredMixin, sales_required
+from accounts.permissions import RoleRequiredMixin, SalesRequiredMixin, can_view_costs, sales_required
 from config.exports import ExportListMixin
+from config.ratelimit import RateLimitExceeded, rate_limit
 from config.search import arabic_search_q
 from customers.models import Customer
 from invoices.services import generate_invoice
@@ -174,6 +175,11 @@ class OrderDetailView(RoleRequiredMixin, DetailView):
         if self.request.user.role == 'sales' and not self.request.user.is_superuser:
             qs = qs.filter(created_by=self.request.user)
         return qs
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['can_view_costs'] = can_view_costs(self.request.user)
+        return context
 
 
 class OrderUpdateView(RoleRequiredMixin, UpdateView):
@@ -238,6 +244,10 @@ class OrderStatusUpdateView(RoleRequiredMixin, View):
 @require_GET
 @sales_required
 def ajax_search_products(request):
+    try:
+        rate_limit(request, 'search_products', max_requests=100, period=60)
+    except RateLimitExceeded:
+        return JsonResponse({'success': False, 'message': 'تجاوزت الحد المسموح من الطلبات. يرجى المحاولة مرة أخرى بعد دقيقة.'}, status=429)
     q = request.GET.get('q', '').strip()
     qs = _available_products_for_user(request.user)
     if q:
@@ -268,6 +278,7 @@ def ajax_get_variant_stock(request, variant_id):
     if warehouse_id:
         stock = stocks.filter(warehouse_id=warehouse_id).first()
         return JsonResponse({'success': True, 'message': 'تم جلب المخزون', 'data': {'quantity': stock.quantity if stock else 0}})
+    show_costs = can_view_costs(request.user)
     data = [
         {
             'warehouse_id': stock.warehouse_id,
@@ -277,7 +288,7 @@ def ajax_get_variant_stock(request, variant_id):
                 {
                     'id': batch.id,
                     'remaining_quantity': batch.remaining_quantity,
-                    'unit_cost': str(batch.unit_cost),
+                    'unit_cost': str(batch.unit_cost) if show_costs else None,
                     'received_at': batch.received_at.strftime('%Y-%m-%d'),
                     'source': batch.source or '',
                 }
@@ -307,6 +318,10 @@ def ajax_get_variant_price(request, variant_id):
 @require_GET
 @sales_required
 def ajax_search_customers(request):
+    try:
+        rate_limit(request, 'search_customers', max_requests=100, period=60)
+    except RateLimitExceeded:
+        return JsonResponse({'success': False, 'message': 'تجاوزت الحد المسموح من الطلبات. يرجى المحاولة مرة أخرى بعد دقيقة.'}, status=429)
     q = request.GET.get('q', '').strip()
     qs = Customer.objects.filter(is_active=True)
     if q:
@@ -318,6 +333,10 @@ def ajax_search_customers(request):
 @require_POST
 @sales_required
 def ajax_calculate_order_totals(request):
+    try:
+        rate_limit(request, 'calculate_totals', max_requests=50, period=60)
+    except RateLimitExceeded:
+        return JsonResponse({'success': False, 'message': 'تجاوزت الحد المسموح من الطلبات. يرجى المحاولة مرة أخرى بعد دقيقة.'}, status=429)
     try:
         payload = json.loads(request.body.decode('utf-8'))
         items = payload.get('items', [])
