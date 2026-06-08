@@ -291,3 +291,7 @@ INFO 2026-06-07 13:54:40,304 django.utils.autoreload C:\Users\m\Desktop\projects
 INFO 2026-06-07 13:54:41,439 django.utils.autoreload Watching for file changes with StatReloader
 C:\Users\m\AppData\Local\Programs\Python\Python314\Lib\site-packages\django\core\handlers\base.py:62: UserWarning: No directory at: C:\Users\m\Desktop\projects\SH\staticfiles\
   mw_instance = middleware(adapted_handler)
+INFO 2026-06-07 15:26:32,127 django.utils.autoreload C:\Users\m\Desktop\projects\SH\config\settings.py changed, reloading.
+INFO 2026-06-07 15:26:33,169 django.utils.autoreload Watching for file changes with StatReloader
+C:\Users\m\AppData\Local\Programs\Python\Python314\Lib\site-packages\django\core\handlers\base.py:62: UserWarning: No directory at: C:\Users\m\Desktop\projects\SH\staticfiles\
+  mw_instance = middleware(adapted_handler)
