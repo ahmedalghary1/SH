@@ -9,7 +9,7 @@ class CompanySettingsForm(forms.ModelForm):
         fields = (
             'company_name', 'phone', 'email', 'address', 'tax_number', 'logo',
             'invoice_notes', 'max_sales_discount_percentage',
-            'max_vip_discount_percentage', 'allow_manager_sell_below_cost',
+            'allow_manager_sell_below_cost',
         )
         labels = {
             'company_name': 'اسم الشركة',
@@ -20,7 +20,6 @@ class CompanySettingsForm(forms.ModelForm):
             'logo': 'الشعار',
             'invoice_notes': 'ملاحظات الفاتورة',
             'max_sales_discount_percentage': 'حد خصم المبيعات',
-            'max_vip_discount_percentage': 'حد خصم VIP',
             'allow_manager_sell_below_cost': 'السماح للمدير بالبيع تحت التكلفة',
         }
         widgets = {

@@ -32,9 +32,11 @@
         {% endif %}
         {% if company_settings.tax_number %}<div><span>الرقم الضريبي</span><strong>{{ company_settings.tax_number }}</strong></div>{% endif %}
     </div>
-    <table class="invoice-items-table"><thead><tr><th>المنتج</th><th>اللون</th><th>المقاس</th><th>المخزن / المندوب</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>الإجمالي</th></tr></thead><tbody>
-        {% for item in invoice.order.items.all %}<tr><td>{{ item.variant.product.name }}</td><td>{{ item.variant.color|default:'-' }}</td><td>{{ item.variant.size|default:'-' }}</td><td>{{ item.warehouse_or_sales_rep|default:'-' }}</td><td>{{ item.quantity }}</td><td>{{ item.unit_price }}</td><td>{{ item.discount }}</td><td>{{ item.total }}</td></tr>{% endfor %}
-    </tbody></table>
+    <div class="table-wrap">
+        <table class="invoice-items-table"><thead><tr><th>المنتج</th><th>اللون</th><th>المقاس</th><th>المخزن / المندوب</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>الإجمالي</th></tr></thead><tbody>
+            {% for item in invoice.order.items.all %}<tr><td>{{ item.variant.product.name }}</td><td>{{ item.variant.color|default:'-' }}</td><td>{{ item.variant.size|default:'-' }}</td><td>{{ item.warehouse_or_sales_rep|default:'-' }}</td><td>{{ item.quantity }}</td><td>{{ item.unit_price }}</td><td>{{ item.discount }}</td><td>{{ item.total }}</td></tr>{% endfor %}
+        </tbody></table>
+    </div>
     <div class="invoice-totals">
         <p>الإجمالي قبل الخصم: <strong>{{ invoice.order.subtotal }}</strong></p>
         <p>الخصم: <strong>{{ invoice.order.discount }}</strong></p>

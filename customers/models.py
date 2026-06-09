@@ -8,7 +8,6 @@ class Customer(models.Model):
     TYPE_B2B = 'b2b'
     TYPE_RETAIL = 'retail'
     TYPE_WHOLESALE = 'wholesale'
-    TYPE_VIP = 'vip'
     TYPE_INACTIVE = 'inactive'
     TYPE_POTENTIAL = 'potential'
     TYPE_PROBLEM = 'problem_customer'
@@ -17,7 +16,6 @@ class Customer(models.Model):
         (TYPE_B2B, 'عميل جملة / شركة'),
         (TYPE_RETAIL, 'قطاعي'),
         (TYPE_WHOLESALE, 'جملة'),
-        (TYPE_VIP, 'VIP'),
         (TYPE_INACTIVE, 'غير نشط'),
         (TYPE_POTENTIAL, 'محتمل'),
         (TYPE_PROBLEM, 'عميل يحتاج متابعة'),

@@ -1,24 +1,25 @@
 :root {
-    --primary-color: #071d35;
-    --secondary-color: #0b2e50;
-    --accent-color: #09a9e8;
-    --accent-strong: #0787c2;
-    --accent-soft: #e8f7fd;
-    --background-color: #f3f6f8;
+    --primary-color: #0f172a;
+    --secondary-color: #1e293b;
+    --accent-color: #3b82f6;
+    --accent-strong: #2563eb;
+    --accent-soft: #eff6ff;
+    --background-color: #f8fafc;
     --surface-color: #ffffff;
-    --surface-muted: #f7f9fb;
-    --border-color: #e8eef3;
-    --text-color: #222222;
-    --muted-text: #707b86;
-    --success-color: #20b98f;
-    --warning-color: #e49322;
-    --danger-color: #e24c4c;
-    --info-color: #09a9e8;
-    --shadow-soft: 0 0.75rem 2rem rgba(6, 27, 51, .08);
-    --shadow-panel: 0 0.75rem 1.75rem rgba(6, 27, 51, .055);
-    --focus-ring: 0 0 0 .2rem rgba(9, 169, 232, .2);
-    --radius-sm: .25rem;
-    --radius-md: .5rem;
+    --surface-muted: #f1f5f9;
+    --border-color: #e2e8f0;
+    --text-color: #1e293b;
+    --muted-text: #64748b;
+    --success-color: #10b981;
+    --warning-color: #f59e0b;
+    --danger-color: #ef4444;
+    --info-color: #3b82f6;
+    --shadow-soft: 0 1rem 2.5rem rgba(15, 23, 42, .08);
+    --shadow-panel: 0 0.5rem 1.5rem rgba(15, 23, 42, .06);
+    --focus-ring: 0 0 0 .25rem rgba(59, 130, 246, .25);
+    --radius-sm: .375rem;
+    --radius-md: .625rem;
+    --radius-lg: .875rem;
     --space-1: .25rem;
     --space-2: .5rem;
     --space-3: .75rem;
@@ -26,9 +27,9 @@
     --space-5: 1.25rem;
     --space-6: 1.5rem;
     --space-8: 2rem;
-    --sidebar-width: clamp(15rem, 18vw, 17rem);
-    --content-width: 112rem;
-    --touch-target: 2.75rem;
+    --sidebar-width: clamp(16rem, 20vw, 18rem);
+    --content-width: 120rem;
+    --touch-target: 3rem;
 }
 
 *,
@@ -52,10 +53,12 @@ body {
     color: var(--text-color);
     direction: rtl;
     text-align: right;
-    font-family: "Cairo", Arial, sans-serif;
-    font-size: clamp(.875rem, .84rem + .15vw, .975rem);
-    line-height: 1.55;
+    font-family: "Cairo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: clamp(.875rem, .85rem + .2vw, 1rem);
+    line-height: 1.6;
     letter-spacing: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 body.modal-open,
@@ -174,9 +177,9 @@ textarea:disabled,
     direction: rtl;
     color: #fff;
     background:
-        radial-gradient(circle at 0 52%, rgba(9, 169, 232, .2) 0 7.5rem, transparent 7.55rem),
-        linear-gradient(155deg, #061b33 0%, #071d35 48%, #082849 100%);
-    box-shadow: -1.125rem 0 2.125rem rgba(6, 27, 51, .16);
+        radial-gradient(circle at 0 52%, rgba(59, 130, 246, .15) 0 8rem, transparent 8.05rem),
+        linear-gradient(155deg, #0f172a 0%, #1e293b 48%, #334155 100%);
+    box-shadow: -1.25rem 0 2.5rem rgba(15, 23, 42, .18);
 }
 
 .sidebar-backdrop {
@@ -217,10 +220,10 @@ textarea:disabled,
     inline-size: clamp(2.5rem, 4vw, 2.875rem);
     block-size: clamp(2.5rem, 4vw, 2.875rem);
     border-radius: var(--radius-md);
-    background: linear-gradient(135deg, var(--accent-color), #0ec9de);
+    background: linear-gradient(135deg, var(--accent-color), #60a5fa);
     color: #fff;
     font-weight: 800;
-    box-shadow: 0 .625rem 1.25rem rgba(9, 169, 232, .24);
+    box-shadow: 0 .625rem 1.25rem rgba(59, 130, 246, .3);
 }
 
 .side-nav {
@@ -279,7 +282,7 @@ textarea:disabled,
 .nav-group-toggle:hover,
 .nav-group-toggle:focus-visible,
 .nav-group.is-active .nav-group-toggle {
-    background: rgba(9, 169, 232, .14);
+    background: rgba(59, 130, 246, .18);
     color: #fff;
 }
 
@@ -312,7 +315,7 @@ textarea:disabled,
 }
 
 .nav-group.is-open .nav-chevron {
-    background: rgba(9, 169, 232, .24);
+    background: rgba(59, 130, 246, .28);
     color: #fff;
     transform: rotate(0deg);
 }
@@ -367,7 +370,7 @@ textarea:disabled,
 
 .side-nav a:hover,
 .side-nav a.is-active {
-    background: rgba(9, 169, 232, .13);
+    background: rgba(59, 130, 246, .16);
     color: #fff;
 }
 
@@ -382,7 +385,7 @@ textarea:disabled,
     left: 0;
     inline-size: .1875rem;
     background: var(--accent-color);
-    box-shadow: 0 0 1.125rem rgba(9, 169, 232, .7);
+    box-shadow: 0 0 1.125rem rgba(59, 130, 246, .7);
 }
 
 .nav-icon {
@@ -417,8 +420,8 @@ textarea:disabled,
     min-height: 4.25rem;
     padding-inline: clamp(1rem, 2vw, 1.5rem);
     color: #fff;
-    background: linear-gradient(90deg, #09a9e8, #11a8df);
-    box-shadow: 0 .75rem 1.625rem rgba(9, 169, 232, .2);
+    background: linear-gradient(90deg, var(--accent-color), #3b82f6);
+    box-shadow: 0 .75rem 1.625rem rgba(59, 130, 246, .25);
 }
 
 .topbar strong {
@@ -563,6 +566,8 @@ textarea:focus {
 .btn-primary:hover,
 .btn-accent:hover {
     background: var(--accent-strong);
+    transform: translateY(-.0625rem);
+    box-shadow: 0 .5rem 1.25rem rgba(59, 130, 246, .3);
 }
 
 .btn-secondary {
@@ -726,7 +731,7 @@ textarea::placeholder {
 }
 
 .combo-toggle:hover {
-    background: var(--accent-soft);
+    background: #eff6ff;
     color: var(--accent-strong);
 }
 
@@ -772,7 +777,7 @@ textarea::placeholder {
 
 .combo-option:hover,
 .combo-option[aria-selected="true"] {
-    background: var(--surface-muted);
+    background: #f8fafc;
 }
 
 .combo-option[aria-selected="true"] {
@@ -832,7 +837,7 @@ textarea {
 }
 
 table {
-    width: max-content;
+    width: 100%;
     min-width: 100%;
     border-collapse: collapse;
     direction: rtl;
@@ -844,14 +849,14 @@ td {
     border-bottom: .0625rem solid var(--border-color);
     text-align: right;
     vertical-align: middle;
-    white-space: nowrap;
+    white-space: normal;
 }
 
 thead th {
-    background: #f8fafc;
-    color: #334155;
+    background: #f1f5f9;
+    color: #475569;
     font-size: .85rem;
-    font-weight: 800;
+    font-weight: 700;
 }
 
 tbody tr:last-child td {
@@ -859,7 +864,7 @@ tbody tr:last-child td {
 }
 
 tbody tr:hover {
-    background: #f6fbff;
+    background: #f8fafc;
 }
 
 .export-actions {
@@ -911,8 +916,8 @@ tbody tr:hover {
 }
 
 .workflow-action:hover {
-    border-color: #c8d7e2;
-    background: #f6fbff;
+    border-color: #cbd5e1;
+    background: #f8fafc;
     color: var(--primary-color);
 }
 
@@ -923,28 +928,28 @@ tbody tr:hover {
     inline-size: 1.9rem;
     block-size: 1.9rem;
     border-radius: var(--radius-sm);
-    background: #eef8fc;
+    background: #eff6ff;
     color: var(--accent-strong);
 }
 
 .workflow-action:nth-child(2) .workflow-icon {
-    background: #eefbf6;
-    color: #159875;
+    background: #ecfdf5;
+    color: #059669;
 }
 
 .workflow-action:nth-child(3) .workflow-icon {
-    background: #fff6e8;
-    color: #bd6c16;
+    background: #fffbeb;
+    color: #d97706;
 }
 
 .workflow-action:nth-child(4) .workflow-icon {
-    background: #f1edff;
-    color: #7658d6;
+    background: #f5f3ff;
+    color: #7c3aed;
 }
 
 .workflow-action:nth-child(5) .workflow-icon {
-    background: #f5f7fa;
-    color: #334155;
+    background: #f8fafc;
+    color: #475569;
 }
 
 .workflow-icon .ui-icon {
@@ -961,7 +966,7 @@ tbody tr:hover {
 }
 
 .price-update-table tr:focus-within {
-    background: #eef8ff;
+    background: #eff6ff;
 }
 
 .thumb,
@@ -1242,7 +1247,7 @@ tbody tr:hover {
 }
 
 .search-result:hover {
-    background: var(--surface-muted);
+    background: #f8fafc;
 }
 
 .modal {
@@ -1311,6 +1316,17 @@ tbody tr:hover {
     background: #fff;
 }
 
+.invoice-box table {
+    width: 100%;
+    table-layout: auto;
+}
+
+.invoice-box th,
+.invoice-box td {
+    white-space: normal;
+    word-wrap: break-word;
+}
+
 .invoice-head {
     display: flex;
     align-items: flex-start;
@@ -1370,6 +1386,8 @@ tbody tr:hover {
 
 .invoice-items-table {
     margin-top: 1rem;
+    width: 100%;
+    table-layout: auto;
 }
 
 .invoice-items-table th {
@@ -1721,10 +1739,10 @@ tbody tr:hover {
         inset-block: 0;
         right: 0;
         z-index: 60;
-        width: min(20rem, 86vw);
+        width: min(22rem, 85vw);
         height: 100dvh;
         transform: translateX(100%);
-        transition: transform .22s ease;
+        transition: transform .25s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     body.sidebar-open .sidebar {
@@ -1735,11 +1753,15 @@ tbody tr:hover {
         position: fixed;
         inset: 0;
         z-index: 55;
-        background: rgba(15, 23, 42, .42);
+        background: rgba(15, 23, 42, .5);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .25s ease;
     }
 
     body.sidebar-open .sidebar-backdrop {
-        display: block;
+        opacity: 1;
+        pointer-events: auto;
     }
 
     .menu-toggle {
@@ -1762,7 +1784,7 @@ tbody tr:hover {
 
 @media (max-width: 40rem) {
     :root {
-        --touch-target: 2.875rem;
+        --touch-target: 3rem;
     }
 
     body {
@@ -1824,6 +1846,10 @@ tbody tr:hover {
 
     .bar-chart {
         margin-inline: .875rem;
+    }
+
+    .sidebar {
+        width: min(22rem, 88vw);
     }
 }
 
@@ -1996,3 +2022,4 @@ tbody tr:hover {
         margin: 10mm;
     }
 }
+

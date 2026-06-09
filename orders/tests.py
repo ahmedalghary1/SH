@@ -330,14 +330,13 @@ class OrderDiscountPolicyTests(TestCase):
         self.b2c_customer = Customer.objects.create(name='B2C Customer', customer_type=Customer.TYPE_B2C, phone='01010000002')
         self.wholesale_customer = Customer.objects.create(name='Wholesale Customer', customer_type=Customer.TYPE_WHOLESALE, phone='01010000003')
         self.b2b_customer = Customer.objects.create(name='B2B Customer', customer_type=Customer.TYPE_B2B, phone='01010000004')
-        self.vip_customer = Customer.objects.create(name='VIP Customer', customer_type=Customer.TYPE_VIP, phone='01010000005')
         CompanySettings.load()
 
     def _create(self, *, user=None, customer=None, order_discount_amount=0, order_discount_percentage=0, item_discount_amount=0, item_discount_percentage=0, unit_price=None):
         customer = customer or self.retail_customer
         return create_order(
             order_data={
-                'order_type': Order.TYPE_B2B if customer.customer_type in {Customer.TYPE_B2B, Customer.TYPE_WHOLESALE, Customer.TYPE_VIP} else Order.TYPE_B2C,
+                'order_type': Order.TYPE_B2B if customer.customer_type in {Customer.TYPE_B2B, Customer.TYPE_WHOLESALE} else Order.TYPE_B2C,
                 'customer': customer,
                 'warehouse': self.warehouse,
                 'payment_method': Order.METHOD_CASH,
@@ -361,7 +360,6 @@ class OrderDiscountPolicyTests(TestCase):
         self.assertEqual(get_price_for_customer(self.variant, customer=self.b2c_customer), Decimal('300.00'))
         self.assertEqual(get_price_for_customer(self.variant, customer=self.wholesale_customer), Decimal('300.00'))
         self.assertEqual(get_price_for_customer(self.variant, customer=self.b2b_customer), Decimal('300.00'))
-        self.assertEqual(get_price_for_customer(self.variant, customer=self.vip_customer), Decimal('300.00'))
 
     def test_item_and_order_discounts_update_totals_and_profit(self):
         order = self._create(

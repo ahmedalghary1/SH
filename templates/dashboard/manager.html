@@ -50,7 +50,7 @@
                 </div>
             </section>
             <section class="mini-stat">
-                <span>إجمالي الطلبات</span>
+                <span>إجمالي الفواتير</span>
                 <strong>{{ today_orders }}</strong>
                 <b class="mini-icon color-cyan"></b>
             </section>
@@ -80,16 +80,30 @@
 
     <div class="order-layout dashboard-tables">
         <section class="card">
-            <h2>آخر الطلبات</h2>
+            <h2>آخر الفواتير</h2>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>رقم الطلب</th><th>العميل</th><th>الإجمالي</th><th>الحالة</th><th>المندوب</th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th>رقم الفاتورة</th>
+                            <th>العميل</th>
+                            <th>الإجمالي</th>
+                            <th>الحالة</th>
+                            <th>المندوب</th>
+                        </tr>
+                    </thead>
                     <tbody>
-                    {% for order in latest_orders %}
-                        <tr><td>{{ order.order_number }}</td><td>{{ order.customer|default:'عميل فردي' }}</td><td>{{ order.total }}</td><td><span class="badge status-{{ order.status }}">{{ order.get_status_display }}</span></td><td>{{ order.created_by|default:'-' }}</td></tr>
-                    {% empty %}
-                        <tr><td colspan="5">لا توجد طلبات حديثة</td></tr>
-                    {% endfor %}
+                        {% for order in latest_orders %}
+                            <tr>
+                                <td>{{ order.order_number }}</td>
+                                <td>{{ order.customer|default:'عميل فردي' }}</td>
+                                <td>{{ order.total }}</td>
+                                <td><span class="badge status-{{ order.status }}">{{ order.get_status_display }}</span></td>
+                                <td>{{ order.created_by|default:'-' }}</td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="5">لا توجد فواتير حديثة</td></tr>
+                        {% endfor %}
                     </tbody>
                 </table>
             </div>
@@ -106,13 +120,25 @@
             </form>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>المخزن</th><th>المنتج</th><th>الكمية</th><th>الحد الأدنى</th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th>المخزن</th>
+                            <th>المنتج</th>
+                            <th>الكمية</th>
+                            <th>الحد الأدنى</th>
+                        </tr>
+                    </thead>
                     <tbody>
-                    {% for stock in low_stocks %}
-                        <tr><td>{{ stock.warehouse }}</td><td>{{ stock.variant.product.name }}</td><td>{{ stock.quantity }}</td><td>{{ stock.min_quantity }}</td></tr>
-                    {% empty %}
-                        <tr><td colspan="4">لا توجد تنبيهات مخزون</td></tr>
-                    {% endfor %}
+                        {% for stock in low_stocks %}
+                            <tr>
+                                <td>{{ stock.warehouse }}</td>
+                                <td>{{ stock.variant.product.name }}</td>
+                                <td>{{ stock.quantity }}</td>
+                                <td>{{ stock.min_quantity }}</td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="4">لا توجد تنبيهات مخزون</td></tr>
+                        {% endfor %}
                     </tbody>
                 </table>
             </div>

@@ -33,8 +33,6 @@ def get_discount_limits(user, customer=None):
     settings = CompanySettings.load()
     if getattr(user, 'is_manager', False) or getattr(user, 'is_superuser', False):
         return Decimal('100'), settings.allow_manager_sell_below_cost
-    if getattr(customer, 'customer_type', '') == Customer.TYPE_VIP:
-        return Decimal(str(settings.max_vip_discount_percentage)), False
     if getattr(user, 'role', None) == User.ROLE_SALES:
         return Decimal(str(settings.max_sales_discount_percentage)), False
     return Decimal('0'), False

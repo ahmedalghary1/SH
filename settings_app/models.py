@@ -11,7 +11,6 @@ class CompanySettings(models.Model):
     logo = models.ImageField(upload_to='settings/', blank=True, null=True)
     invoice_notes = models.TextField(blank=True, null=True)
     max_sales_discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=10, validators=[MinValueValidator(0), MaxValueValidator(100)])
-    max_vip_discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=20, validators=[MinValueValidator(0), MaxValueValidator(100)])
     allow_manager_sell_below_cost = models.BooleanField(default=False)
     updated_at = models.DateTimeField(auto_now=True)
 
