@@ -3,12 +3,26 @@
 {% block content %}
 <div class="page-head">
     <h1>المرتجعات</h1>
-    <a class="btn btn-primary" href="{% url 'returns:create' %}">إنشاء مرتجع</a>
+    <a class="btn btn-accent" href="{% url 'returns:simple_create' %}">
+        <svg class="ui-icon"><use href="#icon-plus"></use></svg>
+        إضافة مرتجع
+    </a>
 </div>
 {% include 'partials/export_buttons.html' %}
+<form class="filters">
+    <input name="q" placeholder="رقم المرتجع أو العميل" value="{{ request.GET.q }}">
+    <select name="status">
+        <option value="">كل الحالات</option>
+        <option value="draft">مسودة</option>
+        <option value="approved">معتمد</option>
+        <option value="completed">مكتمل</option>
+        <option value="rejected">مرفوض</option>
+    </select>
+    <button class="btn btn-primary">بحث</button>
+</form>
 <div class="table-wrap card">
     <table>
-        <thead><tr><th>رقم</th><th>الطلب</th><th>العميل</th><th>النوع</th><th>الحالة</th><th>المبلغ</th><th>التاريخ</th><th></th></tr></thead>
+        <thead><tr><th>رقم</th><th>الطلب</th><th>العميل</th><th>النوع</th><th>الحالة</th><th>المبلغ</th><th>التاريخ</th><th>إجراءات</th></tr></thead>
         <tbody>
         {% for ret in returns %}
             <tr>
@@ -19,7 +33,12 @@
                 <td><span class="badge">{{ ret.get_status_display }}</span></td>
                 <td>{{ ret.refund_amount }}</td>
                 <td>{{ ret.created_at }}</td>
-                <td><a class="btn btn-light" href="{% url 'returns:detail' ret.pk %}">التفاصيل</a></td>
+                <td>
+                    <a class="btn btn-light" href="{% url 'returns:detail' ret.pk %}">عرض</a>
+                    {% if ret.status == 'draft' %}
+                        <a class="btn btn-light" href="{% url 'returns:update' ret.pk %}">تعديل</a>
+                    {% endif %}
+                </td>
             </tr>
         {% empty %}
             <tr><td colspan="8">لا توجد مرتجعات</td></tr>

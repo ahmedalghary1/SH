@@ -5,6 +5,9 @@ from . import views
 app_name = 'purchases'
 
 urlpatterns = [
+    path('suppliers/simple/', views.SimpleSupplierListView.as_view(), name='simple_supplier_list'),
+    path('suppliers/simple/create/', views.SimpleSupplierCreateView.as_view(), name='simple_supplier_create'),
+    path('suppliers/simple/<int:pk>/', views.SimpleSupplierDetailView.as_view(), name='simple_supplier_detail'),
     path('suppliers/', views.SupplierListView.as_view(), name='suppliers'),
     path('suppliers/create/', views.SupplierCreateView.as_view(), name='supplier_create'),
     path('suppliers/raw-purchase/', views.RawMaterialPurchaseView.as_view(), name='raw_purchase'),

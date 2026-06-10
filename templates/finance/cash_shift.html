@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block title %}ورديتي{% endblock %}
+{% block content %}
+<div class="simple-cash-page">
+    <div class="page-head">
+        <h1>ورديتي</h1>
+    </div>
+
+    <!-- كروت ملخص الوردية -->
+    <div class="cash-summary-grid">
+        <div class="cash-card">
+            <div class="cash-icon sales">
+                <svg class="ui-icon"><use href="#icon-sale"></use></svg>
+            </div>
+            <div class="cash-content">
+                <span class="cash-label">مبيعاتي النقدية</span>
+                <strong class="cash-value">{{ cash_sales }}</strong>
+            </div>
+        </div>
+
+        <div class="cash-card">
+            <div class="cash-icon refund">
+                <svg class="ui-icon"><use href="#icon-undo"></use></svg>
+            </div>
+            <div class="cash-content">
+                <span class="cash-label">مرتجعاتي النقدية</span>
+                <strong class="cash-value">{{ cash_refunds }}</strong>
+            </div>
+        </div>
+
+        <div class="cash-card">
+            <div class="cash-icon collections">
+                <svg class="ui-icon"><use href="#icon-money"></use></svg>
+            </div>
+            <div class="cash-content">
+                <span class="cash-label">إجمالي الداخل</span>
+                <strong class="cash-value">{{ total_in }}</strong>
+            </div>
+        </div>
+
+        <div class="cash-card">
+            <div class="cash-icon expense">
+                <svg class="ui-icon"><use href="#icon-minus"></use></svg>
+            </div>
+            <div class="cash-content">
+                <span class="cash-label">إجمالي الخارج</span>
+                <strong class="cash-value">{{ total_out }}</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- جدول حركة الوردية -->
+    <div class="cash-transactions-section">
+        <h2>حركاتي اليوم</h2>
+        <div class="cash-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>التاريخ والوقت</th>
+                        <th>نوع الحركة</th>
+                        <th>البيان</th>
+                        <th>المبلغ الداخل</th>
+                        <th>المبلغ الخارج</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tx in transactions %}
+                        <tr>
+                            <td>{{ tx.created_at|date:'Y-m-d H:i' }}</td>
+                            <td>{{ tx.get_transaction_type_display }}</td>
+                            <td>{{ tx.notes|default:'-' }}</td>
+                            <td class="amount-in">{% if tx.direction == 'in' %}{{ tx.amount }}{% else %}-{% endif %}</td>
+                            <td class="amount-out">{% if tx.direction == 'out' %}{{ tx.amount }}{% else %}-{% endif %}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="5">لا توجد حركات اليوم</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

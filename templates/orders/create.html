@@ -1,58 +1,173 @@
 {% extends 'base.html' %}
 {% load static %}
-{% block title %}إنشاء فاتورة{% endblock %}
+{% block title %}فاتورة بيع جديدة{% endblock %}
 {% block content %}
-<div class="page-head"><h1>إنشاء فاتورة بيع</h1></div>
-<form method="post" id="order-form" class="order-layout order-layout-simple">
+<div class="page-head">
+    <h1>فاتورة بيع جديدة</h1>
+</div>
+
+<form method="post" id="order-form" class="cashier-layout">
     {% csrf_token %}
     <input type="hidden" name="items_json" id="items-json" value="[]">
     {{ form.warehouse }}
 
-    <section class="card form-grid order-panel">
-        <h2>بيانات الفاتورة</h2>
-        {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
-        <label><span>نوع المستند</span>{{ form.document_type }}</label>
-        <label><span>نوع البيع</span>{{ form.order_type }}</label>
-        <label><span>العميل</span>{{ form.customer }}</label>
-        <button class="btn btn-light" type="button" data-open-modal="customer-modal"><svg class="ui-icon"><use href="#icon-users"></use></svg>إضافة عميل سريع</button>
-        <label><span>طريقة الدفع</span>{{ form.payment_method }}</label>
-        <label class="wallet-field" hidden><span>محفظة العميل</span>{{ form.wallet_from_number }}</label>
-        <label class="wallet-field" hidden><span>محفظة الشركة</span>{{ form.wallet_to_number }}</label>
-        <label><span>خصم بالقيمة</span>{{ form.discount_amount }}</label>
-        <label><span>خصم بالنسبة</span>{{ form.discount_percentage }}</label>
-    </section>
+    <div class="cashier-grid">
+        <!-- القسم الأيسر: إضافة المنتجات -->
+        <div class="cashier-left">
+            <section class="card">
+                <h2>إضافة منتج</h2>
+                
+                <div class="search-box">
+                    <label>
+                        <span>بحث بالاسم أو الكود أو الباركود</span>
+                        <input id="product-search" type="search" placeholder="ابحث عن منتج..." autofocus>
+                    </label>
+                </div>
 
-    <section class="card form-grid order-panel">
-        <h2>إضافة صنف</h2>
-        <label class="span-2"><span>بحث المنتج</span><input id="product-search" type="search" placeholder="اكتب اسم المنتج أو الكود"></label>
-        <label><span>اللون والمقاس</span><select id="variant-select"><option value="">اختر المنتج أولا</option></select></label>
-        <label><span>المخزن</span><select id="item-warehouse"><option value="">اختر المنتج أولا</option></select></label>
-        <label><span>الكمية الموجودة</span><input id="available-stock" type="number" readonly></label>
-        <label><span>الكمية المطلوبة</span><input id="item-quantity" type="number" min="1" value="1"></label>
-        <label><span>سعر الوحدة</span><input id="unit-price" type="number" step="0.01"></label>
-        <label><span>إجمالي الصنف</span><input id="line-total" type="number" step="0.01" readonly></label>
-        <button class="btn btn-primary span-2" type="button" id="add-item"><svg class="ui-icon"><use href="#icon-plus"></use></svg>إضافة للفاتورة</button>
-    </section>
+                <div class="variant-selection">
+                    <label>
+                        <span>اللون والمقاس</span>
+                        <select id="variant-select">
+                            <option value="">اختر المنتج أولاً</option>
+                        </select>
+                    </label>
+                    <label>
+                        <span>المخزن</span>
+                        <select id="item-warehouse">
+                            <option value="">اختر المنتج أولاً</option>
+                        </select>
+                    </label>
+                </div>
 
-    <section class="card span-all">
-        <div class="compact-head page-head">
-            <h2>الأصناف</h2>
-            <label class="invoice-item-search"><span>بحث داخل الفاتورة</span><input id="invoice-item-search" type="search" placeholder="ابحث في الأصناف المضافة"></label>
+                <div class="stock-info">
+                    <div class="info-item">
+                        <span>المتاح:</span>
+                        <strong id="available-stock">0</strong>
+                    </div>
+                    <div class="info-item">
+                        <span>السعر:</span>
+                        <strong id="unit-price">0.00</strong>
+                    </div>
+                </div>
+
+                <div class="quantity-section">
+                    <label>
+                        <span>الكمية</span>
+                        <input id="item-quantity" type="number" min="1" value="1">
+                    </label>
+                    <button class="btn btn-primary btn-large" type="button" id="add-item">
+                        <svg class="ui-icon"><use href="#icon-plus"></use></svg>
+                        إضافة للفاتورة
+                    </button>
+                </div>
+            </section>
         </div>
-        <div class="table-wrap">
-            <table>
-                <thead><tr><th>المنتج</th><th>اللون</th><th>المقاس</th><th>المخزن</th><th>المتاح</th><th>المطلوب</th><th>السعر</th><th>الإجمالي</th><th>حذف</th></tr></thead>
-                <tbody id="order-items-body"><tr class="empty-row"><td colspan="9">لم تتم إضافة منتجات بعد</td></tr></tbody>
-            </table>
+
+        <!-- القسم الأيمن: الفاتورة -->
+        <div class="cashier-right">
+            <section class="card">
+                <h2>الفاتورة</h2>
+
+                <!-- معلومات العميل والدفع -->
+                <div class="invoice-info">
+                    <label>
+                        <span>العميل</span>
+                        {{ form.customer }}
+                    </label>
+                    <button class="btn btn-light btn-small" type="button" data-open-modal="customer-modal">
+                        <svg class="ui-icon"><use href="#icon-users"></use></svg>
+                        عميل جديد
+                    </button>
+                    <label>
+                        <span>طريقة الدفع</span>
+                        {{ form.payment_method }}
+                    </label>
+                </div>
+
+                <!-- جدول الأصناف -->
+                <div class="invoice-items">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>المنتج</th>
+                                <th>اللون/المقاس</th>
+                                <th>الكمية</th>
+                                <th>السعر</th>
+                                <th>الإجمالي</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="order-items-body">
+                            <tr class="empty-row">
+                                <td colspan="6">لم تتم إضافة منتجات بعد</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- ملخص الفاتورة -->
+                <div class="invoice-summary">
+                    <div class="summary-row">
+                        <span>إجمالي قبل الخصم</span>
+                        <strong id="summary-subtotal">0.00</strong>
+                    </div>
+                    <div class="summary-row">
+                        <span>الخصم</span>
+                        <input id="discount-input" type="number" step="0.01" min="0" placeholder="0.00" value="0">
+                    </div>
+                    <div class="summary-row total">
+                        <span>الإجمالي النهائي</span>
+                        <strong id="summary-total">0.00</strong>
+                    </div>
+                </div>
+
+                <!-- خيارات متقدمة -->
+                <div class="advanced-options">
+                    <button class="advanced-toggle" type="button" data-advanced-toggle>
+                        <svg class="ui-icon"><use href="#icon-settings"></use></svg>
+                        خيارات متقدمة
+                        <svg class="ui-icon chevron"><use href="#icon-chevron-down"></use></svg>
+                    </button>
+                    <div class="advanced-panel" data-advanced-panel>
+                        <label>
+                            <span>نوع البيع</span>
+                            {{ form.document_type }}
+                        </label>
+                        <label>
+                            <span>خزنة الدفع</span>
+                            {{ form.cash_account }}
+                        </label>
+                        <label>
+                            <span>ملاحظات داخلية</span>
+                            {{ form.notes }}
+                        </label>
+                        <label>
+                            <span>نسبة الخصم %</span>
+                            <input id="discount-percentage-input" type="number" step="0.1" min="0" max="100" placeholder="0" value="0">
+                        </label>
+                    </div>
+                </div>
+
+                <!-- أزرار الإجراءات -->
+                <div class="invoice-actions">
+                    <button class="btn btn-success btn-large" name="action" value="confirm" type="submit">
+                        <svg class="ui-icon"><use href="#icon-invoice"></use></svg>
+                        حفظ وطباعة
+                    </button>
+                    <button class="btn btn-primary btn-large" name="action" value="draft" type="submit">
+                        <svg class="ui-icon"><use href="#icon-file"></use></svg>
+                        حفظ
+                    </button>
+                    <a class="btn btn-danger btn-large" href="{% url 'orders:list' %}">
+                        <svg class="ui-icon"><use href="#icon-close"></use></svg>
+                        إلغاء
+                    </a>
+                </div>
+            </section>
         </div>
-        {% include 'orders/partials/order_summary.html' %}
-        <div class="form-actions">
-            <button class="btn btn-accent" name="action" value="confirm" type="submit"><svg class="ui-icon"><use href="#icon-invoice"></use></svg>تأكيد وإصدار فاتورة</button>
-            <button class="btn btn-light" name="action" value="draft" type="submit"><svg class="ui-icon"><use href="#icon-file"></use></svg>حفظ كتسعيرة بدون تأكيد</button>
-            <a class="btn btn-secondary" href="{% url 'orders:list' %}">إلغاء</a>
-        </div>
-    </section>
+    </div>
 </form>
+
 {% include 'orders/partials/customer_modal.html' %}
 {% endblock %}
 {% block extra_js %}<script src="{% static 'js/orders.js' %}"></script>{% endblock %}

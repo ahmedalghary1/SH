@@ -1,0 +1,214 @@
+{% extends 'base.html' %}
+{% block title %}{{ customer.name }}{% endblock %}
+{% block content %}
+<div class="simple-customer-detail-page">
+    <div class="page-head">
+        <h1>{{ customer.name }}</h1>
+        <div class="page-actions">
+            <a href="{% url 'customers:simple_list' %}" class="btn btn-light btn-large">عودة</a>
+            {% if request.user.is_manager %}
+            <a href="{% url 'customers:update' customer.pk %}" class="btn btn-primary btn-large">تعديل</a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- كروت الملخص -->
+    <div class="summary-cards">
+        <div class="summary-card">
+            <span class="summary-label">إجمالي المشتريات</span>
+            <strong class="summary-value">{{ summary.total_purchases|default:0 }}</strong>
+        </div>
+        <div class="summary-card">
+            <span class="summary-label">إجمالي المدفوع</span>
+            <strong class="summary-value">{{ summary.total_paid|default:0 }}</strong>
+        </div>
+        <div class="summary-card">
+            <span class="summary-label">إجمالي المرتجعات</span>
+            <strong class="summary-value">{{ summary.total_returns|default:0 }}</strong>
+        </div>
+        <div class="summary-card {% if summary.total_remaining > 0 %}debt{% elif summary.total_remaining < 0 %}credit{% endif %}">
+            <span class="summary-label">الرصيد الحالي</span>
+            <strong class="summary-value">{{ summary.total_remaining|default:0 }}</strong>
+            <span class="summary-status">
+                {% if summary.total_remaining > 0 %}عليه{% elif summary.total_remaining < 0 %}له{% else %}متوازن{% endif %}
+            </span>
+        </div>
+    </div>
+
+    <!-- آخر العمليات -->
+    <div class="last-operations">
+        <div class="operation-card">
+            <span class="operation-label">آخر فاتورة</span>
+            <strong class="operation-value">
+                {% if summary.last_order %}
+                    {{ summary.last_order.order_number }} - {{ summary.last_order.created_at|date:'Y-m-d' }}
+                {% else %}
+                    لا توجد فواتير
+                {% endif %}
+            </strong>
+        </div>
+        <div class="operation-card">
+            <span class="operation-label">آخر تحصيل</span>
+            <strong class="operation-value">
+                {% if summary.last_payment %}
+                    {{ summary.last_payment.amount }} - {{ summary.last_payment.created_at|date:'Y-m-d' }}
+                {% else %}
+                    لا توجد تحصيلات
+                {% endif %}
+            </strong>
+        </div>
+    </div>
+
+    <!-- التبويبات -->
+    <div class="tabs-container">
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="invoices">الفواتير</button>
+            <button class="tab-btn" data-tab="returns">المرتجعات</button>
+            <button class="tab-btn" data-tab="payments">التحصيلات</button>
+            <button class="tab-btn" data-tab="statement">كشف الحساب</button>
+        </div>
+
+        <div class="tab-content active" id="invoices">
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>رقم الفاتورة</th>
+                            <th>التاريخ</th>
+                            <th>المبلغ</th>
+                            <th>المدفوع</th>
+                            <th>المتبقي</th>
+                            <th>الحالة</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for order in orders %}
+                        <tr>
+                            <td><a href="{% url 'invoices:detail' order.pk %}">{{ order.order_number }}</a></td>
+                            <td>{{ order.created_at|date:'Y-m-d' }}</td>
+                            <td>{{ order.total }}</td>
+                            <td>{{ order.paid_amount }}</td>
+                            <td class="{% if order.remaining_amount > 0 %}debt{% endif %}">{{ order.remaining_amount }}</td>
+                            <td>{{ order.get_status_display }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6">لا توجد فواتير</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="tab-content" id="returns">
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>رقم المرتجع</th>
+                            <th>التاريخ</th>
+                            <th>النوع</th>
+                            <th>المبلغ المسترد</th>
+                            <th>الحالة</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ret in returns %}
+                        <tr>
+                            <td><a href="{% url 'returns:detail' ret.pk %}">{{ ret.id }}</a></td>
+                            <td>{{ ret.created_at|date:'Y-m-d' }}</td>
+                            <td>{{ ret.get_return_type_display }}</td>
+                            <td>{{ ret.refund_amount }}</td>
+                            <td>{{ ret.get_status_display }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5">لا توجد مرتجعات</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="tab-content" id="payments">
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>التاريخ</th>
+                            <th>المبلغ</th>
+                            <th>الخزنة</th>
+                            <th>الموظف</th>
+                            <th>البيان</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for payment in payments %}
+                        <tr>
+                            <td>{{ payment.created_at|date:'Y-m-d' }}</td>
+                            <td class="credit">{{ payment.amount }}</td>
+                            <td>{{ payment.cash_account }}</td>
+                            <td>{{ payment.created_by }}</td>
+                            <td>{{ payment.notes }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5">لا توجد تحصيلات</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="form-actions">
+                <a href="{% url 'finance:customer_payment' customer.pk %}" class="btn btn-primary btn-large">تحصيل من العميل</a>
+            </div>
+        </div>
+
+        <div class="tab-content" id="statement">
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>التاريخ</th>
+                            <th>نوع الحركة</th>
+                            <th>البيان</th>
+                            <th>مدين</th>
+                            <th>دائن</th>
+                            <th>الرصيد</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in statement %}
+                        <tr>
+                            <td>{{ entry.date|date:'Y-m-d' }}</td>
+                            <td>{{ entry.type }}</td>
+                            <td>{{ entry.description }}</td>
+                            <td class="debt">{{ entry.debit|default:'' }}</td>
+                            <td class="credit">{{ entry.credit|default:'' }}</td>
+                            <td class="balance">{{ entry.balance }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6">لا توجد حركات</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const tabs = document.querySelectorAll('.tab-btn');
+    const contents = document.querySelectorAll('.tab-content');
+    
+    tabs.forEach(tab => {
+        tab.addEventListener('click', function() {
+            const targetId = this.getAttribute('data-tab');
+            
+            tabs.forEach(t => t.classList.remove('active'));
+            contents.forEach(c => c.classList.remove('active'));
+            
+            this.classList.add('active');
+            document.getElementById(targetId).classList.add('active');
+        });
+    });
+});
+</script>
+{% endblock %}

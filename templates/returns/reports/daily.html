@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% block title %}تقرير المرتجعات اليومية{% endblock %}
+{% block content %}
+<div class="simple-report-page">
+    <div class="page-head">
+        <h1>تقرير المرتجعات اليومية</h1>
+    </div>
+
+    <!-- فلتر التاريخ -->
+    <div class="filter-section">
+        <form method="get" class="filter-form">
+            <div class="filter-group">
+                <label>التاريخ</label>
+                <input type="date" name="date" value="{{ target_date|date:'Y-m-d' }}">
+            </div>
+            <button type="submit" class="btn btn-primary">عرض</button>
+        </form>
+    </div>
+
+    <!-- ملخص اليوم -->
+    <div class="summary-grid">
+        <div class="summary-card">
+            <span class="summary-label">عدد المرتجعات</span>
+            <strong class="summary-value">{{ total_count }}</strong>
+        </div>
+        <div class="summary-card">
+            <span class="summary-label">إجمالي المبالغ المستردة</span>
+            <strong class="summary-value">{{ total_refund }}</strong>
+        </div>
+    </div>
+
+    <!-- المرتجعات حسب الموظف -->
+    <div class="report-section">
+        <h2>المرتجعات حسب الموظف</h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>الموظف</th>
+                        <th>عدد المرتجعات</th>
+                        <th>إجمالي المبالغ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in returns_by_user %}
+                    <tr>
+                        <td>{{ user.created_by__username }}</td>
+                        <td>{{ user.count }}</td>
+                        <td>{{ user.total }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="3">لا توجد بيانات</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- المرتجعات التالفة -->
+    <div class="report-section">
+        <h2>المرتجعات التالفة</h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>المنتج</th>
+                        <th>الكمية التالفة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in damaged_returns %}
+                    <tr>
+                        <td>{{ item.product_variant__product__name }}</td>
+                        <td class="damaged">{{ item.qty }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="2">لا توجد مرتجعات تالفة</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- قائمة المرتجعات -->
+    <div class="report-section">
+        <h2>قائمة المرتجعات</h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>رقم المرتجع</th>
+                        <th>رقم الفاتورة</th>
+                        <th>العميل</th>
+                        <th>النوع</th>
+                        <th>المبلغ المسترد</th>
+                        <th>الموظف</th>
+                        <th>التاريخ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ret in returns %}
+                    <tr>
+                        <td>{{ ret.id }}</td>
+                        <td>{{ ret.order.order_number }}</td>
+                        <td>{{ ret.customer }}</td>
+                        <td>{{ ret.get_return_type_display }}</td>
+                        <td class="refund">{{ ret.refund_amount }}</td>
+                        <td>{{ ret.created_by }}</td>
+                        <td>{{ ret.created_at|date:'Y-m-d H:i' }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7">لا توجد مرتجعات في هذا اليوم</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

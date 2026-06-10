@@ -1,6 +1,6 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView, View
@@ -10,10 +10,153 @@ from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
 
-from .forms import PurchaseOrderForm, PurchaseReceiveForm, SupplierForm, SupplierPaymentForm
+from .forms import PurchaseOrderForm, PurchaseReceiveForm, SupplierForm, SupplierPaymentForm, SimpleSupplierForm
 from .models import PurchaseOrder, Supplier
 from .raw_material import RawMaterialPurchaseForm, record_raw_material_purchase
 from .services import cancel_purchase_order, create_purchase_order, pay_supplier, receive_purchase_order_items
+
+
+class SimpleSupplierListView(ManagerRequiredMixin, ListView):
+    model = Supplier
+    template_name = 'purchases/suppliers/simple_list.html'
+    context_object_name = 'suppliers'
+    paginate_by = 20
+
+    def get_queryset(self):
+        qs = Supplier.objects.filter(is_active=True).annotate(
+            total_purchases=Sum('purchase_orders__total_amount', filter=Q(purchase_orders__status__in=[PurchaseOrder.STATUS_RECEIVED, PurchaseOrder.STATUS_PARTIALLY_RECEIVED])),
+            total_paid=Sum('purchase_orders__paid_amount', filter=Q(purchase_orders__status__in=[PurchaseOrder.STATUS_RECEIVED, PurchaseOrder.STATUS_PARTIALLY_RECEIVED]))
+        )
+        
+        q = self.request.GET.get('q')
+        debt = self.request.GET.get('debt')
+        
+        if q:
+            qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name'), q))
+        if debt == 'yes':
+            qs = qs.filter(current_balance__gt=0)
+        elif debt == 'no':
+            qs = qs.filter(current_balance=0)
+        
+        return qs.order_by('-created_at')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        for supplier in context['suppliers']:
+            supplier.last_transaction_date = PurchaseOrder.objects.filter(supplier=supplier).exclude(
+                status=PurchaseOrder.STATUS_CANCELLED
+            ).order_by('-created_at').first()
+            if supplier.last_transaction_date:
+                supplier.last_transaction_date = supplier.last_transaction_date.created_at
+        return context
+
+
+class SimpleSupplierCreateView(ManagerRequiredMixin, CreateView):
+    model = Supplier
+    form_class = SimpleSupplierForm
+    template_name = 'purchases/suppliers/simple_create.html'
+    success_url = reverse_lazy('purchases:simple_supplier_list')
+
+    def form_valid(self, form):
+        form.instance.current_balance = form.cleaned_data.get('opening_balance') or 0
+        messages.success(self.request, 'تم إضافة المورد')
+        return super().form_valid(form)
+
+
+class SimpleSupplierDetailView(ManagerRequiredMixin, DetailView):
+    model = Supplier
+    template_name = 'purchases/suppliers/simple_detail.html'
+    context_object_name = 'supplier'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        supplier = self.object
+        
+        # Get purchase orders
+        purchase_orders = supplier.purchase_orders.select_related('created_by').order_by('-created_at')
+        
+        # Get transactions
+        transactions = PaymentTransaction.objects.filter(
+            related_supplier=supplier,
+            direction=PaymentTransaction.DIRECTION_OUT,
+            transaction_type=PaymentTransaction.TYPE_SUPPLIER_PAYMENT,
+        ).select_related('cash_account', 'created_by').order_by('-created_at')
+        
+        # Calculate totals
+        total_purchases = purchase_orders.aggregate(v=Sum('total_amount'))['v'] or 0
+        total_paid = transactions.aggregate(v=Sum('amount'))['v'] or 0
+        
+        # Get last order and payment
+        last_order = purchase_orders.first()
+        last_payment = transactions.first()
+        
+        # Generate statement
+        statement = self._generate_statement(supplier, purchase_orders, transactions)
+        
+        context.update({
+            'purchase_orders': purchase_orders[:20],
+            'transactions': transactions[:20],
+            'summary': {
+                'total_purchases': total_purchases,
+                'total_paid': total_paid,
+                'last_order': last_order,
+                'last_payment': last_payment,
+            },
+            'statement': statement,
+        })
+        return context
+
+    def _generate_statement(self, supplier, purchase_orders, transactions):
+        from decimal import Decimal
+        statement = []
+        
+        # Opening balance
+        if supplier.opening_balance and supplier.opening_balance > 0:
+            statement.append({
+                'date': supplier.created_at,
+                'type': 'رصيد افتتاحي',
+                'description': 'رصيد افتتاحي',
+                'debit': supplier.opening_balance,
+                'credit': '',
+                'balance': supplier.opening_balance,
+            })
+        
+        # Combine all transactions
+        transactions_list = []
+        for order in purchase_orders.exclude(status=PurchaseOrder.STATUS_CANCELLED):
+            transactions_list.append({
+                'date': order.created_at,
+                'type': 'فاتورة شراء',
+                'description': f'فاتورة {order.purchase_number}',
+                'debit': order.total_amount,
+                'credit': '',
+                'order': order,
+            })
+        
+        for payment in transactions:
+            transactions_list.append({
+                'date': payment.created_at,
+                'type': 'دفع للمورد',
+                'description': payment.notes or 'دفع',
+                'debit': '',
+                'credit': payment.amount,
+                'payment': payment,
+            })
+        
+        # Sort by date
+        transactions_list.sort(key=lambda x: x['date'])
+        
+        # Calculate running balance
+        balance = supplier.opening_balance or Decimal('0')
+        for trans in transactions_list:
+            if trans['debit']:
+                balance += trans['debit']
+            if trans['credit']:
+                balance -= trans['credit']
+            trans['balance'] = balance
+            statement.append(trans)
+        
+        return statement
 
 
 class SupplierListView(ManagerRequiredMixin, ExportListMixin, ListView):

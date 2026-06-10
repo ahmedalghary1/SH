@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block title %}العملاء{% endblock %}
+{% block content %}
+<div class="simple-customers-page">
+    <div class="page-head">
+        <h1>العملاء</h1>
+        <a href="{% url 'customers:simple_create' %}" class="btn btn-primary btn-large">إضافة عميل</a>
+    </div>
+
+    <!-- قسم البحث والفلترة -->
+    <div class="filter-section">
+        <form method="get" class="filter-form">
+            <div class="filter-inputs">
+                <div class="filter-group">
+                    <label>بحث</label>
+                    <input type="text" name="q" placeholder="الاسم أو رقم الهاتف" value="{{ request.GET.q }}">
+                </div>
+                <div class="filter-group">
+                    <label>نوع العميل</label>
+                    <select name="type">
+                        <option value="">الكل</option>
+                        <option value="retail" {% if request.GET.type == 'retail' %}selected{% endif %}>قطاعي</option>
+                        <option value="wholesale" {% if request.GET.type == 'wholesale' %}selected{% endif %}>جملة</option>
+                        <option value="b2b" {% if request.GET.type == 'b2b' %}selected{% endif %}>شركة</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>المديونية</label>
+                    <select name="debt">
+                        <option value="">الكل</option>
+                        <option value="yes" {% if request.GET.debt == 'yes' %}selected{% endif %}>عليهم مديونية</option>
+                        <option value="no" {% if request.GET.debt == 'no' %}selected{% endif %}>بدون مديونية</option>
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">بحث</button>
+        </form>
+    </div>
+
+    <!-- جدول العملاء -->
+    <div class="customers-table-section">
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>الاسم</th>
+                        <th>الهاتف</th>
+                        <th>النوع</th>
+                        <th>إجمالي المشتريات</th>
+                        <th>الرصيد الحالي</th>
+                        <th>آخر تعامل</th>
+                        <th>الحالة</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for customer in customers %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'customers:simple_detail' customer.pk %}" class="customer-link">
+                                {{ customer.name }}
+                            </a>
+                        </td>
+                        <td>{{ customer.phone }}</td>
+                        <td>{{ customer.get_customer_type_display }}</td>
+                        <td class="purchases">{{ customer.total_purchases|default:0 }}</td>
+                        <td class="balance {% if customer.current_balance > 0 %}positive{% elif customer.current_balance < 0 %}negative{% endif %}">
+                            {{ customer.current_balance|default:0 }}
+                        </td>
+                        <td>{{ customer.last_transaction_date|date:'Y-m-d' }}</td>
+                        <td>
+                            <span class="status-badge {% if customer.is_active %}active{% else %}inactive{% endif %}">
+                                {% if customer.is_active %}نشط{% else %}متوقف{% endif %}
+                            </span>
+                        </td>
+                        <td>
+                            <a href="{% url 'customers:simple_detail' customer.pk %}" class="btn btn-sm btn-light">عرض</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8">لا توجد عملاء</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

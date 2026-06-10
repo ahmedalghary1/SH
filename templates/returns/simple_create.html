@@ -1,0 +1,179 @@
+{% extends 'base.html' %}
+{% block title %}مرتجع بسيط{% endblock %}
+{% block content %}
+<div class="simple-return-page">
+    <div class="page-head">
+        <h1>مرتجع بسيط</h1>
+    </div>
+
+    <!-- قسم البحث -->
+    <div class="search-section">
+        <form method="get" class="search-form">
+            <div class="search-inputs">
+                <div class="search-group">
+                    <label>رقم الفاتورة</label>
+                    <input type="text" name="invoice_number" placeholder="مثال: INV-20260606-0001" value="{{ searched_invoice_number }}">
+                </div>
+                <div class="search-group">
+                    <label>اسم العميل / رقم الهاتف</label>
+                    <input type="text" name="customer_search" placeholder="ابحث باسم العميل أو رقم الهاتف">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-large">بحث</button>
+        </form>
+    </div>
+
+    {% if order_preview %}
+    <!-- معلومات الفاتورة -->
+    <div class="order-info-section">
+        <h2>معلومات الفاتورة</h2>
+        <div class="order-info-grid">
+            <div class="info-item">
+                <span class="info-label">رقم الفاتورة</span>
+                <strong class="info-value">{{ order_preview.order_number }}</strong>
+            </div>
+            <div class="info-item">
+                <span class="info-label">العميل</span>
+                <strong class="info-value">{{ order_preview.customer }}</strong>
+            </div>
+            <div class="info-item">
+                <span class="info-label">التاريخ</span>
+                <strong class="info-value">{{ order_preview.created_at|date:'Y-m-d H:i' }}</strong>
+            </div>
+            <div class="info-item">
+                <span class="info-label">إجمالي الفاتورة</span>
+                <strong class="info-value">{{ order_preview.total }}</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- جدول الأصناف -->
+    <div class="items-section">
+        <h2>الأصناف القابلة للإرجاع</h2>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="invoice_number" value="{{ searched_invoice_number }}">
+            <input type="hidden" name="return_type" value="{{ SalesReturn.TYPE_PARTIAL_RETURN }}">
+            
+            <div class="items-table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>اختيار</th>
+                            <th>المنتج</th>
+                            <th>اللون</th>
+                            <th>المقاس</th>
+                            <th>الكمية المباعة</th>
+                            <th>الكمية المرتجعة سابقًا</th>
+                            <th>الكمية المتاحة للإرجاع</th>
+                            <th>الكمية المطلوب إرجاعها</th>
+                            <th>الحالة</th>
+                            <th>مبلغ الاسترجاع</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in item_rows %}
+                        <tr>
+                            <td>
+                                <input type="checkbox" name="selected_{{ row.item.pk }}" {% if row.selected %}checked{% endif %}>
+                            </td>
+                            <td>{{ row.item.variant.product.name }}</td>
+                            <td>{{ row.item.variant.color.name }}</td>
+                            <td>{{ row.item.variant.size.name }}</td>
+                            <td>{{ row.item.quantity }}</td>
+                            <td>{{ row.item.quantity|add:'-'|add:row.available_quantity }}</td>
+                            <td class="available">{{ row.available_quantity }}</td>
+                            <td>
+                                <input type="number" name="quantity_{{ row.item.pk }}" value="{{ row.quantity_value }}" min="0" max="{{ row.available_quantity }}" class="quantity-input">
+                            </td>
+                            <td>
+                                <select name="condition_{{ row.item.pk }}" class="condition-select">
+                                    <option value="{{ SalesReturnItem.CONDITION_GOOD }}" {% if row.condition_value == SalesReturnItem.CONDITION_GOOD %}selected{% endif %}>صالح للبيع</option>
+                                    <option value="{{ SalesReturnItem.CONDITION_DAMAGED }}" {% if row.condition_value == SalesReturnItem.CONDITION_DAMAGED %}selected{% endif %}>تالف</option>
+                                </select>
+                            </td>
+                            <td class="refund-amount">{{ row.refund_amount }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="10">لا توجد أصناف قابلة للإرجاع</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- ملخص المرتجع -->
+            <div class="return-summary">
+                <div class="summary-item">
+                    <span class="summary-label">إجمالي المبلغ المسترد</span>
+                    <strong class="summary-value" id="total-refund">0</strong>
+                </div>
+            </div>
+
+            <!-- خيارات متقدمة -->
+            <div class="advanced-options">
+                <button class="advanced-toggle" type="button" data-advanced-toggle aria-expanded="false">
+                    <svg class="ui-icon"><use href="#icon-settings"></use></svg>
+                    خيارات متقدمة
+                    <svg class="ui-icon chevron"><use href="#icon-chevron-down"></use></svg>
+                </button>
+                <div class="advanced-panel" data-advanced-panel aria-hidden="true">
+                    <label>
+                        <span>سبب المرتجع</span>
+                        <input type="text" name="reason" placeholder="سبب المرتجع...">
+                    </label>
+                    <label>
+                        <span>ملاحظات داخلية</span>
+                        <textarea name="notes" placeholder="ملاحظات داخلية..." rows="3"></textarea>
+                    </label>
+                </div>
+            </div>
+
+            <!-- أزرار الإجراءات -->
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-large">حفظ</button>
+                <a href="{% url 'returns:list' %}" class="btn btn-light btn-large">إلغاء</a>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+// حساب إجمالي المبلغ المسترد
+document.addEventListener('DOMContentLoaded', function() {
+    const quantityInputs = document.querySelectorAll('.quantity-input');
+    const conditionSelects = document.querySelectorAll('.condition-select');
+    
+    function calculateTotal() {
+        let total = 0;
+        const rows = document.querySelectorAll('.items-table-wrap tbody tr');
+        rows.forEach(row => {
+            const checkbox = row.querySelector('input[type="checkbox"]');
+            const quantityInput = row.querySelector('.quantity-input');
+            const refundCell = row.querySelector('.refund-amount');
+            
+            if (checkbox && checkbox.checked && quantityInput) {
+                const quantity = parseFloat(quantityInput.value) || 0;
+                const unitPrice = parseFloat(refundCell.dataset.unitPrice) || 0;
+                total += quantity * unitPrice;
+            }
+        });
+        document.getElementById('total-refund').textContent = total.toFixed(2);
+    }
+    
+    quantityInputs.forEach(input => {
+        input.addEventListener('change', calculateTotal);
+        input.addEventListener('input', calculateTotal);
+    });
+    
+    conditionSelects.forEach(select => {
+        select.addEventListener('change', calculateTotal);
+    });
+    
+    const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', calculateTotal);
+    });
+});
+</script>
+{% endblock %}

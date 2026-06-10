@@ -1,75 +1,67 @@
 {% extends 'base.html' %}
 {% block title %}المخزون{% endblock %}
 {% block content %}
-<div class="page-head">
-    <h1>المخزون</h1>
-</div>
-{% include 'partials/export_buttons.html' %}
-<form class="filters" method="get">
-    <label>
-        <span>بحث</span>
-        <input name="q" placeholder="اسم المنتج، الكود، الباركود أو التصنيف" value="{{ search_query }}">
-    </label>
-    <label>
-        <span>المخزن</span>
-        <select name="warehouse">
-            <option value="">كل المخازن</option>
-            {% for warehouse in warehouses %}
+<div class="simple-stock-page">
+    <div class="page-head">
+        <h1>المخزون</h1>
+    </div>
+
+    <form class="simple-filters" method="get">
+        <div class="filter-group">
+            <input name="q" placeholder="بحث بالاسم أو الكود..." value="{{ search_query }}">
+        </div>
+        <div class="filter-group">
+            <select name="warehouse">
+                <option value="">كل المخازن</option>
+                {% for warehouse in warehouses %}
                 <option value="{{ warehouse.id }}" {% if warehouse.id|stringformat:'s' == selected_warehouse_id %}selected{% endif %}>{{ warehouse.name }}</option>
-            {% endfor %}
-        </select>
-    </label>
-    <label class="inline-check">
-        <input type="checkbox" name="low" value="1" {% if low_only %}checked{% endif %}>
-        منخفض فقط
-    </label>
-    <button class="btn btn-primary">بحث</button>
-</form>
-<div class="table-wrap">
-    <table>
-        <thead>
-            <tr>
-                <th>المخزن</th>
-                <th>المنتج</th>
-                <th>كود المنتج</th>
-                <th>كود اللون/المقاس</th>
-                <th>التصنيف</th>
-                <th>اللون</th>
-                <th>المقاس</th>
-                {% if can_view_costs %}<th>سعر الشراء</th>{% endif %}
-                <th>سعر البيع</th>
-                <th>الكمية</th>
-                <th>الحد الأدنى</th>
-                <th>تنبيه</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for stock in stocks %}
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-group">
+            <label class="checkbox-label">
+                <input type="checkbox" name="low" value="1" {% if low_only %}checked{% endif %}>
+                <span>منخفض فقط</span>
+            </label>
+        </div>
+        <button class="btn btn-primary">بحث</button>
+    </form>
+
+    <div class="stock-table-wrap">
+        <table>
+            <thead>
                 <tr>
-                    <td>{{ stock.warehouse.name }}</td>
-                    <td>{{ stock.variant.product.name }}</td>
-                    <td>{{ stock.variant.product.sku }}</td>
-                    <td>{{ stock.variant.variant_sku }}</td>
-                    <td>{{ stock.variant.product.category|default:'-' }}</td>
-                    <td>{{ stock.variant.color|default:'-' }}</td>
-                    <td>{{ stock.variant.size|default:'-' }}</td>
-                    {% if can_view_costs %}<td>{{ stock.variant.cost_price }}</td>{% endif %}
-                    <td>{{ stock.variant.sale_price }}</td>
-                    <td>{{ stock.quantity }}</td>
-                    <td>{{ stock.min_quantity }}</td>
-                    <td>
-                        {% if stock.is_low %}
-                            <span class="badge warning">منخفض</span>
-                        {% else %}
-                            <span class="badge success">جيد</span>
-                        {% endif %}
-                    </td>
+                    <th>المنتج</th>
+                    <th>اللون/المقاس</th>
+                    <th>المخزن</th>
+                    <th>الكمية</th>
+                    <th>الحد الأدنى</th>
+                    <th>الحالة</th>
                 </tr>
-            {% empty %}
-                <tr><td colspan="{% if can_view_costs %}12{% else %}11{% endif %}">لا توجد كميات مطابقة للفلاتر الحالية</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+                {% for stock in stocks %}
+                    <tr>
+                        <td>{{ stock.variant.product.name }}</td>
+                        <td>{{ stock.variant.color|default:'-' }} / {{ stock.variant.size|default:'-' }}</td>
+                        <td>{{ stock.warehouse.name }}</td>
+                        <td class="quantity-cell">{{ stock.quantity }}</td>
+                        <td>{{ stock.min_quantity }}</td>
+                        <td>
+                            {% if stock.is_low %}
+                                <span class="badge warning">منخفض</span>
+                            {% else %}
+                                <span class="badge success">جيد</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6">لا توجد كميات مطابقة للفلاتر الحالية</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% include 'partials/pagination.html' %}
 </div>
-{% include 'partials/pagination.html' %}
 {% endblock %}

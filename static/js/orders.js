@@ -119,13 +119,12 @@
         const subtotal = items.reduce((sum, item) => sum + (Number(item.unit_price) * Number(item.quantity)), 0);
         const itemDiscount = items.reduce((sum, item) => sum + lineDiscount(item), 0);
         const afterItems = Math.max(subtotal - itemDiscount, 0);
-        const orderDiscountAmount = isSample() ? 0 : Number(generalDiscount?.value || 0);
-        const orderDiscountPercent = isSample() ? 0 : Number(generalDiscountPercentage?.value || 0);
-        const orderDiscount = Math.min(afterItems, orderDiscountAmount + (afterItems * orderDiscountPercent / 100));
+        const discountInput = document.getElementById("discount-input");
+        const orderDiscountAmount = isSample() ? 0 : Number(discountInput?.value || 0);
+        const orderDiscount = Math.min(afterItems, orderDiscountAmount);
         const discount = itemDiscount + orderDiscount;
         const total = Math.max(subtotal - discount, 0);
         document.getElementById("summary-subtotal").textContent = money(subtotal);
-        document.getElementById("summary-discount").textContent = money(discount);
         document.getElementById("summary-total").textContent = money(total);
         itemsJson.value = JSON.stringify(items);
     }
@@ -145,12 +144,12 @@
         body.innerHTML = "";
         const visibleItems = items.map((item, index) => ({ item, index })).filter(({ item }) => itemMatchesFilter(item));
         if (!items.length) {
-            body.innerHTML = '<tr class="empty-row"><td colspan="9">لم تتم إضافة منتجات بعد</td></tr>';
+            body.innerHTML = '<tr class="empty-row"><td colspan="6">لم تتم إضافة منتجات بعد</td></tr>';
             updateSummary();
             return;
         }
         if (!visibleItems.length) {
-            body.innerHTML = '<tr class="empty-row"><td colspan="9">لا توجد أصناف مطابقة للبحث</td></tr>';
+            body.innerHTML = '<tr class="empty-row"><td colspan="6">لا توجد أصناف مطابقة للبحث</td></tr>';
             updateSummary();
             return;
         }
@@ -159,23 +158,50 @@
             const row = document.createElement("tr");
             row.innerHTML = `
                 <td>${item.product_name}</td>
-                <td>${item.color || "-"}</td>
-                <td>${item.size || "-"}</td>
-                <td>${item.warehouse_name || "-"}</td>
-                <td>${item.available_quantity}</td>
+                <td>${item.color || "-"} / ${item.size || "-"}</td>
                 <td>${item.quantity}</td>
                 <td>${money(item.unit_price)}</td>
                 <td>${money(total)}</td>
-                <td><button type="button" class="btn btn-danger" data-remove="${index}">حذف</button></td>
+                <td><button type="button" class="btn btn-danger" data-remove="${index}">✕</button></td>
             `;
             body.appendChild(row);
         });
         updateSummary();
     }
 
-    async function fetchJson(url, options) {
-        const response = await fetch(url, options);
-        return response.json();
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== "") {
+            const cookies = document.cookie.split(";");
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + "=")) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    async function fetchJson(url, options = {}) {
+        try {
+            const response = await fetch(url, {
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken'),
+                    ...options.headers,
+                },
+            });
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        } catch (error) {
+            console.error('Fetch error:', error);
+            throw error;
+        }
     }
 
     function resetProductMeta() {
@@ -253,16 +279,32 @@
         selectedProductLabel = button.textContent;
         closeProductResults();
         resetProductMeta();
-        const data = await fetchJson(`/orders/ajax/products/${selectedProduct.id}/variants/`);
-        variantSelect.innerHTML = '<option value="">اختر اللون والمقاس</option>';
-        data.data.forEach((variant) => {
-            const option = document.createElement("option");
-            option.value = variant.id;
-            option.textContent = `${variant.color || "-"} / ${variant.size || "-"} - ${variant.sku}`;
-            option.dataset.color = variant.color;
-            option.dataset.size = variant.size;
-            variantSelect.appendChild(option);
-        });
+        console.log('Product selected:', selectedProduct);
+        console.log('Fetching variants from:', `/orders/ajax/products/${selectedProduct.id}/variants/`);
+        try {
+            const data = await fetchJson(`/orders/ajax/products/${selectedProduct.id}/variants/`);
+            console.log('Variants response:', data);
+            variantSelect.innerHTML = '<option value="">اختر اللون والمقاس</option>';
+            if (data.success && data.data && data.data.length > 0) {
+                console.log('Processing', data.data.length, 'variants');
+                data.data.forEach((variant) => {
+                    const option = document.createElement("option");
+                    option.value = variant.id;
+                    option.textContent = `${variant.color || "-"} / ${variant.size || "-"} - ${variant.sku}`;
+                    option.dataset.color = variant.color;
+                    option.dataset.size = variant.size;
+                    variantSelect.appendChild(option);
+                    console.log('Added variant:', variant.color, variant.size, variant.sku);
+                });
+                console.log('Total options in variantSelect:', variantSelect.options.length);
+            } else {
+                console.log('No variants found or invalid response');
+                variantSelect.innerHTML = '<option value="">لا توجد متغيرات لهذا المنتج</option>';
+            }
+        } catch (error) {
+            console.error('Error fetching variants:', error);
+            variantSelect.innerHTML = '<option value="">خطأ في جلب المتغيرات</option>';
+        }
     });
 
     customerSearch?.addEventListener("input", async () => {
@@ -339,14 +381,10 @@
         updateSelectedWarehouse();
         updateLineTotal();
     });
-    orderType.addEventListener("change", refreshVariantMeta);
     customerSelect.addEventListener("change", refreshVariantMeta);
-    documentType?.addEventListener("change", updateDocumentMode);
-    paymentMethod?.addEventListener("change", toggleWalletFields);
     qtyInput.addEventListener("input", updateLineTotal);
     priceInput.addEventListener("input", updateLineTotal);
-    generalDiscount?.addEventListener("input", updateSummary);
-    generalDiscountPercentage?.addEventListener("input", updateSummary);
+    document.getElementById("discount-input")?.addEventListener("input", updateSummary);
     invoiceItemSearch?.addEventListener("input", renderItems);
 
     addButton.addEventListener("click", () => {
@@ -440,4 +478,15 @@
     renderItems();
     updateDocumentMode();
     updateLineTotal();
+
+    // Advanced Options Toggle
+    const advancedToggle = document.querySelector('[data-advanced-toggle]');
+    const advancedPanel = document.querySelector('[data-advanced-panel]');
+    if (advancedToggle && advancedPanel) {
+        advancedToggle.addEventListener('click', () => {
+            const isExpanded = advancedToggle.getAttribute('aria-expanded') === 'true';
+            advancedToggle.setAttribute('aria-expanded', !isExpanded);
+            advancedPanel.setAttribute('aria-hidden', isExpanded);
+        });
+    }
 })();

@@ -47,7 +47,12 @@
                     <td>{{ order.total }}</td>
                     <td>{{ order.discount }}</td>
                     <td>{{ order.created_by|default:'-' }}</td>
-                    <td><a class="btn btn-light" href="{% url 'orders:detail' order.pk %}">عرض</a></td>
+                    <td>
+                        <a class="btn btn-light" href="{% url 'orders:detail' order.pk %}">عرض</a>
+                        {% if order.status == 'draft' %}
+                            <a class="btn btn-light" href="{% url 'orders:update' order.pk %}">تعديل</a>
+                        {% endif %}
+                    </td>
                 </tr>
             {% empty %}
                 <tr><td colspan="9">لا توجد فواتير</td></tr>

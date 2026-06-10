@@ -40,7 +40,7 @@ def generate_variant_sku(product, color_id=None, size_id=None, current_pk=None):
 
 
 class ProductListView(RoleRequiredMixin, ExportListMixin, ListView):
-    allowed_roles = ('manager', 'sales', 'warehouse')
+    allowed_roles = ('manager', 'warehouse')
     model = Product
     template_name = 'products/list.html'
     context_object_name = 'products'
@@ -80,7 +80,7 @@ class ProductListView(RoleRequiredMixin, ExportListMixin, ListView):
 
 
 class ProductDetailView(RoleRequiredMixin, DetailView):
-    allowed_roles = ('manager', 'sales', 'warehouse')
+    allowed_roles = ('manager', 'warehouse')
     model = Product
     template_name = 'products/detail.html'
     context_object_name = 'product'

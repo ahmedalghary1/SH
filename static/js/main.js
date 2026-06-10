@@ -448,3 +448,17 @@ document.addEventListener("keydown", (event) => {
     closeModal(document.querySelector(".modal:not([hidden])"));
     document.body.classList.remove("sidebar-open");
 });
+
+// Advanced Options Toggle
+document.addEventListener("click", (event) => {
+    const advancedToggle = event.target.closest("[data-advanced-toggle]");
+    if (advancedToggle) {
+        event.preventDefault();
+        const advancedPanel = advancedToggle.nextElementSibling;
+        if (!advancedPanel || !advancedPanel.hasAttribute("data-advanced-panel")) return;
+
+        const isExpanded = advancedToggle.getAttribute("aria-expanded") === "true";
+        advancedToggle.setAttribute("aria-expanded", !isExpanded);
+        advancedPanel.setAttribute("aria-hidden", isExpanded);
+    }
+});

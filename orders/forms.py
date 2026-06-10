@@ -36,11 +36,19 @@ class OrderForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields['customer'].required = False
         self.fields['warehouse'].required = False
-        self.fields['document_type'].choices = (
-            (Order.DOCUMENT_SALE, 'بيع'),
-            (Order.DOCUMENT_QUOTE, 'تسعيرة بدون تأكيد'),
-            (Order.DOCUMENT_SAMPLE, 'عينة / تسوية مجانية'),
-        )
+        # Set default document type to sale and hide it
+        self.fields['document_type'].initial = Order.DOCUMENT_SALE
+        self.fields['document_type'].widget = forms.HiddenInput()
+        # Set default order type to b2c and hide it
+        self.fields['order_type'].initial = Order.TYPE_B2C
+        self.fields['order_type'].widget = forms.HiddenInput()
+        # Hide discount percentage - use only discount amount
+        self.fields['discount_percentage'].widget = forms.HiddenInput()
+        self.fields['discount_percentage'].initial = 0
+        # Hide wallet fields by default
+        self.fields['wallet_from_number'].widget = forms.HiddenInput()
+        self.fields['wallet_to_number'].widget = forms.HiddenInput()
+        
         warehouses = Warehouse.objects.filter(is_active=True)
         if user and getattr(user, 'role', None) == 'sales' and not user.is_superuser:
             warehouses = warehouses.filter(assigned_user=user, warehouse_type=Warehouse.TYPE_REPRESENTATIVE)

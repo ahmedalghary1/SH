@@ -137,6 +137,7 @@ urlpatterns = [
     path('finance/', include('finance.urls')),
     path('purchases/', include('purchases.urls')),
     path('returns/', include('returns.urls')),
+    path('reports/', include('reports.urls')),
     path('sales-reps/', include('sales_reps.urls')),
     path('settings/', include('settings_app.urls')),
     path('audit/', include('audit.urls')),

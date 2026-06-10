@@ -6,14 +6,14 @@ from django.urls import reverse, reverse_lazy
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import CreateView, DetailView, ListView, TemplateView, UpdateView
 
-from accounts.permissions import SalesRequiredMixin, sales_required
+from accounts.permissions import ManagerRequiredMixin, SalesRequiredMixin, sales_required
 from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
 from orders.models import Order, OrderItem
 from returns.models import SalesReturn
 
-from .forms import CustomerForm, CustomerInteractionForm
+from .forms import CustomerForm, CustomerInteractionForm, SimpleCustomerForm
 from .models import Customer, CustomerInteraction
 from .services import (
     get_crm_dashboard_context,
@@ -24,6 +24,46 @@ from .services import (
     get_open_complaints,
     get_top_customers,
 )
+
+
+class SimpleCustomerListView(SalesRequiredMixin, ListView):
+    model = Customer
+    template_name = 'customers/simple_list.html'
+    context_object_name = 'customers'
+    paginate_by = 20
+
+    def get_queryset(self):
+        qs = Customer.objects.select_related('created_by').filter(is_active=True).annotate(
+            total_purchases=Sum('order__total', filter=Q(order__status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED])),
+            current_balance=Sum('order__remaining_amount', filter=Q(order__status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED]))
+        )
+        
+        q = self.request.GET.get('q')
+        customer_type = self.request.GET.get('type')
+        debt = self.request.GET.get('debt')
+        
+        valid_types = {choice[0] for choice in Customer.CUSTOMER_TYPE_CHOICES}
+        if q:
+            qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name'), q))
+        if customer_type in valid_types:
+            qs = qs.filter(customer_type=customer_type)
+        if debt == 'yes':
+            qs = qs.filter(Q(opening_balance__gt=0) | Q(order__remaining_amount__gt=0))
+        elif debt == 'no':
+            qs = qs.filter(Q(opening_balance=0) & Q(order__remaining_amount=0))
+        
+        return qs.order_by('-created_at')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        for customer in context['customers']:
+            customer.current_balance = (customer.opening_balance or 0) + (customer.current_balance or 0)
+            customer.last_transaction_date = Order.objects.filter(customer=customer).exclude(
+                status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED]
+            ).order_by('-created_at').first()
+            if customer.last_transaction_date:
+                customer.last_transaction_date = customer.last_transaction_date.created_at
+        return context
 
 
 class CustomerListView(SalesRequiredMixin, ExportListMixin, ListView):
@@ -55,6 +95,18 @@ class CustomerListView(SalesRequiredMixin, ExportListMixin, ListView):
         return qs.order_by('-created_at')
 
 
+class SimpleCustomerCreateView(SalesRequiredMixin, CreateView):
+    model = Customer
+    form_class = SimpleCustomerForm
+    template_name = 'customers/simple_create.html'
+    success_url = reverse_lazy('customers:simple_list')
+
+    def form_valid(self, form):
+        form.instance.created_by = self.request.user
+        messages.success(self.request, 'تم إضافة العميل')
+        return super().form_valid(form)
+
+
 class CustomerCreateView(SalesRequiredMixin, CreateView):
     model = Customer
     form_class = CustomerForm
@@ -76,6 +128,121 @@ class CustomerUpdateView(SalesRequiredMixin, UpdateView):
     def form_valid(self, form):
         messages.success(self.request, 'تم تعديل العميل')
         return super().form_valid(form)
+
+
+class SimpleCustomerDetailView(SalesRequiredMixin, DetailView):
+    model = Customer
+    template_name = 'customers/simple_detail.html'
+    context_object_name = 'customer'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        customer = self.object
+        
+        # Get summary
+        summary = get_customer_summary(customer)
+        
+        # Get orders
+        orders = Order.objects.filter(customer=customer).exclude(
+            status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED],
+        ).select_related('created_by').order_by('-created_at')
+        
+        # Get returns
+        returns = SalesReturn.objects.filter(customer=customer).select_related('created_by').order_by('-created_at')
+        
+        # Get payments
+        payments = PaymentTransaction.objects.filter(
+            related_customer=customer,
+            direction=PaymentTransaction.DIRECTION_IN,
+            transaction_type__in=[PaymentTransaction.TYPE_CUSTOMER_PAYMENT, PaymentTransaction.TYPE_SALES_REP_COLLECTION],
+        ).select_related('cash_account', 'created_by').order_by('-created_at')
+        
+        # Calculate total returns
+        total_returns = returns.filter(status=SalesReturn.STATUS_COMPLETED).aggregate(v=Sum('refund_amount'))['v'] or 0
+        
+        # Get last payment
+        last_payment = payments.first()
+        
+        # Generate statement
+        statement = self._generate_statement(customer, orders, returns, payments)
+        
+        context.update({
+            'summary': {
+                'total_purchases': summary['total_purchases'],
+                'total_paid': summary['total_paid'],
+                'total_remaining': summary['total_remaining'],
+                'total_returns': total_returns,
+                'last_order': summary['last_order'],
+                'last_payment': last_payment,
+            },
+            'orders': orders[:20],
+            'returns': returns[:20],
+            'payments': payments[:20],
+            'statement': statement,
+        })
+        return context
+
+    def _generate_statement(self, customer, orders, returns, payments):
+        from decimal import Decimal
+        statement = []
+        
+        # Opening balance
+        if customer.opening_balance and customer.opening_balance > 0:
+            statement.append({
+                'date': customer.created_at,
+                'type': 'رصيد افتتاحي',
+                'description': 'رصيد افتتاحي',
+                'debit': customer.opening_balance,
+                'credit': '',
+                'balance': customer.opening_balance,
+            })
+        
+        # Combine all transactions
+        transactions = []
+        for order in orders:
+            transactions.append({
+                'date': order.created_at,
+                'type': 'فاتورة بيع',
+                'description': f'فاتورة {order.order_number}',
+                'debit': order.total,
+                'credit': '',
+                'order': order,
+            })
+        
+        for ret in returns.filter(status=SalesReturn.STATUS_COMPLETED):
+            transactions.append({
+                'date': ret.created_at,
+                'type': 'مرتجع',
+                'description': f'مرتجع {ret.id}',
+                'debit': '',
+                'credit': ret.refund_amount,
+                'return': ret,
+            })
+        
+        for payment in payments:
+            transactions.append({
+                'date': payment.created_at,
+                'type': 'تحصيل',
+                'description': payment.notes or 'تحصيل',
+                'debit': '',
+                'credit': payment.amount,
+                'payment': payment,
+            })
+        
+        # Sort by date
+        transactions.sort(key=lambda x: x['date'])
+        
+        # Calculate running balance
+        balance = customer.opening_balance or Decimal('0')
+        for trans in transactions:
+            if trans['debit']:
+                balance += trans['debit']
+            if trans['credit']:
+                balance -= trans['credit']
+            trans['balance'] = balance
+            statement.append(trans)
+        
+        return statement
 
 
 class CustomerDetailView(SalesRequiredMixin, DetailView):

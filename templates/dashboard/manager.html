@@ -1,148 +1,113 @@
 {% extends 'base.html' %}
-{% block title %}لوحة المدير{% endblock %}
+{% block title %}الرئيسية{% endblock %}
 {% block content %}
-<div class="erp-dashboard">
-    {% include 'partials/workflow_actions.html' %}
+<div class="simple-dashboard">
+    <div class="page-head">
+        <h1>الرئيسية</h1>
+    </div>
 
-    <div class="metric-strip">
-        <article class="metric-card">
-            <div class="metric-title">صافي المبيعات</div>
-            <div class="metric-value"><span>{{ today_sales }}</span><b class="trend-up">↑</b></div>
-            <div class="metric-percent">50%</div>
-            <div class="metric-progress"><span style="width: 92%"></span></div>
-        </article>
+    <!-- أزرار سريعة -->
+    <div class="quick-actions">
+        <a href="{% url 'orders:create' %}" class="quick-action-btn primary">
+            <svg class="ui-icon"><use href="#icon-sale"></use></svg>
+            <span>فاتورة بيع جديدة</span>
+        </a>
+        <a href="{% url 'products:create' %}" class="quick-action-btn">
+            <svg class="ui-icon"><use href="#icon-box"></use></svg>
+            <span>إضافة منتج</span>
+        </a>
+        <a href="{% url 'customers:create' %}" class="quick-action-btn">
+            <svg class="ui-icon"><use href="#icon-users"></use></svg>
+            <span>إضافة عميل</span>
+        </a>
+        <a href="{% url 'reports:daily_sales' %}" class="quick-action-btn">
+            <svg class="ui-icon"><use href="#icon-chart"></use></svg>
+            <span>تقرير اليوم</span>
+        </a>
+    </div>
+
+    <!-- الكروت الإحصائية -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon sales">
+                <svg class="ui-icon"><use href="#icon-sale"></use></svg>
+            </div>
+            <div class="stat-content">
+                <span class="stat-label">مبيعات اليوم</span>
+                <strong class="stat-value">{{ today_sales }}</strong>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon invoices">
+                <svg class="ui-icon"><use href="#icon-invoice"></use></svg>
+            </div>
+            <div class="stat-content">
+                <span class="stat-label">عدد الفواتير</span>
+                <strong class="stat-value">{{ today_orders }}</strong>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon stock">
+                <svg class="ui-icon"><use href="#icon-warehouse"></use></svg>
+            </div>
+            <div class="stat-content">
+                <span class="stat-label">المنتجات الناقصة</span>
+                <strong class="stat-value">{{ low_stocks|length }}</strong>
+            </div>
+        </div>
+
         {% if can_view_costs %}
-        <article class="metric-card">
-            <div class="metric-title">مجمل الربح</div>
-            <div class="metric-value"><span>{{ today_gross_profit }}</span><b class="trend-up">↑</b></div>
-            <div class="metric-percent">ربح اليوم</div>
-            <div class="metric-progress"><span style="width: 68%"></span></div>
-        </article>
+        <div class="stat-card">
+            <div class="stat-icon cash">
+                <svg class="ui-icon"><use href="#icon-money"></use></svg>
+            </div>
+            <div class="stat-content">
+                <span class="stat-label">رصيد الخزنة</span>
+                <strong class="stat-value">{{ cash_balance }}</strong>
+            </div>
+        </div>
         {% endif %}
-        <article class="metric-card">
-            <div class="metric-title">رصيد الخزن</div>
-            <div class="metric-value"><span>{{ cash_balance }}</span><b class="trend-up">↑</b></div>
-            <div class="metric-percent">كل الحسابات</div>
-            <div class="metric-progress"><span style="width: 82%"></span></div>
-        </article>
-        <article class="metric-card">
-            <div class="metric-title">المرتجعات</div>
-            <div class="metric-value"><span>{{ remaining_total }}</span><b class="trend-down">↓</b></div>
-            <div class="metric-percent">36%</div>
-            <div class="metric-progress"><span style="width: 58%"></span></div>
-        </article>
-        <article class="metric-card">
-            <div class="metric-title">نقدي</div>
-            <div class="metric-value"><span>{{ paid_total }}</span><b class="trend-up">↑</b></div>
-            <div class="metric-percent">70%</div>
-            <div class="metric-progress"><span style="width: 76%"></span></div>
-        </article>
+
+        <div class="stat-card">
+            <div class="stat-icon debt">
+                <svg class="ui-icon"><use href="#icon-users"></use></svg>
+            </div>
+            <div class="stat-content">
+                <span class="stat-label">مديونية العملاء</span>
+                <strong class="stat-value">{{ remaining_total }}</strong>
+            </div>
+        </div>
+
+        {% if can_view_costs %}
+        <div class="stat-card">
+            <div class="stat-icon profit">
+                <svg class="ui-icon"><use href="#icon-chart"></use></svg>
+            </div>
+            <div class="stat-content">
+                <span class="stat-label">صافي الربح</span>
+                <strong class="stat-value">{{ today_gross_profit }}</strong>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
-    <div class="dashboard-grid">
-        <aside class="dashboard-side">
-            <section class="profit-card">
-                <span>الأرباح</span>
-                <strong>{{ today_sales }}</strong>
-                <small>إجمالي مبيعات اليوم</small>
-                <div class="mini-line">
-                    <i></i><i></i><i></i><i></i><i></i><i></i>
-                </div>
-            </section>
-            <section class="mini-stat">
-                <span>إجمالي الفواتير</span>
-                <strong>{{ today_orders }}</strong>
-                <b class="mini-icon color-cyan"></b>
-            </section>
-            <section class="mini-stat">
-                <span>تنبيهات المخزون</span>
-                <strong>{{ low_stocks|length }}</strong>
-                <b class="mini-icon color-green"></b>
-            </section>
-        </aside>
-
-        <section class="chart-card">
-            <div class="chart-head"><h2>إحصائيات</h2></div>
-            <div class="chart-legend">
-                <span><i class="legend-cyan"></i>المبيعات</span>
-                <span><i class="legend-purple"></i>الفواتير</span>
-                <span><i class="legend-blue"></i>التحصيل</span>
+    <!-- تنبيهات المخزون -->
+    {% if low_stocks %}
+    <div class="alerts-section">
+        <h2>تنبيهات المخزون</h2>
+        <div class="alerts-list">
+            {% for stock in low_stocks %}
+            <div class="alert-item">
+                <span class="alert-product">{{ stock.variant.product.name }}</span>
+                <span class="alert-warehouse">{{ stock.warehouse }}</span>
+                <span class="alert-quantity">{{ stock.quantity }}</span>
+                <a href="{% url 'inventory:stock' %}" class="alert-link">عرض</a>
             </div>
-            <div class="bar-chart" aria-label="مخطط إحصائيات المبيعات">
-                <div class="bar-group"><b style="height:50%"></b><b style="height:80%"></b><b style="height:30%"></b><span>السبت</span></div>
-                <div class="bar-group"><b style="height:20%"></b><b style="height:40%"></b><b style="height:30%"></b><span>الأحد</span></div>
-                <div class="bar-group"><b style="height:40%"></b><b style="height:70%"></b><b style="height:50%"></b><span>الإثنين</span></div>
-                <div class="bar-group"><b style="height:20%"></b><b style="height:30%"></b><b style="height:40%"></b><span>الثلاثاء</span></div>
-                <div class="bar-group"><b style="height:45%"></b><b style="height:60%"></b><b style="height:40%"></b><span>الأربعاء</span></div>
-            </div>
-        </section>
+            {% endfor %}
+        </div>
     </div>
-
-    <div class="order-layout dashboard-tables">
-        <section class="card">
-            <h2>آخر الفواتير</h2>
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>رقم الفاتورة</th>
-                            <th>العميل</th>
-                            <th>الإجمالي</th>
-                            <th>الحالة</th>
-                            <th>المندوب</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for order in latest_orders %}
-                            <tr>
-                                <td>{{ order.order_number }}</td>
-                                <td>{{ order.customer|default:'عميل فردي' }}</td>
-                                <td>{{ order.total }}</td>
-                                <td><span class="badge status-{{ order.status }}">{{ order.get_status_display }}</span></td>
-                                <td>{{ order.created_by|default:'-' }}</td>
-                            </tr>
-                        {% empty %}
-                            <tr><td colspan="5">لا توجد فواتير حديثة</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </section>
-        <section class="card">
-            <h2>تنبيهات المخزون</h2>
-            <form method="get" class="mb-3">
-                <select name="warehouse" class="form-select form-select-sm" onchange="this.form.submit()">
-                    <option value="">كل المخازن</option>
-                    {% for warehouse in warehouses %}
-                    <option value="{{ warehouse.id }}" {% if request.GET.warehouse == warehouse.id|stringformat:"s" %}selected{% endif %}>{{ warehouse.name }}</option>
-                    {% endfor %}
-                </select>
-            </form>
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>المخزن</th>
-                            <th>المنتج</th>
-                            <th>الكمية</th>
-                            <th>الحد الأدنى</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for stock in low_stocks %}
-                            <tr>
-                                <td>{{ stock.warehouse }}</td>
-                                <td>{{ stock.variant.product.name }}</td>
-                                <td>{{ stock.quantity }}</td>
-                                <td>{{ stock.min_quantity }}</td>
-                            </tr>
-                        {% empty %}
-                            <tr><td colspan="4">لا توجد تنبيهات مخزون</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </section>
-    </div>
+    {% endif %}
 </div>
 {% endblock %}

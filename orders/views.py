@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import DetailView, FormView, ListView, UpdateView, View
@@ -38,6 +38,9 @@ def _is_restricted_sales_user(user):
 
 def _available_variants_for_user(user):
     qs = ProductVariant.objects.filter(is_active=True)
+    # Allow managers to see all active variants regardless of stock
+    if user.role == 'manager' or user.is_superuser:
+        return qs
     if _is_restricted_sales_user(user):
         qs = qs.filter(
             stock__quantity__gt=0,
@@ -259,7 +262,11 @@ def ajax_search_products(request):
 @require_GET
 @sales_required
 def ajax_get_product_variants(request, product_id):
-    variants = _available_variants_for_user(request.user).filter(product_id=product_id).select_related('color', 'size')
+    # Get all active variants for the product regardless of stock
+    variants = ProductVariant.objects.filter(
+        product_id=product_id,
+        is_active=True
+    ).select_related('color', 'size')
     data = [{'id': v.id, 'sku': v.variant_sku, 'color': v.color.name if v.color else '', 'size': v.size.name if v.size else ''} for v in variants]
     return JsonResponse({'success': True, 'message': 'تم جلب المتغيرات', 'data': data})
 

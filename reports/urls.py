@@ -5,6 +5,7 @@ from . import views
 app_name = 'reports'
 
 urlpatterns = [
+    path('', views.TemplateView.as_view(template_name='reports/index.html'), name='index'),
     path('sales/', views.SalesReportView.as_view(), name='sales'),
     path('sales/export/', views.SalesReportExportView.as_view(), name='sales_export'),
     path('profitability/', views.ProfitabilityReportView.as_view(), name='profitability'),

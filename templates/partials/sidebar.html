@@ -22,27 +22,9 @@
                 </button>
                 <div class="nav-group-panel">
                     <a class="nav-link" href="{% url 'products:list' %}"><span class="nav-text">المنتجات</span><span class="nav-arrow">‹</span></a>
-                    {% if request.user.is_manager %}
-                        <a class="nav-link" href="{% url 'products:categories' %}"><span class="nav-text">التصنيفات</span><span class="nav-arrow">‹</span></a>
-                        <a class="nav-link" href="{% url 'products:sizes' %}"><span class="nav-text">المقاسات</span><span class="nav-arrow">‹</span></a>
-                        <a class="nav-link" href="{% url 'products:colors' %}"><span class="nav-text">الألوان</span><span class="nav-arrow">‹</span></a>
-                    {% endif %}
-                </div>
-            </div>
-
-            <div class="nav-group">
-                <button class="nav-group-toggle" type="button" data-nav-group-toggle aria-expanded="false">
-                    <svg class="ui-icon color-green"><use href="#icon-warehouse"></use></svg>
-                    <span class="nav-text">المخازن</span>
-                    <span class="nav-chevron" aria-hidden="true">‹</span>
-                </button>
-                <div class="nav-group-panel">
-                    <a class="nav-link" href="{% url 'inventory:warehouses' %}"><span class="nav-text">إعدادات المخازن</span><span class="nav-arrow">‹</span></a>
-                    <a class="nav-link" href="{% url 'inventory:stock' %}"><span class="nav-text">المخزون</span><span class="nav-arrow">‹</span></a>
-                    <a class="nav-link" href="{% url 'inventory:movements' %}"><span class="nav-text">الحركات المخزنية</span><span class="nav-arrow">‹</span></a>
-                    {% if request.user.is_manager %}
-                        <a class="nav-link" href="{% url 'purchases:suppliers' %}"><span class="nav-text">الموردون</span><span class="nav-arrow">‹</span></a>
-                    {% endif %}
+                    <a class="nav-link" href="{% url 'products:categories' %}"><span class="nav-text">الأصناف</span><span class="nav-arrow">‹</span></a>
+                    <a class="nav-link" href="{% url 'products:sizes' %}"><span class="nav-text">المقاسات</span><span class="nav-arrow">‹</span></a>
+                    <a class="nav-link" href="{% url 'products:colors' %}"><span class="nav-text">الألوان</span><span class="nav-arrow">‹</span></a>
                 </div>
             </div>
         {% endif %}
@@ -50,14 +32,14 @@
         {% if request.user.is_manager or request.user.is_sales %}
             <div class="nav-group">
                 <button class="nav-group-toggle" type="button" data-nav-group-toggle aria-expanded="false">
-                    <svg class="ui-icon color-yellow"><use href="#icon-sale"></use></svg>
+                    <svg class="ui-icon color-green"><use href="#icon-sale"></use></svg>
                     <span class="nav-text">المبيعات</span>
                     <span class="nav-chevron" aria-hidden="true">‹</span>
                 </button>
                 <div class="nav-group-panel">
-                    <a class="nav-link" href="{% url 'customers:list' %}"><span class="nav-text">العملاء</span><span class="nav-arrow">‹</span></a>
-                    <a class="nav-link" href="{% url 'invoices:list' %}"><span class="nav-text">الفواتير</span><span class="nav-arrow">‹</span></a>
-                    <a class="nav-link" href="{% url 'returns:list' %}"><span class="nav-text">المرتجعات</span><span class="nav-arrow">‹</span></a>
+                    <a class="nav-link" href="{% url 'orders:list' %}"><span class="nav-text">الفواتير</span><span class="nav-arrow">‹</span></a>
+                    <a class="nav-link" href="{% url 'returns:list' %}"><span class="nav-text">المرتجع</span><span class="nav-arrow">‹</span></a>
+                    <a class="nav-link" href="{% url 'customers:simple_list' %}"><span class="nav-text">العملاء</span><span class="nav-arrow">‹</span></a>
                 </div>
             </div>
         {% endif %}
@@ -65,14 +47,63 @@
         {% if request.user.is_manager %}
             <div class="nav-group">
                 <button class="nav-group-toggle" type="button" data-nav-group-toggle aria-expanded="false">
-                    <svg class="ui-icon color-purple"><use href="#icon-settings"></use></svg>
-                    <span class="nav-text">الحسابات والإعدادات</span>
+                    <svg class="ui-icon color-purple"><use href="#icon-money"></use></svg>
+                    <span class="nav-text">المشتريات</span>
                     <span class="nav-chevron" aria-hidden="true">‹</span>
                 </button>
                 <div class="nav-group-panel">
-                    <a class="nav-link" href="{% url 'finance:accounts' %}"><span class="nav-text">الخزنة</span><span class="nav-arrow">‹</span></a>
-                    <a class="nav-link" href="{% url 'accounts:user_list' %}"><span class="nav-text">المستخدمون والصلاحيات</span><span class="nav-arrow">‹</span></a>
+                    <a class="nav-link" href="{% url 'purchases:simple_supplier_list' %}"><span class="nav-text">الموردين</span><span class="nav-arrow">‹</span></a>
+                    <a class="nav-link" href="{% url 'purchases:orders' %}"><span class="nav-text">شراء بضاعة</span><span class="nav-arrow">‹</span></a>
+                </div>
+            </div>
+        {% endif %}
+
+        {% if request.user.is_manager or request.user.is_warehouse %}
+            <div class="nav-group">
+                <button class="nav-group-toggle" type="button" data-nav-group-toggle aria-expanded="false">
+                    <svg class="ui-icon color-blue"><use href="#icon-warehouse"></use></svg>
+                    <span class="nav-text">المخزون</span>
+                    <span class="nav-chevron" aria-hidden="true">‹</span>
+                </button>
+                <div class="nav-group-panel">
+                    <a class="nav-link" href="{% url 'inventory:stock' %}"><span class="nav-text">المخزون</span><span class="nav-arrow">‹</span></a>
+                    <a class="nav-link" href="{% url 'inventory:movements' %}"><span class="nav-text">حركة المخزون</span><span class="nav-arrow">‹</span></a>
+                    {% if request.user.is_manager %}
+                        <a class="nav-link" href="{% url 'inventory:warehouses' %}"><span class="nav-text">المخازن</span><span class="nav-arrow">‹</span></a>
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
+
+        {% if request.user.is_manager %}
+            <div class="nav-group">
+                <button class="nav-group-toggle" type="button" data-nav-group-toggle aria-expanded="false">
+                    <svg class="ui-icon color-gray"><use href="#icon-settings"></use></svg>
+                    <span class="nav-text">الإعدادات</span>
+                    <span class="nav-chevron" aria-hidden="true">‹</span>
+                </button>
+                <div class="nav-group-panel">
+                    <a class="nav-link" href="{% url 'finance:cash' %}"><span class="nav-text">الخزنة</span><span class="nav-arrow">‹</span></a>
+                    <a class="nav-link" href="{% url 'accounts:user_list' %}"><span class="nav-text">المستخدمون</span><span class="nav-arrow">‹</span></a>
                     <a class="nav-link" href="{% url 'settings_app:index' %}"><span class="nav-text">الإعدادات العامة</span><span class="nav-arrow">‹</span></a>
+                </div>
+            </div>
+        {% endif %}
+
+        {% if request.user.is_manager %}
+            <div class="nav-group">
+                <button class="nav-group-toggle" type="button" data-nav-group-toggle aria-expanded="false">
+                    <svg class="ui-icon color-blue"><use href="#icon-chart"></use></svg>
+                    <span class="nav-text">التقارير</span>
+                    <span class="nav-chevron" aria-hidden="true">‹</span>
+                </button>
+                <div class="nav-group-panel">
+                    <a class="nav-link" href="{% url 'reports:sales' %}"><span class="nav-text">تقرير المبيعات</span><span class="nav-arrow">‹</span></a>
+                    <a class="nav-link" href="{% url 'reports:profitability' %}"><span class="nav-text">تقرير الربحية</span><span class="nav-arrow">‹</span></a>
+                    <a class="nav-link" href="{% url 'reports:customer_debt' %}"><span class="nav-text">تقرير ديون العملاء</span><span class="nav-arrow">‹</span></a>
+                    <a class="nav-link" href="{% url 'reports:low_stock' %}"><span class="nav-text">تقرير المخزون المنخفض</span><span class="nav-arrow">‹</span></a>
+                    <a class="nav-link" href="{% url 'reports:daily_sales' %}"><span class="nav-text">تقرير اليوم</span><span class="nav-arrow">‹</span></a>
+                    <a class="nav-link" href="{% url 'reports:inventory' %}"><span class="nav-text">تقرير المخزون</span><span class="nav-arrow">‹</span></a>
                 </div>
             </div>
         {% endif %}

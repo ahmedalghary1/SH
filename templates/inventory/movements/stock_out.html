@@ -1,3 +1,4 @@
 {% extends 'base.html' %}
 {% block title %}خروج مخزون{% endblock %}
 {% block content %}<div class="page-head"><h1>خروج مخزون</h1></div>{% include 'partials/model_form.html' with button_text='تسجيل' %}{% endblock %}
+{% block extra_js %}<script src="{% static 'js/inventory.js' %}"></script>{% endblock %}

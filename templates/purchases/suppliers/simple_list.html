@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}الموردين{% endblock %}
+{% block content %}
+<div class="simple-suppliers-page">
+    <div class="page-head">
+        <h1>الموردين</h1>
+        <a href="{% url 'purchases:simple_supplier_create' %}" class="btn btn-primary btn-large">إضافة مورد</a>
+    </div>
+
+    <!-- قسم البحث والفلترة -->
+    <div class="filter-section">
+        <form method="get" class="filter-form">
+            <div class="filter-inputs">
+                <div class="filter-group">
+                    <label>بحث</label>
+                    <input type="text" name="q" placeholder="اسم المورد أو رقم الهاتف" value="{{ request.GET.q }}">
+                </div>
+                <div class="filter-group">
+                    <label>المديونية</label>
+                    <select name="debt">
+                        <option value="">الكل</option>
+                        <option value="yes" {% if request.GET.debt == 'yes' %}selected{% endif %}>عليهم مديونية</option>
+                        <option value="no" {% if request.GET.debt == 'no' %}selected{% endif %}>بدون مديونية</option>
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">بحث</button>
+        </form>
+    </div>
+
+    <!-- جدول الموردين -->
+    <div class="suppliers-table-section">
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>اسم المورد</th>
+                        <th>الهاتف</th>
+                        <th>إجمالي المشتريات</th>
+                        <th>إجمالي المدفوع</th>
+                        <th>الرصيد الحالي</th>
+                        <th>آخر تعامل</th>
+                        <th>الحالة</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for supplier in suppliers %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'purchases:simple_supplier_detail' supplier.pk %}" class="supplier-link">
+                                {{ supplier.name }}
+                            </a>
+                        </td>
+                        <td>{{ supplier.phone }}</td>
+                        <td class="purchases">{{ supplier.total_purchases|default:0 }}</td>
+                        <td class="paid">{{ supplier.total_paid|default:0 }}</td>
+                        <td class="balance {% if supplier.current_balance > 0 %}positive{% elif supplier.current_balance < 0 %}negative{% endif %}">
+                            {{ supplier.current_balance|default:0 }}
+                            <span class="balance-status">
+                                {% if supplier.current_balance > 0 %}له{% elif supplier.current_balance < 0 %}عليه{% endif %}
+                            </span>
+                        </td>
+                        <td>{{ supplier.last_transaction_date|date:'Y-m-d' }}</td>
+                        <td>
+                            <span class="status-badge {% if supplier.is_active %}active{% else %}inactive{% endif %}">
+                                {% if supplier.is_active %}نشط{% else %}متوقف{% endif %}
+                            </span>
+                        </td>
+                        <td>
+                            <a href="{% url 'purchases:simple_supplier_detail' supplier.pk %}" class="btn btn-sm btn-light">عرض</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8">لا توجد موردين</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

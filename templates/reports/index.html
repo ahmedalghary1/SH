@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% block title %}التقارير{% endblock %}
+{% block content %}
+<div class="reports-page">
+    <div class="page-head">
+        <h1>التقارير</h1>
+    </div>
+
+    <!-- التقارير الأساسية -->
+    <div class="reports-section">
+        <h2 class="section-title">التقارير الأساسية</h2>
+        <div class="reports-grid">
+            <a href="{% url 'reports:daily_sales' %}" class="report-card">
+                <div class="report-icon">📊</div>
+                <h3>تقرير اليوم</h3>
+                <p>مبيعات اليوم، المرتجعات، المصروفات، والتحصيلات</p>
+            </a>
+            
+            <a href="{% url 'reports:sales' %}" class="report-card">
+                <div class="report-icon">💰</div>
+                <h3>تقرير المبيعات</h3>
+                <p>تقرير شامل للمبيعات مع الفلاتر</p>
+            </a>
+            
+            <a href="{% url 'reports:inventory' %}" class="report-card">
+                <div class="report-icon">📦</div>
+                <h3>تقرير المخزون</h3>
+                <p>حالة المخزون والمنتجات الناقصة</p>
+            </a>
+            
+            <a href="{% url 'reports:customers' %}" class="report-card">
+                <div class="report-icon">👥</div>
+                <h3>تقرير العملاء</h3>
+                <p>العملاء الجدد، الأكثر شراءً، والمديونيات</p>
+            </a>
+            
+            <a href="{% url 'reports:supplier_dues' %}" class="report-card">
+                <div class="report-icon">🏭</div>
+                <h3>تقرير الموردين</h3>
+                <p>مديونيات الموردين والمستحقات</p>
+            </a>
+            
+            <a href="{% url 'reports:returns' %}" class="report-card">
+                <div class="report-icon">↩️</div>
+                <h3>تقرير المرتجعات</h3>
+                <p>المرتجعات والاستبدالات</p>
+            </a>
+            
+            <a href="{% url 'finance:cash' %}" class="report-card">
+                <div class="report-icon">💵</div>
+                <h3>تقرير الخزنة</h3>
+                <p>حركة الخزنة والوردية</p>
+            </a>
+            
+            <a href="{% url 'reports:stock_movement' %}" class="report-card">
+                <div class="report-icon">🔄</div>
+                <h3>حركة المخزون</h3>
+                <p>حركات المخزون والانتقالات</p>
+            </a>
+        </div>
+    </div>
+
+    <!-- التقارير المتقدمة للمدير فقط -->
+    {% if request.user.is_manager or request.user.is_superuser %}
+    <div class="reports-section advanced">
+        <h2 class="section-title">التقارير المتقدمة</h2>
+        <div class="reports-grid">
+            <a href="{% url 'reports:profitability' %}" class="report-card">
+                <div class="report-icon">📈</div>
+                <h3>تقرير الأرباح</h3>
+                <p>الأرباح والتكاليف والهوام الربحية</p>
+            </a>
+            
+            <a href="{% url 'reports:net_profit' %}" class="report-card">
+                <div class="report-icon">💎</div>
+                <h3>تقرير صافي الربح</h3>
+                <p>صافي الربح بعد المصروفات</p>
+            </a>
+            
+            <a href="{% url 'reports:discounts' %}" class="report-card">
+                <div class="report-icon">🏷️</div>
+                <h3>تقرير الخصومات</h3>
+                <p>الخصومات الممنوحة وتأثيرها</p>
+            </a>
+            
+            <a href="{% url 'reports:employees' %}" class="report-card">
+                <div class="report-icon">👔</div>
+                <h3>تقرير أداء المستخدمين</h3>
+                <p>أداء الموظفين والمبيعات لكل مستخدم</p>
+            </a>
+            
+            <a href="{% url 'reports:low_stock' %}" class="report-card">
+                <div class="report-icon">⚠️</div>
+                <h3>المنتجات الأكثر مبيعًا</h3>
+                <p>المنتجات الرائجة والأكثر طلبًا</p>
+            </a>
+            
+            <a href="{% url 'reports:stale_products' %}" class="report-card">
+                <div class="report-icon">📉</div>
+                <h3>المنتجات الراكدة</h3>
+                <p>المنتجات التي لم تتحرك لفترة</p>
+            </a>
+            
+            <a href="{% url 'reports:purchases' %}" class="report-card">
+                <div class="report-icon">🛒</div>
+                <h3>تقرير المشتريات المتقدم</h3>
+                <p>تفاصيل المشتريات والتكاليف</p>
+            </a>
+            
+            <a href="{% url 'reports:customer_debt' %}" class="report-card">
+                <div class="report-icon">💳</div>
+                <h3>تقرير المديونيات المتقدم</h3>
+                <p>تفاصيل مديونيات العملاء</p>
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

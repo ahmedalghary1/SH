@@ -45,7 +45,7 @@ class WarehouseCreateView(ManagerRequiredMixin, CreateView):
 
 
 class StockListView(RoleRequiredMixin, ExportListMixin, ListView):
-    allowed_roles = ('manager', 'sales', 'warehouse')
+    allowed_roles = ('manager', 'warehouse')
     model = Stock
     template_name = 'inventory/stock/list.html'
     context_object_name = 'stocks'

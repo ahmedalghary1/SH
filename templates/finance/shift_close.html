@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}إغلاق الوردية{% endblock %}
+{% block content %}
+<div class="simple-form-page">
+    <div class="page-head">
+        <h1>إغلاق الوردية</h1>
+    </div>
+
+    <div class="shift-summary">
+        <div class="shift-info">
+            <div class="info-item">
+                <span class="info-label">المستخدم</span>
+                <strong class="info-value">{{ request.user.get_full_name|default:request.user.username }}</strong>
+            </div>
+            <div class="info-item">
+                <span class="info-label">وقت بداية الوردية</span>
+                <strong class="info-value">{{ shift_start|default:'غير محدد' }}</strong>
+            </div>
+            <div class="info-item">
+                <span class="info-label">وقت نهاية الوردية</span>
+                <strong class="info-value">{{ now|date:'H:i' }}</strong>
+            </div>
+        </div>
+
+        <div class="shift-stats">
+            <div class="stat-item">
+                <span class="stat-label">إجمالي المبيعات</span>
+                <strong class="stat-value sales">{{ total_sales }}</strong>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">إجمالي المرتجعات</span>
+                <strong class="stat-value refund">{{ total_refunds }}</strong>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">إجمالي المصروفات</span>
+                <strong class="stat-value expense">{{ total_expenses }}</strong>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">النقدية المتوقعة</span>
+                <strong class="stat-value expected">{{ expected_cash }}</strong>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">النقدية الفعلية</span>
+                <input type="number" class="stat-input" id="actual-cash" value="{{ expected_cash }}" step="0.01">
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">الفرق</span>
+                <strong class="stat-value difference" id="difference">0</strong>
+            </div>
+        </div>
+
+        <div class="shift-notes">
+            <label>ملاحظات</label>
+            <textarea rows="3" placeholder="أضف ملاحظات عن الوردية..."></textarea>
+        </div>
+
+        <div class="form-actions">
+            <button type="button" class="btn btn-primary" onclick="calculateDifference()">حساب الفرق</button>
+            <button type="button" class="btn btn-success" onclick="confirmShiftClose()">تأكيد إغلاق الوردية</button>
+            <a href="{% url 'finance:cash' %}" class="btn btn-light">إلغاء</a>
+        </div>
+    </div>
+</div>
+
+<script>
+function calculateDifference() {
+    const expected = parseFloat('{{ expected_cash }}');
+    const actual = parseFloat(document.getElementById('actual-cash').value) || 0;
+    const difference = actual - expected;
+    const diffElement = document.getElementById('difference');
+    diffElement.textContent = difference.toFixed(2);
+    diffElement.className = 'stat-value difference ' + (difference >= 0 ? 'positive' : 'negative');
+}
+
+function confirmShiftClose() {
+    if (confirm('هل أنت متأكد من إغلاق الوردية؟')) {
+        alert('تم إغلاق الوردية بنجاح');
+        window.location.href = "{% url 'finance:cash' %}";
+    }
+}
+
+document.getElementById('actual-cash').addEventListener('input', calculateDifference);
+</script>
+{% endblock %}

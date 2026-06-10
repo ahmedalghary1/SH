@@ -4,6 +4,7 @@ from django.utils import timezone
 from accounts.models import User
 from customers.models import Customer
 from orders.models import Order
+from purchases.models import Supplier
 
 from .models import CashAccount
 
@@ -76,3 +77,11 @@ class TransferForm(forms.Form):
 
 class SalesRepStatementForm(forms.Form):
     sales_rep = forms.ModelChoiceField(queryset=User.objects.filter(role=User.ROLE_SALES, is_active=True), label='المندوب')
+
+
+class SupplierPaymentForm(forms.Form):
+    cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة')
+    supplier = forms.ModelChoiceField(queryset=Supplier.objects.filter(is_active=True), label='المورد')
+    amount = forms.DecimalField(min_value=0.01, label='المبلغ')
+    transaction_date = forms.DateField(label='تاريخ الدفع', initial=timezone.localdate, widget=forms.DateInput(attrs={'type': 'date'}))
+    notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')

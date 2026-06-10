@@ -1,0 +1,261 @@
+{% extends 'base.html' %}
+{% block title %}استبدال بسيط{% endblock %}
+{% block content %}
+<div class="simple-return-page">
+    <div class="page-head">
+        <h1>استبدال بسيط</h1>
+    </div>
+
+    <!-- قسم البحث -->
+    <div class="search-section">
+        <form method="get" class="search-form">
+            <div class="search-inputs">
+                <div class="search-group">
+                    <label>رقم الفاتورة</label>
+                    <input type="text" name="invoice_number" placeholder="مثال: INV-20260606-0001" value="{{ searched_invoice_number }}">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-large">بحث</button>
+        </form>
+    </div>
+
+    {% if order_preview %}
+    <!-- معلومات الفاتورة -->
+    <div class="order-info-section">
+        <h2>معلومات الفاتورة</h2>
+        <div class="order-info-grid">
+            <div class="info-item">
+                <span class="info-label">رقم الفاتورة</span>
+                <strong class="info-value">{{ order_preview.order_number }}</strong>
+            </div>
+            <div class="info-item">
+                <span class="info-label">العميل</span>
+                <strong class="info-value">{{ order_preview.customer }}</strong>
+            </div>
+            <div class="info-item">
+                <span class="info-label">التاريخ</span>
+                <strong class="info-value">{{ order_preview.created_at|date:'Y-m-d H:i' }}</strong>
+            </div>
+            <div class="info-item">
+                <span class="info-label">إجمالي الفاتورة</span>
+                <strong class="info-value">{{ order_preview.total }}</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- جدول الأصناف المرتجعة -->
+    <div class="items-section">
+        <h2>الأصناف المرتجعة</h2>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="invoice_number" value="{{ searched_invoice_number }}">
+            <input type="hidden" name="return_type" value="{{ SalesReturn.TYPE_EXCHANGE }}">
+            
+            <div class="items-table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>اختيار</th>
+                            <th>المنتج</th>
+                            <th>اللون</th>
+                            <th>المقاس</th>
+                            <th>الكمية المباعة</th>
+                            <th>الكمية المتاحة للإرجاع</th>
+                            <th>الكمية المطلوب إرجاعها</th>
+                            <th>السعر القديم</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in item_rows %}
+                        <tr>
+                            <td>
+                                <input type="checkbox" name="selected_{{ row.item.pk }}" {% if row.selected %}checked{% endif %}>
+                            </td>
+                            <td>{{ row.item.variant.product.name }}</td>
+                            <td>{{ row.item.variant.color.name }}</td>
+                            <td>{{ row.item.variant.size.name }}</td>
+                            <td>{{ row.item.quantity }}</td>
+                            <td class="available">{{ row.available_quantity }}</td>
+                            <td>
+                                <input type="number" name="quantity_{{ row.item.pk }}" value="{{ row.quantity_value }}" min="0" max="{{ row.available_quantity }}" class="quantity-input">
+                            </td>
+                            <td class="old-price">{{ row.unit_price }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="8">لا توجد أصناف قابلة للإرجاع</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- قسم المنتجات الجديدة -->
+            <div class="new-items-section">
+                <h3>المنتجات الجديدة</h3>
+                <div id="new-items-container">
+                    <div class="new-item-row">
+                        <select name="new_product_variant_0" class="new-variant-select">
+                            <option value="">اختر منتج...</option>
+                            {% for variant in available_variants %}
+                            <option value="{{ variant.pk }}" data-price="{{ variant.selling_price }}">{{ variant.product.name }} - {{ variant.color.name }} - {{ variant.size.name }} - {{ variant.selling_price }}</option>
+                            {% endfor %}
+                        </select>
+                        <input type="number" name="new_quantity_0" placeholder="الكمية" class="new-quantity-input" min="1" value="1">
+                        <input type="number" name="new_price_0" placeholder="السعر" class="new-price-input" min="0" step="0.01">
+                        <button type="button" class="btn btn-light remove-item" onclick="removeNewItem(this)">حذف</button>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-light" onclick="addNewItem()">إضافة منتج جديد</button>
+            </div>
+
+            <!-- ملخص الاستبدال -->
+            <div class="exchange-summary">
+                <div class="summary-item">
+                    <span class="summary-label">إجمالي القديم</span>
+                    <strong class="summary-value" id="total-old">0</strong>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">إجمالي الجديد</span>
+                    <strong class="summary-value" id="total-new">0</strong>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">الفرق</span>
+                    <strong class="summary-value difference" id="difference">0</strong>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">طريقة التسوية</span>
+                    <select name="settlement_method" class="settlement-select">
+                        <option value="cash">نقد</option>
+                        <option value="credit">رصيد العميل</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- خيارات متقدمة -->
+            <div class="advanced-options">
+                <button class="advanced-toggle" type="button" data-advanced-toggle aria-expanded="false">
+                    <svg class="ui-icon"><use href="#icon-settings"></use></svg>
+                    خيارات متقدمة
+                    <svg class="ui-icon chevron"><use href="#icon-chevron-down"></use></svg>
+                </button>
+                <div class="advanced-panel" data-advanced-panel aria-hidden="true">
+                    <label>
+                        <span>سبب الاستبدال</span>
+                        <input type="text" name="reason" placeholder="سبب الاستبدال...">
+                    </label>
+                    <label>
+                        <span>ملاحظات داخلية</span>
+                        <textarea name="notes" placeholder="ملاحظات داخلية..." rows="3"></textarea>
+                    </label>
+                </div>
+            </div>
+
+            <!-- أزرار الإجراءات -->
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-large">حفظ</button>
+                <a href="{% url 'returns:list' %}" class="btn btn-light btn-large">إلغاء</a>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+let newItemIndex = 1;
+
+function addNewItem() {
+    const container = document.getElementById('new-items-container');
+    const newRow = document.createElement('div');
+    newRow.className = 'new-item-row';
+    newRow.innerHTML = `
+        <select name="new_product_variant_${newItemIndex}" class="new-variant-select">
+            <option value="">اختر منتج...</option>
+            {% for variant in available_variants %}
+            <option value="{{ variant.pk }}" data-price="{{ variant.selling_price }}">{{ variant.product.name }} - {{ variant.color.name }} - {{ variant.size.name }} - {{ variant.selling_price }}</option>
+            {% endfor %}
+        </select>
+        <input type="number" name="new_quantity_${newItemIndex}" placeholder="الكمية" class="new-quantity-input" min="1" value="1">
+        <input type="number" name="new_price_${newItemIndex}" placeholder="السعر" class="new-price-input" min="0" step="0.01">
+        <button type="button" class="btn btn-light remove-item" onclick="removeNewItem(this)">حذف</button>
+    `;
+    container.appendChild(newRow);
+    newItemIndex++;
+}
+
+function removeNewItem(button) {
+    button.parentElement.remove();
+    calculateTotals();
+}
+
+function calculateTotals() {
+    let totalOld = 0;
+    let totalNew = 0;
+
+    // Calculate total old
+    const rows = document.querySelectorAll('.items-table-wrap tbody tr');
+    rows.forEach(row => {
+        const checkbox = row.querySelector('input[type="checkbox"]');
+        const quantityInput = row.querySelector('.quantity-input');
+        const oldPriceCell = row.querySelector('.old-price');
+        
+        if (checkbox && checkbox.checked && quantityInput && oldPriceCell) {
+            const quantity = parseFloat(quantityInput.value) || 0;
+            const oldPrice = parseFloat(oldPriceCell.textContent) || 0;
+            totalOld += quantity * oldPrice;
+        }
+    });
+
+    // Calculate total new
+    const newRows = document.querySelectorAll('.new-item-row');
+    newRows.forEach(row => {
+        const variantSelect = row.querySelector('.new-variant-select');
+        const quantityInput = row.querySelector('.new-quantity-input');
+        const priceInput = row.querySelector('.new-price-input');
+        
+        if (variantSelect && variantSelect.value && quantityInput && priceInput) {
+            const quantity = parseFloat(quantityInput.value) || 0;
+            const price = parseFloat(priceInput.value) || 0;
+            totalNew += quantity * price;
+        }
+    });
+
+    const difference = totalNew - totalOld;
+    
+    document.getElementById('total-old').textContent = totalOld.toFixed(2);
+    document.getElementById('total-new').textContent = totalNew.toFixed(2);
+    document.getElementById('difference').textContent = difference.toFixed(2);
+    
+    const diffElement = document.getElementById('difference');
+    diffElement.className = 'summary-value difference ' + (difference >= 0 ? 'positive' : 'negative');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const quantityInputs = document.querySelectorAll('.quantity-input');
+    const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+    
+    quantityInputs.forEach(input => {
+        input.addEventListener('change', calculateTotals);
+        input.addEventListener('input', calculateTotals);
+    });
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', calculateTotals);
+    });
+
+    // Auto-fill price when variant is selected
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('new-variant-select')) {
+            const selectedOption = e.target.options[e.target.selectedIndex];
+            const price = selectedOption.dataset.price;
+            const priceInput = e.target.parentElement.querySelector('.new-price-input');
+            if (price && priceInput) {
+                priceInput.value = price;
+                calculateTotals();
+            }
+        }
+        if (e.target.classList.contains('new-quantity-input') || e.target.classList.contains('new-price-input')) {
+            calculateTotals();
+        }
+    });
+});
+</script>
+{% endblock %}

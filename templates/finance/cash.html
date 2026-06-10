@@ -1,0 +1,136 @@
+{% extends 'base.html' %}
+{% block title %}الخزنة{% endblock %}
+{% block content %}
+<style>
+    .cash-table-wrap thead th {
+        color: #000 !important;
+    }
+</style>
+<div class="simple-cash-page">
+    <div class="page-head">
+        <h1>الخزنة</h1>
+    </div>
+
+    <!-- كروت ملخص الخزنة -->
+    <div class="cash-summary-grid">
+        <div class="cash-card">
+            <div class="cash-icon start">
+                <svg class="ui-icon"><use href="#icon-file"></use></svg>
+            </div>
+            <div class="cash-content">
+                <span class="cash-label">رصيد بداية اليوم</span>
+                <strong class="cash-value">{{ opening_balance }}</strong>
+            </div>
+        </div>
+
+        <div class="cash-card">
+            <div class="cash-icon sales">
+                <svg class="ui-icon"><use href="#icon-sale"></use></svg>
+            </div>
+            <div class="cash-content">
+                <span class="cash-label">مبيعات نقدية اليوم</span>
+                <strong class="cash-value">{{ cash_sales }}</strong>
+            </div>
+        </div>
+
+        <div class="cash-card">
+            <div class="cash-icon collections">
+                <svg class="ui-icon"><use href="#icon-money"></use></svg>
+            </div>
+            <div class="cash-content">
+                <span class="cash-label">تحصيلات العملاء</span>
+                <strong class="cash-value">{{ customer_collections }}</strong>
+            </div>
+        </div>
+
+        <div class="cash-card">
+            <div class="cash-icon supplier">
+                <svg class="ui-icon"><use href="#icon-box"></use></svg>
+            </div>
+            <div class="cash-content">
+                <span class="cash-label">مدفوعات الموردين</span>
+                <strong class="cash-value">{{ supplier_payments }}</strong>
+            </div>
+        </div>
+
+        <div class="cash-card">
+            <div class="cash-icon expense">
+                <svg class="ui-icon"><use href="#icon-close"></use></svg>
+            </div>
+            <div class="cash-content">
+                <span class="cash-label">المصروفات</span>
+                <strong class="cash-value">{{ expenses }}</strong>
+            </div>
+        </div>
+
+        <div class="cash-card">
+            <div class="cash-icon refund">
+                <svg class="ui-icon"><use href="#icon-return"></use></svg>
+            </div>
+            <div class="cash-content">
+                <span class="cash-label">مرتجعات نقدية</span>
+                <strong class="cash-value">{{ cash_refunds }}</strong>
+            </div>
+        </div>
+
+        <div class="cash-card current">
+            <div class="cash-icon balance">
+                <svg class="ui-icon"><use href="#icon-money"></use></svg>
+            </div>
+            <div class="cash-content">
+                <span class="cash-label">رصيد الخزنة الحالي</span>
+                <strong class="cash-value">{{ current_balance }}</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- أزرار الإجراءات السريعة -->
+    <div class="cash-actions">
+        <a href="{% url 'finance:expense_create' %}" class="cash-action-btn expense">
+            <svg class="ui-icon"><use href="#icon-minus"></use></svg>
+            <span>إضافة مصروف</span>
+        </a>
+        <a href="{% url 'finance:collection_create' %}" class="cash-action-btn collection">
+            <svg class="ui-icon"><use href="#icon-money"></use></svg>
+            <span>تحصيل من عميل</span>
+        </a>
+        <a href="{% url 'finance:supplier_payment_create' %}" class="cash-action-btn supplier">
+            <svg class="ui-icon"><use href="#icon-box"></use></svg>
+            <span>دفع لمورد</span>
+        </a>
+    </div>
+
+    <!-- جدول حركة الخزنة -->
+    <div class="cash-transactions-section">
+        <h2>حركة الخزنة</h2>
+        <div class="cash-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>التاريخ والوقت</th>
+                        <th>نوع الحركة</th>
+                        <th>البيان</th>
+                        <th>المبلغ الداخل</th>
+                        <th>المبلغ الخارج</th>
+                        <th>المستخدم</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tx in transactions %}
+                        <tr>
+                            <td>{{ tx.created_at|date:'Y-m-d H:i' }}</td>
+                            <td>{{ tx.get_transaction_type_display }}</td>
+                            <td>{{ tx.notes|default:'-' }}</td>
+                            <td class="amount-in">{% if tx.direction == 'in' %}{{ tx.amount }}{% else %}-{% endif %}</td>
+                            <td class="amount-out">{% if tx.direction == 'out' %}{{ tx.amount }}{% else %}-{% endif %}</td>
+                            <td>{{ tx.created_by|default:'-' }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="6">لا توجد حركات اليوم</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
