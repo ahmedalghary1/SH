@@ -195,8 +195,8 @@ if STATIC_SOURCE_DIR.exists() and STATIC_SOURCE_DIR.resolve() != STATIC_ROOT.res
 
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-DEFAULT_MEDIA_URL = 'media/' if DEBUG else 'shop_media/'
-DEFAULT_MEDIA_ROOT = BASE_DIR / 'media' if DEBUG else PUBLIC_ROOT / 'shop_media'
+DEFAULT_MEDIA_URL = 'media/' if DEBUG else 'sh_media/'
+DEFAULT_MEDIA_ROOT = BASE_DIR / 'media' if DEBUG else PUBLIC_ROOT / 'sh_media'
 MEDIA_URL = env_url('MEDIA_URL', DEFAULT_MEDIA_URL)
 MEDIA_ROOT = env_path('MEDIA_ROOT', DEFAULT_MEDIA_ROOT)
 
