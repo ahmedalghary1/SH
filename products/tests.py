@@ -98,5 +98,12 @@ class BulkPriceUpdateViewTests(TestCase):
         self.variant.refresh_from_db()
         self.assertEqual(self.variant.sale_price, Decimal('275.25'))
 
+    def test_variant_create_page_has_image_field(self):
+        response = self.client.get(f'{reverse("products:variant_create")}?product={self.product.pk}')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="image"')
+        self.assertContains(response, 'type="file"')
+
     def test_pdf_arabic_text_is_shaped(self):
         self.assertNotEqual(shape_arabic('تقرير المنتجات'), 'تقرير المنتجات')

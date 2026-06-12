@@ -12,6 +12,7 @@ from django.views.decorators.http import require_GET
 from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, can_view_costs, role_required
+from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from inventory.models import Stock, StockBatch, Warehouse
@@ -178,7 +179,7 @@ class ProductCreateView(ManagerRequiredMixin, View):
 
     def post(self, request):
         product_form = ProductForm(request.POST, request.FILES)
-        variant_form = InitialProductVariantForm(request.POST)
+        variant_form = InitialProductVariantForm(request.POST, request.FILES)
         stock_form = InitialStockForm(request.POST)
         if product_form.is_valid() and variant_form.is_valid() and stock_form.is_valid():
             with transaction.atomic():
@@ -345,6 +346,12 @@ class ProductDeactivateView(ManagerRequiredMixin, View):
         return redirect('products:list')
 
 
+class ProductDeleteView(ManagerDeleteView):
+    model = Product
+    success_url = reverse_lazy('products:list')
+    success_message = 'تم حذف المنتج'
+
+
 class BulkPriceUpdateView(ManagerRequiredMixin, View):
     template_name = 'products/bulk_price_update.html'
 
@@ -458,6 +465,12 @@ class CategoryUpdateView(ManagerRequiredMixin, UpdateView):
         return super().form_valid(form)
 
 
+class CategoryDeleteView(ManagerDeleteView):
+    model = Category
+    success_url = reverse_lazy('products:categories')
+    success_message = 'تم حذف التصنيف'
+
+
 class ColorListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = Color
     template_name = 'products/catalog/colors.html'
@@ -494,6 +507,12 @@ class ColorUpdateView(ManagerRequiredMixin, UpdateView):
         return super().form_valid(form)
 
 
+class ColorDeleteView(ManagerDeleteView):
+    model = Color
+    success_url = reverse_lazy('products:colors')
+    success_message = 'تم حذف اللون'
+
+
 class SizeListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = Size
     template_name = 'products/catalog/sizes.html'
@@ -527,6 +546,12 @@ class SizeUpdateView(ManagerRequiredMixin, UpdateView):
     def form_valid(self, form):
         messages.success(self.request, 'تم تحديث المقاس')
         return super().form_valid(form)
+
+
+class SizeDeleteView(ManagerDeleteView):
+    model = Size
+    success_url = reverse_lazy('products:sizes')
+    success_message = 'تم حذف المقاس'
 
 
 class ProductVariantCreateView(ManagerRequiredMixin, CreateView):
@@ -581,6 +606,14 @@ class ProductVariantDeactivateView(ManagerRequiredMixin, View):
         variant.save(update_fields=['is_active'])
         messages.success(request, 'تم إيقاف اللون والمقاس')
         return redirect('products:detail', pk=variant.product_id)
+
+
+class ProductVariantDeleteView(ManagerDeleteView):
+    model = ProductVariant
+    success_message = 'تم حذف اللون والمقاس'
+
+    def get_success_url(self):
+        return reverse_lazy('products:detail', kwargs={'pk': self.object.product_id})
 
 
 @require_GET
@@ -673,6 +706,7 @@ def api_products(request):
                 'barcode': variant.barcode or '',
                 'color': variant.color.name if variant.color else '',
                 'size': variant.size.name if variant.size else '',
+                'image': variant.image.url if variant.image else '',
                 'sale_price': str(variant.sale_price),
                 'quantity': quantity,
                 'is_active': variant.is_active,

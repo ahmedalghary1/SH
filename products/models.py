@@ -61,6 +61,7 @@ class ProductVariant(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variants')
     color = models.ForeignKey(Color, on_delete=models.SET_NULL, null=True)
     size = models.ForeignKey(Size, on_delete=models.SET_NULL, null=True)
+    image = models.ImageField(upload_to='product_variants/', blank=True, null=True)
     variant_sku = models.CharField(max_length=120, unique=True, db_index=True)
     barcode = models.CharField(max_length=120, blank=True, null=True, db_index=True)
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])

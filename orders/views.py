@@ -1,4 +1,5 @@
 import json
+import re
 from decimal import Decimal
 
 from django.contrib import messages
@@ -10,7 +11,8 @@ from django.urls import reverse_lazy
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import DetailView, FormView, ListView, UpdateView, View
 
-from accounts.permissions import RoleRequiredMixin, SalesRequiredMixin, can_view_costs, sales_required
+from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, SalesRequiredMixin, can_view_costs, sales_required
+from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 from config.ratelimit import RateLimitExceeded, rate_limit
 from config.search import arabic_search_q
@@ -64,6 +66,15 @@ def _available_products_for_user(user):
     return qs
 
 
+def _loads_items_payload(raw_items):
+    try:
+        return json.loads(raw_items)
+    except json.JSONDecodeError:
+        fixed = re.sub(r'("warehouse_id"\s*:\s*")([^"]+),("quantity"\s*:)', r'\1\2",\3', raw_items)
+        fixed = re.sub(r'}\s*}\s*\]$', '}]', fixed)
+        return json.loads(fixed)
+
+
 class OrderListView(RoleRequiredMixin, ExportListMixin, ListView):
     allowed_roles = ('manager', 'sales', 'warehouse')
     model = Order
@@ -115,7 +126,7 @@ class OrderCreateView(SalesRequiredMixin, FormView):
     def form_valid(self, form):
         raw_items = self.request.POST.get('items_json', '[]')
         try:
-            posted_items = json.loads(raw_items)
+            posted_items = _loads_items_payload(raw_items)
             items = []
             for posted in posted_items:
                 variant = _available_variants_for_user(self.request.user).select_related('product').get(pk=posted['variant_id'])
@@ -244,6 +255,12 @@ class OrderStatusUpdateView(RoleRequiredMixin, View):
         return redirect('orders:detail', pk=pk)
 
 
+class OrderDeleteView(ManagerDeleteView):
+    model = Order
+    success_url = reverse_lazy('orders:list')
+    success_message = 'تم حذف الفاتورة'
+
+
 @require_GET
 @sales_required
 def ajax_search_products(request):
@@ -262,10 +279,8 @@ def ajax_search_products(request):
 @require_GET
 @sales_required
 def ajax_get_product_variants(request, product_id):
-    # Get all active variants for the product regardless of stock
-    variants = ProductVariant.objects.filter(
+    variants = _available_variants_for_user(request.user).filter(
         product_id=product_id,
-        is_active=True
     ).select_related('color', 'size')
     data = [{'id': v.id, 'sku': v.variant_sku, 'color': v.color.name if v.color else '', 'size': v.size.name if v.size else ''} for v in variants]
     return JsonResponse({'success': True, 'message': 'تم جلب المتغيرات', 'data': data})

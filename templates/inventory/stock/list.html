@@ -42,8 +42,14 @@
             <tbody>
                 {% for stock in stocks %}
                     <tr>
-                        <td>{{ stock.variant.product.name }}</td>
-                        <td>{{ stock.variant.color|default:'-' }} / {{ stock.variant.size|default:'-' }}</td>
+                        <td>
+                            <strong>{{ stock.variant.product.name }}</strong>
+                            <span class="muted">{{ stock.variant.product.sku }}</span>
+                        </td>
+                        <td>
+                            {{ stock.variant.color|default:'-' }} / {{ stock.variant.size|default:'-' }}
+                            <span class="muted">{{ stock.variant.variant_sku }}</span>
+                        </td>
                         <td>{{ stock.warehouse.name }}</td>
                         <td class="quantity-cell">{{ stock.quantity }}</td>
                         <td>{{ stock.min_quantity }}</td>

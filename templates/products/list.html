@@ -2,15 +2,22 @@
 {% block title %}المنتجات{% endblock %}
 {% block content %}
 <div class="simple-products-page">
-    <div class="page-head">
-        <h1>المنتجات</h1>
-        {% if request.user.is_manager %}
+<div class="page-head">
+    <h1>المنتجات</h1>
+    {% if request.user.is_manager %}
+        <div class="button-row">
+            <a class="btn btn-secondary" href="{% url 'products:bulk_price_update' %}">
+                <svg class="ui-icon"><use href="#icon-chart"></use></svg>
+                تحديث الأسعار
+            </a>
+            {% include 'partials/export_buttons.html' %}
             <a class="btn btn-accent btn-large" href="{% url 'products:create' %}">
                 <svg class="ui-icon"><use href="#icon-plus"></use></svg>
                 إضافة منتج
             </a>
-        {% endif %}
-    </div>
+        </div>
+    {% endif %}
+</div>
 
     <form class="simple-filters">
         <div class="filter-group">
@@ -61,6 +68,7 @@
                     <a class="btn btn-primary" href="{% url 'products:detail' product.pk %}">عرض</a>
                     {% if request.user.is_manager %}
                         <a class="btn btn-light" href="{% url 'products:update' product.pk %}">تعديل</a>
+                        <a class="btn btn-danger" href="{% url 'products:delete' product.pk %}">حذف</a>
                     {% endif %}
                 </div>
             </div>

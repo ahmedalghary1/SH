@@ -7,6 +7,7 @@ from django.urls import reverse_lazy
 from django.views.generic import DetailView, FormView, ListView, TemplateView, View
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, SalesRequiredMixin
+from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 
 from .forms import CompleteReturnForm, ExchangeItemForm, ReturnItemForm, SalesReturnCreateForm
@@ -585,6 +586,12 @@ class SalesReturnRejectView(ManagerRequiredMixin, View):
         else:
             messages.error(request, 'يمكن رفض المرتجع من حالة المسودة فقط')
         return redirect('returns:detail', pk=pk)
+
+
+class SalesReturnDeleteView(ManagerDeleteView):
+    model = SalesReturn
+    success_url = reverse_lazy('returns:list')
+    success_message = 'تم حذف المرتجع'
 
 
 class ReturnReasonReportView(ManagerRequiredMixin, TemplateView):

@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block title %}{{ title|default:'تأكيد الحذف' }}{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>{{ title|default:'تأكيد الحذف' }}</h1>
+    <a class="btn btn-light" href="{{ cancel_url }}">رجوع</a>
+</div>
+
+<section class="card">
+    <h2>هل تريد حذف هذا السجل؟</h2>
+    <p>سيتم حذف: <strong>{{ object }}</strong></p>
+    <p class="muted">إذا كان السجل مرتبطًا بفواتير أو حركات مالية أو مخزنية فقد يمنع النظام الحذف حفاظًا على سلامة البيانات.</p>
+    <form method="post" class="form-actions">
+        {% csrf_token %}
+        <button class="btn btn-danger" type="submit">حذف نهائي</button>
+        <a class="btn btn-light" href="{{ cancel_url }}">إلغاء</a>
+    </form>
+</section>
+{% endblock %}

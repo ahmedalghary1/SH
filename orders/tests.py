@@ -308,6 +308,57 @@ class OrderSalesRepProductVisibilityTests(TestCase):
         self.assertEqual(product_ids, {self.visible_product.id, self.hidden_product.id, self.zero_product.id})
 
 
+class OrderCreateViewTests(TestCase):
+    def setUp(self):
+        self.sales = User.objects.create_user(username='create-view-sales', password='pass', role=User.ROLE_SALES)
+        category = Category.objects.create(name='Create View Category')
+        color = Color.objects.create(name='Black')
+        size = Size.objects.create(name='M')
+        product = Product.objects.create(
+            name='Create View Shirt',
+            sku='CV-001',
+            category=category,
+            retail_price=Decimal('300.00'),
+            wholesale_price=Decimal('220.00'),
+        )
+        self.variant = ProductVariant.objects.create(
+            product=product,
+            color=color,
+            size=size,
+            variant_sku='CV-001-BLK-M',
+            cost_price=Decimal('120.00'),
+            sale_price=Decimal('300.00'),
+        )
+        self.warehouse = Warehouse.objects.create(
+            name='Create View Warehouse',
+            warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
+            assigned_user=self.sales,
+        )
+        Stock.objects.create(warehouse=self.warehouse, variant=self.variant, quantity=5, min_quantity=1)
+
+    def test_create_order_view_accepts_items_json_from_invoice_page(self):
+        self.client.force_login(self.sales)
+
+        response = self.client.post(reverse('orders:create'), {
+            'document_type': Order.DOCUMENT_SALE,
+            'order_type': Order.TYPE_B2C,
+            'warehouse': str(self.warehouse.id),
+            'payment_method': Order.METHOD_CASH,
+            'discount_amount': '0',
+            'discount_percentage': '0',
+            'items_json': (
+                f'[{{"variant_id":"{self.variant.id}","warehouse_id":"{self.warehouse.id}",'
+                '"quantity":1,"unit_price":"300.00","discount_amount":0,"discount_percentage":0}}]'
+            ),
+            'action': 'draft',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        order = Order.objects.get()
+        self.assertEqual(order.items.count(), 1)
+        self.assertEqual(order.items.get().variant, self.variant)
+
+
 class OrderDiscountPolicyTests(TestCase):
     def setUp(self):
         self.manager = User.objects.create_user(username='discount-manager', password='pass', role=User.ROLE_MANAGER)

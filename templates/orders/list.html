@@ -52,6 +52,9 @@
                         {% if order.status == 'draft' %}
                             <a class="btn btn-light" href="{% url 'orders:update' order.pk %}">تعديل</a>
                         {% endif %}
+                        {% if request.user.is_manager %}
+                            <a class="btn btn-danger" href="{% url 'orders:delete' order.pk %}">حذف</a>
+                        {% endif %}
                     </td>
                 </tr>
             {% empty %}

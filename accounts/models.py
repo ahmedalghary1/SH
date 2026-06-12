@@ -13,6 +13,13 @@ class User(AbstractUser):
         (ROLE_WAREHOUSE, 'مسؤول مخزن'),
     ]
 
+    username = models.CharField(
+        'اسم المستخدم',
+        max_length=150,
+        unique=True,
+        help_text='يمكن استخدام الحروف والأرقام والمسافات.',
+        error_messages={'unique': 'يوجد مستخدم بهذا الاسم بالفعل.'},
+    )
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_SALES, db_index=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)

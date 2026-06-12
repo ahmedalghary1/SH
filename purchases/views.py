@@ -6,6 +6,7 @@ from django.urls import reverse_lazy
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView, View
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin, can_view_costs
+from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
@@ -207,6 +208,12 @@ class SupplierUpdateView(ManagerRequiredMixin, UpdateView):
         return super().form_valid(form)
 
 
+class SupplierDeleteView(ManagerDeleteView):
+    model = Supplier
+    success_url = reverse_lazy('purchases:suppliers')
+    success_message = 'تم حذف المورد'
+
+
 class RawMaterialPurchaseView(ManagerRequiredMixin, FormView):
     template_name = 'purchases/suppliers/raw_purchase.html'
     form_class = RawMaterialPurchaseForm
@@ -390,6 +397,12 @@ class PurchaseOrderCancelView(ManagerRequiredMixin, View):
         except ValidationError as exc:
             messages.error(request, exc.message)
         return redirect('purchases:order_detail', pk=pk)
+
+
+class PurchaseOrderDeleteView(ManagerDeleteView):
+    model = PurchaseOrder
+    success_url = reverse_lazy('purchases:orders')
+    success_message = 'تم حذف أمر الشراء'
 
 
 class PurchaseReportView(ManagerRequiredMixin, TemplateView):

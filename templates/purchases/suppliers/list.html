@@ -27,6 +27,7 @@
                 <td class="actions">
                     <a class="btn btn-light" href="{% url 'purchases:raw_purchase' %}?supplier={{ supplier.pk }}">شراء خام</a>
                     <a class="btn btn-light" href="{% url 'purchases:supplier_update' supplier.pk %}">تعديل</a>
+                    <a class="btn btn-danger" href="{% url 'purchases:supplier_delete' supplier.pk %}">حذف</a>
                 </td>
             </tr>
         {% empty %}

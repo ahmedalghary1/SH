@@ -15,6 +15,7 @@ urlpatterns = [
     path('<int:pk>/approve/', views.SalesReturnApproveView.as_view(), name='approve'),
     path('<int:pk>/complete/', views.SalesReturnCompleteView.as_view(), name='complete'),
     path('<int:pk>/reject/', views.SalesReturnRejectView.as_view(), name='reject'),
+    path('<int:pk>/delete/', views.SalesReturnDeleteView.as_view(), name='delete'),
     path('reports/reasons/', views.ReturnReasonReportView.as_view(), name='reason_report'),
     path('reports/products/', views.ProductReturnReportView.as_view(), name='product_report'),
     path('reports/daily/', views.DailyReturnsReportView.as_view(), name='daily_report'),

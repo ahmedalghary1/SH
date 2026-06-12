@@ -36,6 +36,9 @@
                     <td class="actions">
                         <a class="btn btn-light" href="{% url 'customers:detail' customer.pk %}">عرض</a>
                         <a class="btn btn-light" href="{% url 'customers:update' customer.pk %}">تعديل</a>
+                        {% if request.user.is_manager %}
+                            <a class="btn btn-danger" href="{% url 'customers:delete' customer.pk %}">حذف</a>
+                        {% endif %}
                     </td>
                 </tr>
             {% empty %}

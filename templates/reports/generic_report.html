@@ -2,38 +2,61 @@
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
 <div class="page-head">
-    <h1>{{ title }}</h1>
     <div class="button-row">
-        <a class="btn btn-light" href="{% url 'reports:sales_export' %}?{{ request.GET.urlencode }}">تصدير CSV للمبيعات</a>
-        {% if request.user.is_manager %}
-            <a class="btn btn-light" href="{% url 'reports:profitability_export' %}?{{ request.GET.urlencode }}">تصدير CSV للأرباح</a>
+        <a class="btn btn-light" href="{% url 'reports:index' %}">رجوع</a>
+        <button class="btn btn-light" type="button" onclick="window.print()">طباعة</button>
+        {% if export_url_name %}
+            <a class="btn btn-light" href="{% url export_url_name %}?{{ request.GET.urlencode }}">تصدير Excel</a>
         {% endif %}
     </div>
+    <div>
+        <h1>{{ title }}</h1>
+        {% if description %}<p class="page-description">{{ description }}</p>{% endif %}
+    </div>
 </div>
+{% include 'reports/report_links.html' %}
 
 <section class="card">
     <form method="get" class="filters-form">
         <div class="form-grid">
                 <div class="form-group">
-                    <label>من</label>
+                    <label>من تاريخ</label>
                     <input type="date" name="date_from" value="{{ filters.date_from }}">
                 </div>
                 <div class="form-group">
-                    <label>إلى</label>
+                    <label>إلى تاريخ</label>
                     <input type="date" name="date_to" value="{{ filters.date_to }}">
                 </div>
+        </div>
+        <details class="advanced-report-filters">
+            <summary>خيارات متقدمة</summary>
+            <div class="form-grid">
                 <div class="form-group">
-                    <label>الحالة</label>
-                    <input type="text" name="status" value="{{ filters.status }}" placeholder="الحالة">
+                    <label>حالة الفاتورة</label>
+                    <select name="status">
+                        <option value="">كل الحالات</option>
+                        <option value="draft" {% if filters.status == 'draft' %}selected{% endif %}>مسودة</option>
+                        <option value="confirmed" {% if filters.status == 'confirmed' %}selected{% endif %}>مؤكدة</option>
+                        <option value="preparing" {% if filters.status == 'preparing' %}selected{% endif %}>قيد التجهيز</option>
+                        <option value="ready" {% if filters.status == 'ready' %}selected{% endif %}>جاهزة</option>
+                        <option value="completed" {% if filters.status == 'completed' %}selected{% endif %}>مكتملة</option>
+                        <option value="cancelled" {% if filters.status == 'cancelled' %}selected{% endif %}>ملغاة</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label>حالة الدفع</label>
-                    <input type="text" name="payment_status" value="{{ filters.payment_status }}" placeholder="حالة الدفع">
+                    <select name="payment_status">
+                        <option value="">كل حالات الدفع</option>
+                        <option value="paid" {% if filters.payment_status == 'paid' %}selected{% endif %}>مدفوعة</option>
+                        <option value="partial" {% if filters.payment_status == 'partial' %}selected{% endif %}>مدفوعة جزئيًا</option>
+                        <option value="unpaid" {% if filters.payment_status == 'unpaid' %}selected{% endif %}>غير مدفوعة</option>
+                    </select>
                 </div>
-        </div>
+            </div>
+        </details>
         <div class="button-row">
-            <button class="btn btn-accent" type="submit">تطبيق</button>
-            <a class="btn btn-light" href="{{ request.path }}">إعادة تعيين</a>
+            <button class="btn btn-accent" type="submit">عرض النتائج</button>
+            <a class="btn btn-light" href="{{ request.path }}">مسح الفلاتر</a>
         </div>
     </form>
 </section>
@@ -73,7 +96,7 @@
     </div>
 </section>
 {% else %}
-<section class="card"><p>لا توجد صفوف.</p></section>
+<section class="card"><p>لا توجد بيانات مطابقة للفلاتر الحالية.</p></section>
 {% endif %}
 
 {% if prepared_sections %}
@@ -102,7 +125,7 @@
                     </table>
                 </div>
             {% else %}
-                <p>لا توجد صفوف.</p>
+                <p>لا توجد بيانات متاحة لهذا القسم.</p>
             {% endif %}
         </section>
     {% endfor %}

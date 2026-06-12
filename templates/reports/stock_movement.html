@@ -1,61 +1,62 @@
 {% extends "base.html" %}
 
+{% block title %}حركة صنف{% endblock %}
 {% block content %}
-<div class="container mt-4">
-    <h2>تقرير حركة المخزون</h2>
+<div class="page-head"><h1>حركة صنف</h1><p class="page-description">تابع حركة المنتج بين المخازن والبيع والمرتجعات.</p></div>
+{% include 'reports/report_links.html' %}
+<div class="reports-page">
     
-    <div class="card mb-4">
-        <div class="card-header">
-            <h5 class="mb-0">تصفية الحركات</h5>
-        </div>
-        <div class="card-body">
-            <form method="get" class="row g-3">
-                <div class="col-md-3">
-                    <label for="date_from" class="form-label">من تاريخ</label>
+    <section class="card">
+        <h2>فلاتر الحركة</h2>
+        <form method="get" class="filters-form">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="q">المنتج أو الكود</label>
+                    <input type="search" name="q" id="q" value="{{ filters.q }}" placeholder="ابحث عن صنف">
+                </div>
+                <div class="form-group">
+                    <label for="date_from">من تاريخ</label>
                     <input type="date" name="date_from" id="date_from" class="form-control" value="{{ filters.date_from }}">
                 </div>
-                <div class="col-md-3">
-                    <label for="date_to" class="form-label">إلى تاريخ</label>
+                <div class="form-group">
+                    <label for="date_to">إلى تاريخ</label>
                     <input type="date" name="date_to" id="date_to" class="form-control" value="{{ filters.date_to }}">
                 </div>
-                <div class="col-md-3">
-                    <label for="warehouse" class="form-label">المخزن</label>
+                <div class="form-group">
+                    <label for="warehouse">المخزن</label>
                     <select name="warehouse" id="warehouse" class="form-select">
-                        <option value="">الكل</option>
+                        <option value="">كل المخازن</option>
                         {% for warehouse in warehouses %}
                         <option value="{{ warehouse.id }}" {% if filters.warehouse == warehouse.id|stringformat:"s" %}selected{% endif %}>{{ warehouse.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-3">
-                    <label for="movement_type" class="form-label">نوع الحركة</label>
+                <div class="form-group">
+                    <label for="movement_type">نوع الحركة</label>
                     <select name="movement_type" id="movement_type" class="form-select">
-                        <option value="">الكل</option>
-                        {% if movement_types %}
+                        <option value="">كل الحركات</option>
                         {% for value, label in movement_types %}
                         <option value="{{ value }}" {% if filters.movement_type == value %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
-                        {% endif %}
                     </select>
                 </div>
-                <div class="col-12">
-                    <button type="submit" class="btn btn-primary">تصفية</button>
-                    <a href="{% url 'reports:stock_movement' %}" class="btn btn-secondary">إعادة تعيين</a>
-                </div>
-            </form>
-        </div>
-    </div>
+            </div>
+            <div class="button-row">
+                <button type="submit" class="btn btn-accent">تطبيق الفلاتر</button>
+                <a href="{% url 'reports:stock_movement' %}" class="btn btn-light">إعادة تعيين</a>
+            </div>
+        </form>
+    </section>
     
-    <div class="card">
-        <div class="card-body">
+    <section class="card">
             {% if movements %}
-            <div class="table-responsive">
-                <table class="table table-striped">
+            <div class="table-wrap">
+                <table>
                     <thead>
                         <tr>
                             <th>التاريخ</th>
                             <th>المنتج</th>
-                            <th>المتغير</th>
+                            <th>كود اللون/المقاس</th>
                             <th>نوع الحركة</th>
                             <th>من مخزن</th>
                             <th>إلى مخزن</th>
@@ -70,7 +71,7 @@
                             <td>{{ movement.created_at }}</td>
                             <td>{{ movement.variant.product.name|default:"-" }}</td>
                             <td>{{ movement.variant.variant_sku|default:"-" }}</td>
-                            <td>{{ movement.movement_type|default:"-" }}</td>
+                            <td>{{ movement.report_movement_type|default:"-" }}</td>
                             <td>{{ movement.from_warehouse.name|default:"-" }}</td>
                             <td>{{ movement.to_warehouse.name|default:"-" }}</td>
                             <td>{{ movement.quantity }}</td>
@@ -82,9 +83,8 @@
                 </table>
             </div>
             {% else %}
-            <p class="text-muted">لا توجد حركات</p>
+            <p>لا توجد حركات مخزون مطابقة للفلاتر الحالية.</p>
             {% endif %}
-        </div>
-    </div>
+    </section>
 </div>
 {% endblock %}

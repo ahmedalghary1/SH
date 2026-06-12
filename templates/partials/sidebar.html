@@ -90,22 +90,12 @@
             </div>
         {% endif %}
 
-        {% if request.user.is_manager %}
-            <div class="nav-group">
-                <button class="nav-group-toggle" type="button" data-nav-group-toggle aria-expanded="false">
-                    <svg class="ui-icon color-blue"><use href="#icon-chart"></use></svg>
-                    <span class="nav-text">التقارير</span>
-                    <span class="nav-chevron" aria-hidden="true">‹</span>
-                </button>
-                <div class="nav-group-panel">
-                    <a class="nav-link" href="{% url 'reports:sales' %}"><span class="nav-text">تقرير المبيعات</span><span class="nav-arrow">‹</span></a>
-                    <a class="nav-link" href="{% url 'reports:profitability' %}"><span class="nav-text">تقرير الربحية</span><span class="nav-arrow">‹</span></a>
-                    <a class="nav-link" href="{% url 'reports:customer_debt' %}"><span class="nav-text">تقرير ديون العملاء</span><span class="nav-arrow">‹</span></a>
-                    <a class="nav-link" href="{% url 'reports:low_stock' %}"><span class="nav-text">تقرير المخزون المنخفض</span><span class="nav-arrow">‹</span></a>
-                    <a class="nav-link" href="{% url 'reports:daily_sales' %}"><span class="nav-text">تقرير اليوم</span><span class="nav-arrow">‹</span></a>
-                    <a class="nav-link" href="{% url 'reports:inventory' %}"><span class="nav-text">تقرير المخزون</span><span class="nav-arrow">‹</span></a>
-                </div>
-            </div>
+        {% if request.user.is_manager or request.user.is_sales or request.user.is_warehouse %}
+            <a class="nav-link nav-single" href="{% url 'reports:index' %}">
+                <svg class="ui-icon color-blue"><use href="#icon-chart"></use></svg>
+                <span class="nav-text">التقارير</span>
+                <span class="nav-arrow">‹</span>
+            </a>
         {% endif %}
     </nav>
 </aside>

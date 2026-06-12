@@ -9,12 +9,30 @@
 </div>
 <div class="table-wrap">
     <table>
-        <thead><tr><th>الشهر</th><th>عدد الطلبات</th><th>إجمالي المبيعات</th></tr></thead>
+        <thead>
+            <tr>
+                <th>الشهر</th>
+                <th>عدد الفواتير</th>
+                <th>إجمالي المبيعات</th>
+                {% if can_view_costs %}
+                    <th>إجمالي التكلفة</th>
+                    <th>مجمل الربح</th>
+                {% endif %}
+            </tr>
+        </thead>
         <tbody>
         {% for month in months %}
-            <tr><td>{{ month.month|date:'Y-m' }}</td><td>{{ month.count }}</td><td>{{ month.total }}</td></tr>
+            <tr>
+                <td>{{ month.month|date:'Y-m' }}</td>
+                <td>{{ month.count }}</td>
+                <td>{{ month.total }}</td>
+                {% if can_view_costs %}
+                    <td>{{ month.cost }}</td>
+                    <td>{{ month.profit }}</td>
+                {% endif %}
+            </tr>
         {% empty %}
-            <tr><td colspan="3">لا توجد مبيعات شهرية</td></tr>
+            <tr><td colspan="{% if can_view_costs %}5{% else %}3{% endif %}">لا توجد مبيعات شهرية</td></tr>
         {% endfor %}
         </tbody>
     </table>

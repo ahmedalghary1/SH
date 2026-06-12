@@ -8,6 +8,7 @@
             <a class="btn btn-accent" href="{% url 'products:variant_create' %}?product={{ product.pk }}">إضافة لون / مقاس</a>
             <a class="btn btn-light" href="{% url 'products:movement_report' product.pk %}">تقرير حركة الصنف</a>
             <a class="btn btn-light" href="{% url 'products:update' product.pk %}">تعديل المنتج</a>
+            <a class="btn btn-danger" href="{% url 'products:delete' product.pk %}">حذف المنتج</a>
         {% endif %}
         <a class="btn btn-light" href="{% url 'products:list' %}">رجوع</a>
     </div>
@@ -34,10 +35,19 @@
     <h2>الألوان والمقاسات</h2>
     <div class="table-wrap">
         <table>
-            <thead><tr><th>الكود</th><th>اللون</th><th>المقاس</th>{% if can_view_costs %}<th>سعر الشراء</th>{% endif %}<th>سعر البيع</th><th>الحالة</th>{% if request.user.is_manager %}<th>إجراءات</th>{% endif %}</tr></thead>
+            <thead><tr><th>الصورة</th><th>الكود</th><th>اللون</th><th>المقاس</th>{% if can_view_costs %}<th>سعر الشراء</th>{% endif %}<th>سعر البيع</th><th>الحالة</th>{% if request.user.is_manager %}<th>إجراءات</th>{% endif %}</tr></thead>
             <tbody>
                 {% for variant in variants %}
                     <tr>
+                        <td>
+                            {% if variant.image %}
+                                <img class="thumb" src="{{ variant.image.url }}" alt="{{ variant }}">
+                            {% elif product.image %}
+                                <img class="thumb" src="{{ product.image.url }}" alt="{{ product.name }}">
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
                         <td>{{ variant.variant_sku }}</td>
                         <td>{{ variant.color|default:'-' }}</td>
                         <td>{{ variant.size|default:'-' }}</td>
@@ -47,12 +57,13 @@
                         {% if request.user.is_manager %}
                             <td class="actions">
                                 <a class="btn btn-light" href="{% url 'products:variant_update' variant.pk %}">تعديل</a>
+                                <a class="btn btn-danger" href="{% url 'products:variant_delete' variant.pk %}">حذف</a>
                                 <form method="post" action="{% url 'products:variant_deactivate' variant.pk %}" data-confirm="إيقاف هذا اللون/المقاس؟">{% csrf_token %}<button class="btn btn-danger">إيقاف</button></form>
                             </td>
                         {% endif %}
                     </tr>
                 {% empty %}
-                    <tr><td colspan="7">لا توجد ألوان أو مقاسات</td></tr>
+                    <tr><td colspan="{% if request.user.is_manager %}{% if can_view_costs %}8{% else %}7{% endif %}{% else %}{% if can_view_costs %}7{% else %}6{% endif %}{% endif %}">لا توجد ألوان أو مقاسات</td></tr>
                 {% endfor %}
             </tbody>
         </table>

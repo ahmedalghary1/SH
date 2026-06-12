@@ -5,12 +5,34 @@
 {% include 'reports/report_links.html' %}
 <div class="table-wrap">
     <table>
-        <thead><tr><th>الموظف</th><th>الطلبات</th><th>المبيعات</th><th>التحصيل</th><th>متوسط الطلب</th></tr></thead>
+        <thead>
+            <tr>
+                <th>الموظف</th>
+                <th>عدد الفواتير</th>
+                <th>إجمالي المبيعات</th>
+                {% if can_view_costs %}
+                    <th>إجمالي التكلفة</th>
+                    <th>مجمل الربح</th>
+                {% endif %}
+                <th>التحصيل</th>
+                <th>متوسط الفاتورة</th>
+            </tr>
+        </thead>
         <tbody>
         {% for emp in employees %}
-            <tr><td>{{ emp.created_by__username|default:'-' }}</td><td>{{ emp.count }}</td><td>{{ emp.sales_total }}</td><td>{{ emp.paid }}</td><td>{{ emp.avg_order|default:'-' }}</td></tr>
+            <tr>
+                <td>{{ emp.created_by__username|default:'-' }}</td>
+                <td>{{ emp.count }}</td>
+                <td>{{ emp.sales_total }}</td>
+                {% if can_view_costs %}
+                    <td>{{ emp.total_cost }}</td>
+                    <td>{{ emp.gross_profit }}</td>
+                {% endif %}
+                <td>{{ emp.paid }}</td>
+                <td>{{ emp.avg_order|default:'-' }}</td>
+            </tr>
         {% empty %}
-            <tr><td colspan="5">لا توجد بيانات موظفين</td></tr>
+            <tr><td colspan="{% if can_view_costs %}7{% else %}5{% endif %}">لا توجد بيانات موظفين</td></tr>
         {% endfor %}
         </tbody>
     </table>

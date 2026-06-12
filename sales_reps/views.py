@@ -1,9 +1,11 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.shortcuts import redirect
+from django.urls import reverse_lazy
 from django.views.generic import FormView, ListView, TemplateView
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin
+from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 
 from .forms import AssignStockForm, AssignmentActionForm, SalesRepCollectionForm, SalesRepHandoverForm, SalesRepStatementForm
@@ -142,3 +144,15 @@ class AssignmentListView(RoleRequiredMixin, ExportListMixin, ListView):
         if self.request.user.role == 'sales' and not self.request.user.is_superuser:
             qs = qs.filter(sales_rep=self.request.user)
         return qs
+
+
+class SalesRepStockAssignmentDeleteView(ManagerDeleteView):
+    model = SalesRepStockAssignment
+    success_url = reverse_lazy('sales_reps:assignments')
+    success_message = 'تم حذف عهدة المندوب'
+
+
+class SalesRepCollectionDeleteView(ManagerDeleteView):
+    model = SalesRepCollection
+    success_url = reverse_lazy('sales_reps:dashboard')
+    success_message = 'تم حذف تحصيل المندوب'

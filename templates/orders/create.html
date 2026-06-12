@@ -10,6 +10,14 @@
     {% csrf_token %}
     <input type="hidden" name="items_json" id="items-json" value="[]">
     {{ form.warehouse }}
+    {{ form.order_type }}
+    {{ form.discount_percentage }}
+    {{ form.wallet_from_number }}
+    {{ form.wallet_to_number }}
+
+    {% if form.non_field_errors %}
+        <div class="form-errors">{{ form.non_field_errors }}</div>
+    {% endif %}
 
     <div class="cashier-grid">
         <!-- القسم الأيسر: إضافة المنتجات -->
@@ -113,7 +121,7 @@
                     </div>
                     <div class="summary-row">
                         <span>الخصم</span>
-                        <input id="discount-input" type="number" step="0.01" min="0" placeholder="0.00" value="0">
+                        <input id="discount-input" name="discount_amount" type="number" step="0.01" min="0" placeholder="0.00" value="{{ form.discount_amount.value|default:'0' }}">
                     </div>
                     <div class="summary-row total">
                         <span>الإجمالي النهائي</span>

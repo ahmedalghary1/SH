@@ -1,5 +1,7 @@
 from django import forms
 
+from django.db.models import Q
+
 from orders.models import Order, OrderItem
 from products.models import ProductVariant
 
@@ -30,7 +32,9 @@ class SalesReturnCreateForm(forms.Form):
             'items__variant__product',
             'items__variant__color',
             'items__variant__size',
-        ).filter(order_number__iexact=value).distinct()
+        ).filter(
+            Q(order_number__iexact=value) | Q(invoice__invoice_number__iexact=value)
+        ).distinct()
         if self.user and getattr(self.user, 'role', None) == 'sales' and not self.user.is_superuser:
             orders = orders.filter(created_by=self.user)
 

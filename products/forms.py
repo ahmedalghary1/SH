@@ -66,11 +66,12 @@ class ProductForm(forms.ModelForm):
 class ProductVariantForm(forms.ModelForm):
     class Meta:
         model = ProductVariant
-        fields = ('product', 'color', 'size', 'cost_price', 'sale_price', 'is_active')
+        fields = ('product', 'color', 'size', 'image', 'cost_price', 'sale_price', 'is_active')
         labels = {
             'product': 'المنتج',
             'color': 'اللون',
             'size': 'المقاس',
+            'image': 'صورة اللون / المقاس',
             'cost_price': 'سعر الشراء',
             'sale_price': 'سعر البيع',
             'is_active': 'نشط',
@@ -84,12 +85,13 @@ class ProductVariantForm(forms.ModelForm):
 class InitialProductVariantForm(forms.ModelForm):
     color = forms.ModelChoiceField(queryset=Color.objects.all().order_by('name'), label='اللون')
     size = forms.ModelChoiceField(queryset=Size.objects.all().order_by('sort_order', 'name'), label='المقاس')
+    image = forms.ImageField(label='صورة اللون / المقاس', required=False)
     cost_price = forms.DecimalField(label='سعر الشراء', min_value=0)
     sale_price = forms.DecimalField(label='سعر البيع', min_value=0)
 
     class Meta:
         model = ProductVariant
-        fields = ('color', 'size', 'cost_price', 'sale_price')
+        fields = ('color', 'size', 'image', 'cost_price', 'sale_price')
         widgets = {
             'color': forms.Select(attrs={'data-filterable-select': 'true'}),
             'size': forms.Select(attrs={'data-filterable-select': 'true'}),
@@ -123,4 +125,3 @@ class InitialStockForm(forms.Form):
 
     def has_stock_data(self):
         return self.is_valid() and bool(self.cleaned_data.get('warehouse'))
-

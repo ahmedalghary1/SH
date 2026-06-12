@@ -65,6 +65,26 @@
         return Number(value || 0).toFixed(2);
     }
 
+    function setFieldValue(element, value) {
+        if (!element) return;
+        if ("value" in element) {
+            element.value = value;
+        } else {
+            element.textContent = value;
+        }
+    }
+
+    function getFieldValue(element) {
+        if (!element) return "";
+        return "value" in element ? element.value : element.textContent;
+    }
+
+    function setFieldReadOnly(element, readOnly) {
+        if (!element) return;
+        if ("readOnly" in element) element.readOnly = readOnly;
+        element.classList.toggle("is-readonly", Boolean(readOnly));
+    }
+
     function isSample() {
         return documentType?.value === "sample";
     }
@@ -78,12 +98,12 @@
 
     function updateLineTotal() {
         if (isSample()) {
-            priceInput.value = "0.00";
-            priceInput.readOnly = true;
+            setFieldValue(priceInput, "0.00");
+            setFieldReadOnly(priceInput, true);
         } else {
-            priceInput.readOnly = false;
+            setFieldReadOnly(priceInput, false);
         }
-        lineTotalInput.value = money(Number(priceInput.value || 0) * Number(qtyInput.value || 0));
+        setFieldValue(lineTotalInput, money(Number(getFieldValue(priceInput) || 0) * Number(qtyInput.value || 0)));
     }
 
     function toggleWalletFields() {
@@ -205,8 +225,8 @@
     }
 
     function resetProductMeta() {
-        stockInput.value = "";
-        priceInput.value = "";
+        setFieldValue(stockInput, "");
+        setFieldValue(priceInput, "");
         itemWarehouse.innerHTML = '<option value="">اختر اللون والمقاس أولا</option>';
         updateLineTotal();
     }
@@ -346,7 +366,7 @@
 
     function updateSelectedWarehouse() {
         const selected = itemWarehouse.options[itemWarehouse.selectedIndex];
-        stockInput.value = selected?.dataset.quantity || "";
+        setFieldValue(stockInput, selected?.dataset.quantity || "");
         if (warehouse && itemWarehouse.value) warehouse.value = itemWarehouse.value;
     }
 
@@ -371,8 +391,8 @@
         if (warehouses.length) itemWarehouse.value = warehouses[0].warehouse_id;
         updateSelectedWarehouse();
 
-        const price = await fetchJson(`/orders/ajax/variants/${variantId}/price/?order_type=${orderType.value}&customer_id=${customerSelect.value || ""}`);
-        priceInput.value = isSample() ? "0.00" : price.data.price;
+        const price = await fetchJson(`/orders/ajax/variants/${variantId}/price/?order_type=${orderType?.value || "b2c"}&customer_id=${customerSelect?.value || ""}`);
+        setFieldValue(priceInput, isSample() ? "0.00" : price.data.price);
         updateLineTotal();
     }
 
@@ -391,7 +411,7 @@
         const selected = variantSelect.options[variantSelect.selectedIndex];
         const selectedWarehouse = itemWarehouse.options[itemWarehouse.selectedIndex];
         const quantity = Number(qtyInput.value || 0);
-        const available = Number(stockInput.value || 0);
+        const available = Number(getFieldValue(stockInput) || 0);
         if (!selectedProduct || !variantSelect.value) {
             window.alert("اختر المنتج واللون والمقاس أولا");
             return;
@@ -408,7 +428,7 @@
             return;
         }
         if (!warehouse.value) warehouse.value = itemWarehouse.value;
-        const unitPrice = isSample() ? 0 : Number(priceInput.value || 0);
+        const unitPrice = isSample() ? 0 : Number(getFieldValue(priceInput) || 0);
         items.push({
             variant_id: variantSelect.value,
             product_name: selectedProduct.name,

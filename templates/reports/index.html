@@ -2,118 +2,73 @@
 {% block title %}التقارير{% endblock %}
 {% block content %}
 <div class="reports-page">
-    <div class="page-head">
-        <h1>التقارير</h1>
-    </div>
-
-    <!-- التقارير الأساسية -->
-    <div class="reports-section">
-        <h2 class="section-title">التقارير الأساسية</h2>
-        <div class="reports-grid">
-            <a href="{% url 'reports:daily_sales' %}" class="report-card">
-                <div class="report-icon">📊</div>
-                <h3>تقرير اليوم</h3>
-                <p>مبيعات اليوم، المرتجعات، المصروفات، والتحصيلات</p>
-            </a>
-            
-            <a href="{% url 'reports:sales' %}" class="report-card">
-                <div class="report-icon">💰</div>
-                <h3>تقرير المبيعات</h3>
-                <p>تقرير شامل للمبيعات مع الفلاتر</p>
-            </a>
-            
-            <a href="{% url 'reports:inventory' %}" class="report-card">
-                <div class="report-icon">📦</div>
-                <h3>تقرير المخزون</h3>
-                <p>حالة المخزون والمنتجات الناقصة</p>
-            </a>
-            
-            <a href="{% url 'reports:customers' %}" class="report-card">
-                <div class="report-icon">👥</div>
-                <h3>تقرير العملاء</h3>
-                <p>العملاء الجدد، الأكثر شراءً، والمديونيات</p>
-            </a>
-            
-            <a href="{% url 'reports:supplier_dues' %}" class="report-card">
-                <div class="report-icon">🏭</div>
-                <h3>تقرير الموردين</h3>
-                <p>مديونيات الموردين والمستحقات</p>
-            </a>
-            
-            <a href="{% url 'reports:returns' %}" class="report-card">
-                <div class="report-icon">↩️</div>
-                <h3>تقرير المرتجعات</h3>
-                <p>المرتجعات والاستبدالات</p>
-            </a>
-            
-            <a href="{% url 'finance:cash' %}" class="report-card">
-                <div class="report-icon">💵</div>
-                <h3>تقرير الخزنة</h3>
-                <p>حركة الخزنة والوردية</p>
-            </a>
-            
-            <a href="{% url 'reports:stock_movement' %}" class="report-card">
-                <div class="report-icon">🔄</div>
-                <h3>حركة المخزون</h3>
-                <p>حركات المخزون والانتقالات</p>
-            </a>
+    <div class="reports-hero">
+        <div>
+            <h1>التقارير</h1>
+            <p>كل تقرير هنا يجيب عن سؤال واضح: بعت كام؟ ناقص إيه؟ مين عليه فلوس؟</p>
         </div>
     </div>
 
-    <!-- التقارير المتقدمة للمدير فقط -->
-    {% if request.user.is_manager or request.user.is_superuser %}
-    <div class="reports-section advanced">
-        <h2 class="section-title">التقارير المتقدمة</h2>
-        <div class="reports-grid">
-            <a href="{% url 'reports:profitability' %}" class="report-card">
-                <div class="report-icon">📈</div>
-                <h3>تقرير الأرباح</h3>
-                <p>الأرباح والتكاليف والهوام الربحية</p>
+    {% if featured_report %}
+        <section class="reports-section">
+            <a href="{% url featured_report.url_name %}" class="report-card report-card-featured tone-{{ featured_report.tone }}">
+                <div class="report-icon" aria-hidden="true">
+                    <svg class="ui-icon"><use href="#{{ featured_report.icon }}"></use></svg>
+                </div>
+                <div class="report-copy">
+                    <span class="report-kicker">الأهم اليوم</span>
+                    <h2>{{ featured_report.title }}</h2>
+                    <p>{{ featured_report.description }}</p>
+                </div>
+                <span class="report-action">عرض التقرير</span>
             </a>
-            
-            <a href="{% url 'reports:net_profit' %}" class="report-card">
-                <div class="report-icon">💎</div>
-                <h3>تقرير صافي الربح</h3>
-                <p>صافي الربح بعد المصروفات</p>
-            </a>
-            
-            <a href="{% url 'reports:discounts' %}" class="report-card">
-                <div class="report-icon">🏷️</div>
-                <h3>تقرير الخصومات</h3>
-                <p>الخصومات الممنوحة وتأثيرها</p>
-            </a>
-            
-            <a href="{% url 'reports:employees' %}" class="report-card">
-                <div class="report-icon">👔</div>
-                <h3>تقرير أداء المستخدمين</h3>
-                <p>أداء الموظفين والمبيعات لكل مستخدم</p>
-            </a>
-            
-            <a href="{% url 'reports:low_stock' %}" class="report-card">
-                <div class="report-icon">⚠️</div>
-                <h3>المنتجات الأكثر مبيعًا</h3>
-                <p>المنتجات الرائجة والأكثر طلبًا</p>
-            </a>
-            
-            <a href="{% url 'reports:stale_products' %}" class="report-card">
-                <div class="report-icon">📉</div>
-                <h3>المنتجات الراكدة</h3>
-                <p>المنتجات التي لم تتحرك لفترة</p>
-            </a>
-            
-            <a href="{% url 'reports:purchases' %}" class="report-card">
-                <div class="report-icon">🛒</div>
-                <h3>تقرير المشتريات المتقدم</h3>
-                <p>تفاصيل المشتريات والتكاليف</p>
-            </a>
-            
-            <a href="{% url 'reports:customer_debt' %}" class="report-card">
-                <div class="report-icon">💳</div>
-                <h3>تقرير المديونيات المتقدم</h3>
-                <p>تفاصيل مديونيات العملاء</p>
-            </a>
-        </div>
-    </div>
+        </section>
+    {% endif %}
+
+    {% if basic_reports %}
+        <section class="reports-section">
+            <div class="section-head">
+                <h2>تقارير أساسية</h2>
+                <p>تقارير تشغيل يومية يحتاجها صاحب المحل أو الموظف حسب صلاحياته.</p>
+            </div>
+            <div class="reports-grid">
+                {% for report in basic_reports %}
+                    <a href="{% url report.url_name %}" class="report-card tone-{{ report.tone }}">
+                        <div class="report-icon" aria-hidden="true">
+                            <svg class="ui-icon"><use href="#{{ report.icon }}"></use></svg>
+                        </div>
+                        <div class="report-copy">
+                            <h3>{{ report.title }}</h3>
+                            <p>{{ report.description }}</p>
+                        </div>
+                        <span class="report-action">عرض التقرير</span>
+                    </a>
+                {% endfor %}
+            </div>
+        </section>
+    {% endif %}
+
+    {% if manager_reports %}
+        <section class="reports-section">
+            <div class="section-head">
+                <h2>تقارير المدير</h2>
+                <p>تقارير مالية ورقابية لا تظهر إلا للمدير أو مسؤول النظام.</p>
+            </div>
+            <div class="reports-grid">
+                {% for report in manager_reports %}
+                    <a href="{% url report.url_name %}" class="report-card tone-{{ report.tone }}">
+                        <div class="report-icon" aria-hidden="true">
+                            <svg class="ui-icon"><use href="#{{ report.icon }}"></use></svg>
+                        </div>
+                        <div class="report-copy">
+                            <h3>{{ report.title }}</h3>
+                            <p>{{ report.description }}</p>
+                        </div>
+                        <span class="report-action">عرض التقرير</span>
+                    </a>
+                {% endfor %}
+            </div>
+        </section>
     {% endif %}
 </div>
 {% endblock %}

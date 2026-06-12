@@ -313,6 +313,32 @@ function enhanceListControls(root = document) {
     root.querySelectorAll("input[list]:not([data-native-list])").forEach(enhanceListInput);
 }
 
+function setupPasswordToggles(root = document) {
+    root.querySelectorAll('input[type="password"]:not([data-password-toggle-ready])').forEach((input) => {
+        input.dataset.passwordToggleReady = "true";
+        const wrapper = document.createElement("span");
+        wrapper.className = "password-field";
+        input.parentNode.insertBefore(wrapper, input);
+        wrapper.appendChild(input);
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "password-toggle";
+        button.setAttribute("aria-label", "إظهار كلمة المرور");
+        button.setAttribute("title", "إظهار كلمة المرور");
+        button.textContent = "👁";
+        wrapper.appendChild(button);
+
+        button.addEventListener("click", () => {
+            const isHidden = input.type === "password";
+            input.type = isHidden ? "text" : "password";
+            button.setAttribute("aria-label", isHidden ? "إخفاء كلمة المرور" : "إظهار كلمة المرور");
+            button.setAttribute("title", isHidden ? "إخفاء كلمة المرور" : "إظهار كلمة المرور");
+            input.focus({ preventScroll: true });
+        });
+    });
+}
+
 function setWarehouseOptions(select, warehouses, placeholder, selectedValue = "") {
     select.innerHTML = "";
     const placeholderOption = document.createElement("option");
@@ -397,6 +423,7 @@ document.addEventListener("click", (event) => {
 
 document.addEventListener("DOMContentLoaded", () => {
     enhanceListControls();
+    setupPasswordToggles();
     setupStockWarehouseFilters();
 
     const currentPath = window.location.pathname;

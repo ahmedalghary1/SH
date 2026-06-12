@@ -4,6 +4,7 @@ from django.shortcuts import redirect
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, ListView, UpdateView, View
 
+from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 from config.ratelimit import RateLimitExceeded, rate_limit
 from config.security_logger import log_failed_login
@@ -46,8 +47,6 @@ class UserListView(ManagerRequiredMixin, ExportListMixin, ListView):
     export_filename = 'users'
     export_columns = (
         ('اسم المستخدم', 'username'),
-        ('الاسم الأول', 'first_name'),
-        ('الاسم الأخير', 'last_name'),
         ('الدور', 'get_role_display'),
         ('الهاتف', 'phone'),
         ('الحالة', lambda user: 'نشط' if user.is_active else 'متوقف'),
@@ -90,5 +89,17 @@ class UserDeactivateView(ManagerRequiredMixin, View):
             user.save(update_fields=['is_active'])
             messages.success(request, 'تم تعطيل الموظف')
         return redirect('accounts:user_list')
+
+
+class UserDeleteView(ManagerDeleteView):
+    model = User
+    success_url = reverse_lazy('accounts:user_list')
+    success_message = 'تم حذف الموظف'
+
+    def form_valid(self, form):
+        if self.get_object() == self.request.user:
+            messages.error(self.request, 'لا يمكنك حذف حسابك الحالي')
+            return redirect(self.success_url)
+        return super().form_valid(form)
 
 # Create your views here.

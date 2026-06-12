@@ -6,9 +6,10 @@ from django.shortcuts import redirect
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.utils.dateparse import parse_date
-from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView
+from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView
 
 from accounts.permissions import ManagerRequiredMixin, can_view_costs, SalesRequiredMixin
+from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 
 from .forms import CashAccountForm, CustomerCollectionForm, ExpenseForm, SalesRepStatementForm, TransferForm, SupplierPaymentForm
@@ -140,6 +141,23 @@ class CashAccountCreateView(ManagerRequiredMixin, CreateView):
         return super().form_valid(form)
 
 
+class CashAccountUpdateView(ManagerRequiredMixin, UpdateView):
+    model = CashAccount
+    form_class = CashAccountForm
+    template_name = 'finance/accounts/form.html'
+    success_url = reverse_lazy('finance:accounts')
+
+    def form_valid(self, form):
+        messages.success(self.request, 'تم تحديث الحساب المالي')
+        return super().form_valid(form)
+
+
+class CashAccountDeleteView(ManagerDeleteView):
+    model = CashAccount
+    success_url = reverse_lazy('finance:accounts')
+    success_message = 'تم حذف الحساب المالي'
+
+
 class CashAccountDetailView(ManagerRequiredMixin, DetailView):
     model = CashAccount
     template_name = 'finance/accounts/detail.html'
@@ -243,6 +261,12 @@ class TransactionListView(ManagerRequiredMixin, ExportListMixin, ListView):
             'date_to': self.request.GET.get('date_to', ''),
         }
         return context
+
+
+class PaymentTransactionDeleteView(ManagerDeleteView):
+    model = PaymentTransaction
+    success_url = reverse_lazy('finance:transactions')
+    success_message = 'تم حذف الحركة المالية'
 
 
 class ExpenseCreateView(ManagerRequiredMixin, FormView):

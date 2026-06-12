@@ -2806,7 +2806,7 @@ tbody tr:hover {
 }
 
 .stock-table-wrap th {
-    color: white;
+    color: #000;
     padding: var(--space-3);
     text-align: right;
     font-size: 0.875rem;
@@ -4044,66 +4044,107 @@ tbody tr:hover {
     padding: var(--space-4);
 }
 
-.reports-page .page-head {
+.reports-hero {
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--space-6);
     margin-bottom: var(--space-6);
 }
 
-.reports-page .page-head h1 {
-    font-size: 2rem;
+.reports-hero h1 {
+    margin: 0 0 var(--space-2);
+    font-size: clamp(1.75rem, 3vw, 2.25rem);
     font-weight: 700;
     color: var(--text-color);
+}
+
+.reports-hero p,
+.section-head p,
+.page-description {
+    margin: 0;
+    color: var(--muted-text);
+    line-height: 1.7;
 }
 
 .reports-page .reports-section {
     margin-bottom: var(--space-8);
 }
 
-.reports-page .section-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--text-color);
+.section-head {
     margin-bottom: var(--space-4);
 }
 
-.reports-page .reports-section.advanced .section-title {
-    color: var(--accent-color);
+.section-head h2 {
+    margin: 0 0 var(--space-1);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-color);
 }
 
 .reports-page .reports-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
     gap: var(--space-4);
 }
 
 .reports-page .report-card {
-    background: var(--surface-color);
-    border: 2px solid var(--border-color);
+    --report-tone: var(--primary-color);
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-inline-start: .35rem solid var(--report-tone);
     border-radius: var(--radius-md);
     padding: var(--space-4);
     text-decoration: none;
     color: var(--text-color);
-    transition: all 0.2s;
+    transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
+    align-items: flex-start;
+    gap: var(--space-3);
+    min-height: 13rem;
 }
 
 .reports-page .report-card:hover {
-    border-color: var(--accent-color);
+    border-color: var(--report-tone);
     transform: translateY(-2px);
-    box-shadow: var(--shadow-panel);
+    box-shadow: 0 .75rem 1.5rem rgba(15, 23, 42, .08);
+}
+
+.reports-page .report-card-featured {
+    min-height: 0;
+    flex-direction: row;
+    align-items: center;
+    padding: var(--space-5);
 }
 
 .reports-page .report-icon {
-    font-size: 2.5rem;
-    margin-bottom: var(--space-3);
+    width: 3rem;
+    height: 3rem;
+    border-radius: var(--radius-md);
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    background: color-mix(in srgb, var(--report-tone) 12%, white);
+    color: var(--report-tone);
+    font-size: 1.35rem;
+    font-weight: 700;
 }
 
+.reports-page .report-icon .ui-icon {
+    inline-size: 1.45rem;
+    block-size: 1.45rem;
+}
+
+.reports-page .report-copy {
+    flex: 1;
+    min-width: 0;
+}
+
+.reports-page .report-card h2,
 .reports-page .report-card h3 {
     font-size: 1.125rem;
-    font-weight: 600;
-    margin: 0 0 var(--space-2);
+    font-weight: 700;
+    margin: 0 0 var(--space-1);
     color: var(--text-color);
 }
 
@@ -4111,7 +4152,75 @@ tbody tr:hover {
     font-size: 0.875rem;
     color: var(--muted-text);
     margin: 0;
-    line-height: 1.5;
+    line-height: 1.7;
+}
+
+.reports-page .report-kicker {
+    display: block;
+    color: var(--report-tone);
+    font-size: .75rem;
+    font-weight: 700;
+    margin-bottom: var(--space-1);
+}
+
+.reports-page .report-action {
+    margin-top: auto;
+    align-self: stretch;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 2.5rem;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--report-tone);
+    color: #fff;
+    font-weight: 700;
+}
+
+.reports-page .report-card-featured .report-action {
+    align-self: center;
+    margin-top: 0;
+    min-width: 9rem;
+}
+
+.reports-page .tone-general { --report-tone: #2563eb; }
+.reports-page .tone-sales { --report-tone: #16a34a; }
+.reports-page .tone-risk { --report-tone: #dc2626; }
+.reports-page .tone-warning { --report-tone: #d97706; }
+.reports-page .tone-manager { --report-tone: #7c3aed; }
+.reports-page .tone-secondary { --report-tone: #64748b; }
+
+.advanced-report-filters {
+    margin: var(--space-3) 0;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    background: #fff;
+}
+
+.advanced-report-filters summary {
+    cursor: pointer;
+    font-weight: 700;
+    color: var(--text-color);
+}
+
+.advanced-report-filters .form-grid {
+    margin-top: var(--space-3);
+}
+
+@media (max-width: 48rem) {
+    .reports-page .reports-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .reports-page .report-card-featured {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .reports-page .report-card-featured .report-action {
+        align-self: stretch;
+    }
 }
 
 /* Advanced Options Styles */
@@ -4192,4 +4301,41 @@ tbody tr:hover {
 .advanced-panel label textarea:focus {
     outline: none;
     border-color: var(--accent-color);
+}
+
+.password-field {
+    position: relative;
+    display: block;
+    width: 100%;
+}
+
+.password-field input {
+    width: 100%;
+    padding-inline-end: 44px;
+}
+
+.password-toggle {
+    position: absolute;
+    top: 50%;
+    inset-inline-end: 8px;
+    width: 32px;
+    height: 32px;
+    transform: translateY(-50%);
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted-text);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    line-height: 1;
+}
+
+.password-toggle:hover,
+.password-toggle:focus {
+    background: var(--bg-color);
+    color: var(--text-color);
+    outline: none;
 }

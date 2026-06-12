@@ -15,7 +15,15 @@ class ArabicAuthenticationForm(AuthenticationForm):
     )
 
 
-class UserCreateForm(UserCreationForm):
+class UsernameWithSpacesMixin:
+    def clean_username(self):
+        username = (self.cleaned_data.get('username') or '').strip()
+        if not username:
+            raise forms.ValidationError('أدخل اسم المستخدم')
+        return username
+
+
+class UserCreateForm(UsernameWithSpacesMixin, UserCreationForm):
     password1 = forms.CharField(
         label='كلمة المرور',
         widget=forms.PasswordInput(attrs={'placeholder': 'كلمة مرور قوية', 'autocomplete': 'new-password'}),
@@ -27,33 +35,27 @@ class UserCreateForm(UserCreationForm):
 
     class Meta:
         model = User
-        fields = ('username', 'first_name', 'last_name', 'email', 'phone', 'role', 'is_active', 'password1', 'password2')
+        fields = ('username', 'email', 'phone', 'role', 'is_active', 'password1', 'password2')
         labels = {
             'username': 'اسم المستخدم',
-            'first_name': 'الاسم الأول',
-            'last_name': 'اسم العائلة',
             'email': 'البريد الإلكتروني',
             'phone': 'الهاتف',
             'role': 'الدور',
             'is_active': 'نشط',
         }
         widgets = {
-            'username': forms.TextInput(attrs={'placeholder': 'مثال: موظف_01'}),
-            'first_name': forms.TextInput(attrs={'placeholder': 'الاسم الأول'}),
-            'last_name': forms.TextInput(attrs={'placeholder': 'اسم العائلة'}),
+            'username': forms.TextInput(attrs={'placeholder': 'مثال: أحمد محمد'}),
             'email': forms.EmailInput(attrs={'placeholder': 'البريد الإلكتروني'}),
             'phone': forms.TextInput(attrs={'placeholder': 'رقم الهاتف'}),
         }
 
 
-class UserUpdateForm(forms.ModelForm):
+class UserUpdateForm(UsernameWithSpacesMixin, forms.ModelForm):
     class Meta:
         model = User
-        fields = ('username', 'first_name', 'last_name', 'email', 'phone', 'role', 'is_active')
+        fields = ('username', 'email', 'phone', 'role', 'is_active')
         labels = {
             'username': 'اسم المستخدم',
-            'first_name': 'الاسم الأول',
-            'last_name': 'اسم العائلة',
             'email': 'البريد الإلكتروني',
             'phone': 'الهاتف',
             'role': 'الدور',
@@ -61,8 +63,6 @@ class UserUpdateForm(forms.ModelForm):
         }
         widgets = {
             'username': forms.TextInput(attrs={'placeholder': 'اسم المستخدم'}),
-            'first_name': forms.TextInput(attrs={'placeholder': 'الاسم الأول'}),
-            'last_name': forms.TextInput(attrs={'placeholder': 'اسم العائلة'}),
             'email': forms.EmailInput(attrs={'placeholder': 'البريد الإلكتروني'}),
             'phone': forms.TextInput(attrs={'placeholder': 'رقم الهاتف'}),
         }

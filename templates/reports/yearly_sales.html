@@ -5,12 +5,34 @@
 {% include 'reports/report_links.html' %}
 <div class="table-wrap">
     <table>
-        <thead><tr><th>السنة</th><th>عدد الفواتير</th><th>إجمالي الدخل</th><th>المدفوع</th><th>المتبقي</th></tr></thead>
+        <thead>
+            <tr>
+                <th>السنة</th>
+                <th>عدد الفواتير</th>
+                <th>إجمالي المبيعات</th>
+                {% if can_view_costs %}
+                    <th>إجمالي التكلفة</th>
+                    <th>مجمل الربح</th>
+                {% endif %}
+                <th>المدفوع</th>
+                <th>المتبقي</th>
+            </tr>
+        </thead>
         <tbody>
         {% for year in years %}
-            <tr><td>{{ year.year }}</td><td>{{ year.count }}</td><td>{{ year.total }}</td><td>{{ year.paid }}</td><td>{{ year.remaining }}</td></tr>
+            <tr>
+                <td>{{ year.year }}</td>
+                <td>{{ year.count }}</td>
+                <td>{{ year.total }}</td>
+                {% if can_view_costs %}
+                    <td>{{ year.cost }}</td>
+                    <td>{{ year.profit }}</td>
+                {% endif %}
+                <td>{{ year.paid }}</td>
+                <td>{{ year.remaining }}</td>
+            </tr>
         {% empty %}
-            <tr><td colspan="5">لا توجد مبيعات سنوية</td></tr>
+            <tr><td colspan="{% if can_view_costs %}7{% else %}5{% endif %}">لا توجد مبيعات سنوية</td></tr>
         {% endfor %}
         </tbody>
     </table>

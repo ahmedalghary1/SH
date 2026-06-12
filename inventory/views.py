@@ -5,9 +5,10 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.views.decorators.http import require_GET
-from django.views.generic import CreateView, FormView, ListView
+from django.views.generic import CreateView, FormView, ListView, UpdateView
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin, can_view_costs, role_required
+from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from products.models import ProductVariant
@@ -42,6 +43,25 @@ class WarehouseCreateView(ManagerRequiredMixin, CreateView):
     form_class = WarehouseForm
     template_name = 'inventory/warehouses/create.html'
     success_url = reverse_lazy('inventory:warehouses')
+
+
+class WarehouseUpdateView(ManagerRequiredMixin, UpdateView):
+    model = Warehouse
+    form_class = WarehouseForm
+    template_name = 'inventory/warehouses/create.html'
+    success_url = reverse_lazy('inventory:warehouses')
+
+
+class WarehouseDeleteView(ManagerDeleteView):
+    model = Warehouse
+    success_url = reverse_lazy('inventory:warehouses')
+    success_message = 'تم حذف المخزن'
+
+
+class StockDeleteView(ManagerDeleteView):
+    model = Stock
+    success_url = reverse_lazy('inventory:stock')
+    success_message = 'تم حذف رصيد المخزون'
 
 
 class StockListView(RoleRequiredMixin, ExportListMixin, ListView):

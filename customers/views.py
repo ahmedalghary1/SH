@@ -7,6 +7,7 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import CreateView, DetailView, ListView, TemplateView, UpdateView
 
 from accounts.permissions import ManagerRequiredMixin, SalesRequiredMixin, sales_required
+from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
@@ -128,6 +129,12 @@ class CustomerUpdateView(SalesRequiredMixin, UpdateView):
     def form_valid(self, form):
         messages.success(self.request, 'تم تعديل العميل')
         return super().form_valid(form)
+
+
+class CustomerDeleteView(ManagerDeleteView):
+    model = Customer
+    success_url = reverse_lazy('customers:list')
+    success_message = 'تم حذف العميل'
 
 
 class SimpleCustomerDetailView(SalesRequiredMixin, DetailView):
@@ -357,6 +364,22 @@ class CustomerInteractionUpdateView(SalesRequiredMixin, UpdateView):
         context = super().get_context_data(**kwargs)
         context['customer'] = self.customer
         return context
+
+
+class CustomerInteractionDeleteView(ManagerDeleteView):
+    model = CustomerInteraction
+    pk_url_kwarg = 'interaction_id'
+    success_message = 'تم حذف المتابعة'
+
+    def dispatch(self, request, *args, **kwargs):
+        self.customer = get_object_or_404(Customer, pk=kwargs['pk'])
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        return CustomerInteraction.objects.filter(customer=self.customer)
+
+    def get_success_url(self):
+        return reverse('customers:crm_detail', kwargs={'pk': self.customer.pk})
 
 
 class TodayInteractionsView(SalesRequiredMixin, ListView):

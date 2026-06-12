@@ -14,6 +14,6 @@ class CustomUserAdmin(UserAdmin):
     )
     list_display = ('username', 'email', 'role', 'phone', 'is_active', 'is_staff')
     list_filter = ('role', 'is_active', 'is_staff')
-    search_fields = ('username', 'first_name', 'last_name', 'phone', 'email')
+    search_fields = ('username', 'phone', 'email')
 
 # Register your models here.

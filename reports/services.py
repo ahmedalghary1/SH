@@ -16,7 +16,7 @@ from sales_reps.models import SalesRepCollection, SalesRepStockAssignment
 
 
 ZERO = Decimal('0.00')
-EXCLUDED_SALES_STATUSES = [Order.STATUS_CANCELLED]
+EXCLUDED_SALES_STATUSES = [Order.STATUS_CANCELLED, Order.STATUS_RETURNED]
 
 
 def _sum(queryset, field):
@@ -100,7 +100,7 @@ def sales_report(request):
             'payment_status': order.get_payment_status_display(),
         })
     return {
-        'title': 'Sales report',
+        'title': 'تقرير المبيعات',
         'rows': rows,
         'summary': {
             'orders': qs.count(),
@@ -121,7 +121,7 @@ def profitability_report(request):
     gross_profit = _sum(orders, 'gross_profit')
     margin = (gross_profit / sales_total * 100) if sales_total else ZERO
     return {
-        'title': 'Profitability report',
+        'title': 'تقرير الأرباح',
         'summary': {
             'total_sales': sales_total,
             'total_cost': _sum(orders, 'total_cost'),
@@ -157,7 +157,7 @@ def net_profit_report(request):
     gross_profit = _sum(orders, 'gross_profit')
     expenses_total = _sum(expenses, 'amount')
     return {
-        'title': 'Net profit report',
+        'title': 'تقرير صافي الربح',
         'summary': {
             'gross_profit': gross_profit,
             'expenses': expenses_total,
@@ -178,7 +178,7 @@ def customer_debt_report():
         remaining=Sum('order__remaining_amount'),
     ).order_by('-remaining')
     return {
-        'title': 'Customer debt report',
+        'title': 'مديونيات العملاء',
         'summary': {'total_debt': qs.aggregate(v=Sum('remaining'))['v'] or ZERO},
         'rows': list(qs.values('name', 'phone', 'customer_type', 'opening_balance', 'credit_limit', 'purchases', 'remaining')[:200]),
     }
@@ -188,7 +188,7 @@ def inactive_customer_report(days=90):
     cutoff = timezone.now() - timedelta(days=days)
     qs = Customer.objects.filter(is_active=True).exclude(order__created_at__gte=cutoff).order_by('name')
     return {
-        'title': 'Inactive customer report',
+        'title': 'تقرير العملاء غير النشطين',
         'summary': {'days': days, 'customers': qs.count()},
         'rows': list(qs.values('name', 'phone', 'customer_type', 'created_at')[:200]),
     }
@@ -197,7 +197,7 @@ def inactive_customer_report(days=90):
 def discount_report(request):
     orders = apply_order_filters(Order.objects.filter(Q(discount__gt=0) | Q(discount_amount__gt=0)), request)
     return {
-        'title': 'Discount report',
+        'title': 'تقرير الخصومات',
         'summary': {'orders': orders.count(), 'total_discounts': _sum(orders, 'discount')},
         'rows': list(orders.values(
             'order_number', 'created_at', 'customer__name', 'created_by__username',
@@ -211,7 +211,7 @@ def sales_rep_custody_report(request):
     if getattr(request.user, 'role', None) == 'sales' and not request.user.is_superuser:
         assignments = assignments.filter(sales_rep=request.user)
     return {
-        'title': 'Sales rep custody report',
+        'title': 'تقرير عهدة المندوبين',
         'summary': {
             'assigned': _sum(assignments, 'quantity_assigned'),
             'sold': _sum(assignments, 'quantity_sold'),
@@ -230,7 +230,7 @@ def sales_rep_collections_report(request):
     if getattr(request.user, 'role', None) == 'sales' and not request.user.is_superuser:
         collections = collections.filter(sales_rep=request.user)
     return {
-        'title': 'Sales rep collections report',
+        'title': 'تقرير تحصيلات المندوبين',
         'summary': {
             'collected': _sum(collections, 'amount'),
             'handed_over': _sum(collections, 'handed_over_amount'),
@@ -245,7 +245,7 @@ def sales_rep_collections_report(request):
 def low_stock_report():
     qs = Stock.objects.select_related('warehouse', 'variant__product').filter(quantity__lte=F('min_quantity')).order_by('quantity')
     return {
-        'title': 'Low stock report',
+        'title': 'المنتجات الناقصة',
         'summary': {'items': qs.count()},
         'rows': list(qs.values('warehouse__name', 'variant__product__name', 'variant__variant_sku', 'quantity', 'min_quantity')[:300]),
     }
@@ -256,7 +256,7 @@ def stale_products_report(days=90):
     sold_variant_ids = OrderItem.objects.filter(order__created_at__gte=cutoff).values('variant_id')
     qs = ProductVariant.objects.select_related('product').exclude(pk__in=sold_variant_ids).filter(is_active=True)
     return {
-        'title': 'Stale products report',
+        'title': 'المنتجات الراكدة',
         'summary': {'days': days, 'variants': qs.count()},
         'rows': list(qs.values('product__name', 'variant_sku', 'barcode', 'product__sku', 'cost_price', 'sale_price')[:300]),
     }
@@ -264,13 +264,15 @@ def stale_products_report(days=90):
 
 def returns_report(request):
     qs = SalesReturn.objects.select_related('order', 'customer', 'created_by')
+    if getattr(request.user, 'role', None) == 'sales' and not request.user.is_superuser:
+        qs = qs.filter(created_by=request.user)
     dates = date_range_from_request(request)
     if dates['parsed_from']:
         qs = qs.filter(created_at__date__gte=dates['parsed_from'])
     if dates['parsed_to']:
         qs = qs.filter(created_at__date__lte=dates['parsed_to'])
     return {
-        'title': 'Returns report',
+        'title': 'تقرير المرتجعات',
         'summary': {'returns': qs.count(), 'refund_amount': _sum(qs, 'refund_amount')},
         'rows': list(qs.values('created_at', 'order__order_number', 'customer__name', 'return_type', 'status', 'refund_amount', 'reason')[:300]),
         'sections': {
@@ -290,7 +292,7 @@ def purchase_report(request):
     if dates['parsed_to']:
         qs = qs.filter(order_date__lte=dates['parsed_to'])
     return {
-        'title': 'Purchase report',
+        'title': 'تقرير المشتريات',
         'summary': {
             'orders': qs.count(),
             'total_amount': _sum(qs, 'total_amount'),
@@ -304,7 +306,7 @@ def purchase_report(request):
 def supplier_dues_report():
     qs = Supplier.objects.filter(is_active=True, current_balance__gt=0).order_by('-current_balance')
     return {
-        'title': 'Supplier dues report',
+        'title': 'مديونيات الموردين',
         'summary': {'suppliers': qs.count(), 'total_due': _sum(qs, 'current_balance')},
         'rows': list(qs.values('name', 'company_name', 'phone', 'opening_balance', 'current_balance')[:300]),
     }

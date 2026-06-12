@@ -1,16 +1,23 @@
 {% extends 'base.html' %}
-{% block title %}تقرير المبيعات اليومية{% endblock %}
+{% block title %}تقرير اليوم{% endblock %}
 {% block content %}
-<div class="page-head"><h1>تقرير المبيعات اليومية</h1></div>
+<div class="page-head"><h1>تقرير اليوم</h1><p class="page-description">ملخص سريع لحركة اليوم حسب صلاحيتك.</p></div>
 {% include 'reports/report_links.html' %}
 <div class="stats-grid">
-    <div class="stat-card"><span>إجمالي اليوم</span><strong>{{ total_sales }}</strong></div>
+    <div class="stat-card"><span>مبيعات اليوم</span><strong>{{ total_sales }}</strong></div>
+    <div class="stat-card"><span>عدد الفواتير</span><strong>{{ orders_count }}</strong></div>
+    <div class="stat-card"><span>المرتجعات</span><strong>{{ returns_total }}</strong></div>
+    <div class="stat-card"><span>عدد المرتجعات</span><strong>{{ returns_count }}</strong></div>
+    <div class="stat-card"><span>تحصيلات العملاء</span><strong>{{ collections_total }}</strong></div>
+    <div class="stat-card"><span>صافي النقدية</span><strong>{{ net_cash }}</strong></div>
     {% if can_view_costs %}
     <div class="stat-card"><span>إجمالي التكلفة</span><strong>{{ total_cost }}</strong></div>
     <div class="stat-card"><span>مجمل الربح</span><strong>{{ gross_profit }}</strong></div>
+    <div class="stat-card"><span>إجمالي المصروفات</span><strong>{{ expenses_total }}</strong></div>
+    <div class="stat-card"><span>مدفوعات الموردين</span><strong>{{ supplier_payments_total }}</strong></div>
     <div class="stat-card"><span>صافي الربح</span><strong>{{ net_profit }}</strong></div>
+    <div class="stat-card"><span>المنتجات الناقصة</span><strong>{{ low_stocks_count }}</strong></div>
     {% endif %}
-    <div class="stat-card"><span>عدد الطلبات</span><strong>{{ orders_count }}</strong></div>
     <div class="stat-card"><span>المدفوع</span><strong>{{ paid_total }}</strong></div>
     <div class="stat-card"><span>المتبقي</span><strong>{{ remaining_total }}</strong></div>
 </div>

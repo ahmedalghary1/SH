@@ -15,7 +15,10 @@
                 <td>{{ color.name }}</td>
                 <td>{{ color.hex_code|default:'-' }}</td>
                 <td>{% if color.hex_code %}<span class="color-swatch" style="background: {{ color.hex_code }}"></span>{% else %}-{% endif %}</td>
-                <td><a class="btn btn-light" href="{% url 'products:color_update' color.pk %}">تعديل</a></td>
+                <td class="actions">
+                    <a class="btn btn-light" href="{% url 'products:color_update' color.pk %}">تعديل</a>
+                    <a class="btn btn-danger" href="{% url 'products:color_delete' color.pk %}">حذف</a>
+                </td>
             </tr>
         {% empty %}
             <tr><td colspan="4">لا توجد ألوان</td></tr>
