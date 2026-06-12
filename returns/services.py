@@ -115,6 +115,11 @@ def add_exchange_item(*, sales_return, old_order_item, new_product_variant, quan
     if quantity > calculate_available_return_quantity(old_order_item):
         raise ValidationError('كمية الاستبدال أكبر من الكمية المتاحة للإرجاع')
 
+    returned_in_this_exchange = sales_return.items.filter(original_order_item=old_order_item).aggregate(v=Sum('quantity'))['v'] or 0
+    already_exchanged = sales_return.exchange_items.filter(old_order_item=old_order_item).aggregate(v=Sum('quantity'))['v'] or 0
+    if already_exchanged + quantity > returned_in_this_exchange:
+        raise ValidationError('كمية الاستبدال أكبر من كمية الصنف المرتجع في هذا المرتجع')
+
     old_unit_price = _line_refund_unit_price(old_order_item)
     new_unit_price = Decimal(str(new_unit_price))
     price_difference = (new_unit_price - old_unit_price) * quantity
@@ -157,6 +162,8 @@ def approve_sales_return(*, sales_return, user):
         raise ValidationError('يمكن اعتماد المرتجع من حالة المسودة فقط')
     if not sales_return.items.exists():
         raise ValidationError('لا يمكن اعتماد مرتجع بدون أصناف')
+    if sales_return.return_type == SalesReturn.TYPE_EXCHANGE and not sales_return.exchange_items.exists():
+        raise ValidationError('لا يمكن اعتماد استبدال بدون أصناف جديدة')
     sales_return.status = SalesReturn.STATUS_APPROVED
     sales_return.approved_by = user
     sales_return.save(update_fields=['status', 'approved_by'])

@@ -358,6 +358,40 @@ class OrderCreateViewTests(TestCase):
         self.assertEqual(order.items.count(), 1)
         self.assertEqual(order.items.get().variant, self.variant)
 
+    def test_create_order_page_exposes_and_saves_discount_percentage(self):
+        self.client.force_login(self.sales)
+
+        response = self.client.get(reverse('orders:create'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="discount_percentage"')
+        self.assertContains(response, 'id="id_discount_percentage"')
+        self.assertContains(response, 'name="document_type"')
+        self.assertNotContains(response, 'discount-percentage-input')
+        self.assertNotContains(response, 'نوع البيع')
+        self.assertNotContains(response, 'خزنة الدفع')
+        self.assertNotContains(response, 'ملاحظات داخلية')
+
+        response = self.client.post(reverse('orders:create'), {
+            'document_type': Order.DOCUMENT_SALE,
+            'order_type': Order.TYPE_B2C,
+            'warehouse': str(self.warehouse.id),
+            'payment_method': Order.METHOD_CASH,
+            'discount_amount': '0',
+            'discount_percentage': '10',
+            'items_json': (
+                f'[{{"variant_id":"{self.variant.id}","warehouse_id":"{self.warehouse.id}",'
+                '"quantity":1,"unit_price":"300.00","discount_amount":0,"discount_percentage":0}}]'
+            ),
+            'action': 'draft',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        order = Order.objects.latest('pk')
+        self.assertEqual(order.discount_percentage, Decimal('10.00'))
+        self.assertEqual(order.discount_amount, Decimal('30.00'))
+        self.assertEqual(order.total, Decimal('270.00'))
+
 
 class OrderDiscountPolicyTests(TestCase):
     def setUp(self):

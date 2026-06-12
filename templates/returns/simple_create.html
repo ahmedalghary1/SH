@@ -14,10 +14,6 @@
                     <label>رقم الفاتورة</label>
                     <input type="text" name="invoice_number" placeholder="مثال: INV-20260606-0001" value="{{ searched_invoice_number }}">
                 </div>
-                <div class="search-group">
-                    <label>اسم العميل / رقم الهاتف</label>
-                    <input type="text" name="customer_search" placeholder="ابحث باسم العميل أو رقم الهاتف">
-                </div>
             </div>
             <button type="submit" class="btn btn-primary btn-large">بحث</button>
         </form>
@@ -92,7 +88,7 @@
                                     <option value="{{ SalesReturnItem.CONDITION_DAMAGED }}" {% if row.condition_value == SalesReturnItem.CONDITION_DAMAGED %}selected{% endif %}>تالف</option>
                                 </select>
                             </td>
-                            <td class="refund-amount">{{ row.refund_amount }}</td>
+                            <td class="refund-amount" data-unit-price="{{ row.unit_price }}">{{ row.refund_amount }}</td>
                         </tr>
                         {% empty %}
                         <tr><td colspan="10">لا توجد أصناف قابلة للإرجاع</td></tr>
@@ -109,23 +105,11 @@
                 </div>
             </div>
 
-            <!-- خيارات متقدمة -->
-            <div class="advanced-options">
-                <button class="advanced-toggle" type="button" data-advanced-toggle aria-expanded="false">
-                    <svg class="ui-icon"><use href="#icon-settings"></use></svg>
-                    خيارات متقدمة
-                    <svg class="ui-icon chevron"><use href="#icon-chevron-down"></use></svg>
-                </button>
-                <div class="advanced-panel" data-advanced-panel aria-hidden="true">
-                    <label>
-                        <span>سبب المرتجع</span>
-                        <input type="text" name="reason" placeholder="سبب المرتجع...">
-                    </label>
-                    <label>
-                        <span>ملاحظات داخلية</span>
-                        <textarea name="notes" placeholder="ملاحظات داخلية..." rows="3"></textarea>
-                    </label>
-                </div>
+            <div class="return-reason-field">
+                <label>
+                    <span>سبب المرتجع</span>
+                    <input type="text" name="reason" placeholder="سبب المرتجع..." value="{{ request.POST.reason }}">
+                </label>
             </div>
 
             <!-- أزرار الإجراءات -->

@@ -9,9 +9,9 @@
 <form method="post" id="order-form" class="cashier-layout">
     {% csrf_token %}
     <input type="hidden" name="items_json" id="items-json" value="[]">
+    {{ form.document_type }}
     {{ form.warehouse }}
     {{ form.order_type }}
-    {{ form.discount_percentage }}
     {{ form.wallet_from_number }}
     {{ form.wallet_to_number }}
 
@@ -131,27 +131,15 @@
 
                 <!-- خيارات متقدمة -->
                 <div class="advanced-options">
-                    <button class="advanced-toggle" type="button" data-advanced-toggle>
+                    <button class="advanced-toggle" type="button" data-advanced-toggle aria-expanded="false">
                         <svg class="ui-icon"><use href="#icon-settings"></use></svg>
                         خيارات متقدمة
                         <svg class="ui-icon chevron"><use href="#icon-chevron-down"></use></svg>
                     </button>
-                    <div class="advanced-panel" data-advanced-panel>
-                        <label>
-                            <span>نوع البيع</span>
-                            {{ form.document_type }}
-                        </label>
-                        <label>
-                            <span>خزنة الدفع</span>
-                            {{ form.cash_account }}
-                        </label>
-                        <label>
-                            <span>ملاحظات داخلية</span>
-                            {{ form.notes }}
-                        </label>
+                    <div class="advanced-panel" data-advanced-panel aria-hidden="true">
                         <label>
                             <span>نسبة الخصم %</span>
-                            <input id="discount-percentage-input" type="number" step="0.1" min="0" max="100" placeholder="0" value="0">
+                            <input id="id_discount_percentage" name="discount_percentage" type="number" step="0.01" min="0" max="100" placeholder="0" value="{{ form.discount_percentage.value|default:'0' }}">
                         </label>
                     </div>
                 </div>

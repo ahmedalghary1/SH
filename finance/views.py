@@ -14,7 +14,7 @@ from config.exports import ExportListMixin
 
 from .forms import CashAccountForm, CustomerCollectionForm, ExpenseForm, SalesRepStatementForm, TransferForm, SupplierPaymentForm
 from .models import CashAccount, PaymentTransaction
-from .services import add_expense, collect_order_payment, record_customer_payment, transfer_between_accounts
+from .services import add_expense, collect_order_payment, delete_transaction, record_customer_payment, record_supplier_payment, transfer_between_accounts
 
 
 class CashDashboardView(ManagerRequiredMixin, TemplateView):
@@ -268,6 +268,16 @@ class PaymentTransactionDeleteView(ManagerDeleteView):
     success_url = reverse_lazy('finance:transactions')
     success_message = 'تم حذف الحركة المالية'
 
+    def form_valid(self, form):
+        success_url = self.get_success_url()
+        try:
+            delete_transaction(payment_transaction=self.get_object(), user=self.request.user)
+            messages.success(self.request, self.success_message)
+            return redirect(success_url)
+        except ValidationError as exc:
+            form.add_error(None, getattr(exc, 'message', str(exc)))
+            return self.form_invalid(form)
+
 
 class ExpenseCreateView(ManagerRequiredMixin, FormView):
     template_name = 'finance/transactions/expense.html'
@@ -288,6 +298,13 @@ class CustomerCollectionView(ManagerRequiredMixin, FormView):
     template_name = 'finance/transactions/collection.html'
     form_class = CustomerCollectionForm
     success_url = reverse_lazy('finance:transactions')
+
+    def get_initial(self):
+        initial = super().get_initial()
+        customer_id = self.request.GET.get('customer')
+        if customer_id:
+            initial['customer'] = customer_id
+        return initial
 
     def form_valid(self, form):
         try:
@@ -343,28 +360,18 @@ class SupplierPaymentView(ManagerRequiredMixin, FormView):
             supplier = form.cleaned_data['supplier']
             amount = form.cleaned_data['amount']
             cash_account = form.cleaned_data['cash_account']
-            
-            # إنشاء معاملة دفع للمورد
-            PaymentTransaction.objects.create(
-                transaction_type=PaymentTransaction.TYPE_SUPPLIER_PAYMENT,
-                direction=PaymentTransaction.DIRECTION_OUT,
+            record_supplier_payment(
+                supplier=supplier,
                 amount=amount,
                 cash_account=cash_account,
-                related_supplier=supplier,
-                related_supplier_name=supplier.name,
+                user=self.request.user,
                 notes=form.cleaned_data.get('notes') or f'دفع للمورد {supplier.name}',
                 transaction_date=form.cleaned_data.get('transaction_date'),
-                created_by=self.request.user,
             )
-            
-            # تحديث رصيد الخزنة
-            cash_account.balance -= amount
-            cash_account.save()
-            
             messages.success(self.request, 'تم تسجيل الدفع للمورد')
             return redirect(self.success_url)
-        except Exception as exc:
-            form.add_error(None, str(exc))
+        except ValidationError as exc:
+            form.add_error(None, getattr(exc, 'message', str(exc)))
             return self.form_invalid(form)
 
 

@@ -79,47 +79,6 @@
         {% if stock_form.quantity.errors %}<small class="error">{{ stock_form.quantity.errors|join:', ' }}</small>{% endif %}
     </label>
 
-    <!-- خيارات متقدمة -->
-    <div class="advanced-options">
-        <button class="advanced-toggle" type="button" data-advanced-toggle aria-expanded="false">
-            <svg class="ui-icon"><use href="#icon-settings"></use></svg>
-            خيارات متقدمة
-            <svg class="ui-icon chevron"><use href="#icon-chevron-down"></use></svg>
-        </button>
-        <div class="advanced-panel" data-advanced-panel aria-hidden="true">
-            <label>
-                <span>{{ product_form.season.label }}</span>
-                {{ product_form.season }}
-                {% if product_form.season.errors %}<small class="error">{{ product_form.season.errors|join:', ' }}</small>{% endif %}
-            </label>
-            <label>
-                <span>{{ product_form.reorder_level.label }}</span>
-                {{ product_form.reorder_level }}
-                {% if product_form.reorder_level.errors %}<small class="error">{{ product_form.reorder_level.errors|join:', ' }}</small>{% endif %}
-            </label>
-            <label>
-                <span>{{ variant_form.wholesale_price.label }}</span>
-                {{ variant_form.wholesale_price }}
-                {% if variant_form.wholesale_price.errors %}<small class="error">{{ variant_form.wholesale_price.errors|join:', ' }}</small>{% endif %}
-            </label>
-            <label>
-                <span>{{ product_form.status.label }}</span>
-                {{ product_form.status }}
-                {% if product_form.status.errors %}<small class="error">{{ product_form.status.errors|join:', ' }}</small>{% endif %}
-            </label>
-            <label>
-                <span>{{ variant_form.barcode.label }}</span>
-                {{ variant_form.barcode }}
-                {% if variant_form.barcode.errors %}<small class="error">{{ variant_form.barcode.errors|join:', ' }}</small>{% endif %}
-            </label>
-            <label>
-                <span>{{ product_form.notes.label }}</span>
-                {{ product_form.notes }}
-                {% if product_form.notes.errors %}<small class="error">{{ product_form.notes.errors|join:', ' }}</small>{% endif %}
-            </label>
-        </div>
-    </div>
-
     <div class="form-actions">
         <button class="btn btn-primary" type="submit"><svg class="ui-icon"><use href="#icon-box"></use></svg>حفظ</button>
         <button class="btn btn-light" type="button" onclick="history.back()">رجوع</button>

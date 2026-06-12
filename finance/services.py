@@ -108,6 +108,28 @@ def record_customer_payment(*, order, customer, amount, user, cash_account=None,
 
 
 @transaction.atomic
+def record_supplier_payment(*, supplier, amount, user, cash_account=None, notes='', transaction_date=None):
+    from purchases.models import Supplier
+
+    amount = _as_decimal(amount)
+    supplier = Supplier.objects.select_for_update().get(pk=supplier.pk)
+    tx = record_transaction(
+        transaction_type=PaymentTransaction.TYPE_SUPPLIER_PAYMENT,
+        direction=PaymentTransaction.DIRECTION_OUT,
+        amount=amount,
+        cash_account=cash_account,
+        related_supplier=supplier,
+        related_supplier_name=str(supplier),
+        notes=notes or f'دفع للمورد {supplier}',
+        created_by=user,
+        transaction_date=transaction_date,
+    )
+    supplier.current_balance = F('current_balance') - amount
+    supplier.save(update_fields=['current_balance'])
+    return tx
+
+
+@transaction.atomic
 def record_order_sale_payment(*, order, user, cash_account=None, notes=''):
     from orders.models import Order
 
@@ -217,6 +239,39 @@ def add_expense(*, amount, cash_account, user, notes='', transaction_date=None):
         notes=notes,
         created_by=user,
         transaction_date=transaction_date,
+    )
+
+
+@transaction.atomic
+def delete_transaction(*, payment_transaction, user=None):
+    tx = PaymentTransaction.objects.select_for_update().select_related('cash_account').get(pk=payment_transaction.pk)
+    account = CashAccount.objects.select_for_update().get(pk=tx.cash_account_id)
+    old_balance = account.balance
+    if tx.direction == PaymentTransaction.DIRECTION_IN:
+        if not account.allow_overdraft and account.balance < tx.amount:
+            raise ValidationError('لا يمكن حذف حركة داخلة لأن رصيد الخزنة الحالي أقل من مبلغ الحركة')
+        account.balance = F('balance') - tx.amount
+    elif tx.direction == PaymentTransaction.DIRECTION_OUT:
+        account.balance = F('balance') + tx.amount
+    else:
+        raise ValidationError('اتجاه الحركة المالية غير صحيح')
+    account.save(update_fields=['balance'])
+    account.refresh_from_db(fields=['balance'])
+    tx_repr = str(tx)
+    tx_pk = tx.pk
+    tx_amount = tx.amount
+    tx.delete()
+
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_DELETE,
+        section=AuditLog.SECTION_FINANCE,
+        model_name='PaymentTransaction',
+        object_id=tx_pk,
+        object_repr=tx_repr,
+        changes_before={'account_balance': str(old_balance)},
+        changes_after={'account_balance': str(account.balance)},
+        notes=f'حذف حركة مالية وعكس أثرها على الخزنة - المبلغ: {tx_amount}',
     )
 
 

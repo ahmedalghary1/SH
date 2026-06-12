@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from accounts.models import User
 from finance.models import CashAccount, PaymentTransaction
+from invoices.models import Invoice
 from orders.models import Order
 from returns.models import SalesReturn
 
@@ -124,6 +125,36 @@ class CustomerCRMViewTests(TestCase):
         self.user = User.objects.create_user(username='sales', password='pass', role=User.ROLE_SALES)
         self.customer = Customer.objects.create(name='View Customer', customer_type=Customer.TYPE_RETAIL, phone='01000000057', created_by=self.user)
         self.client.force_login(self.user)
+
+    def test_simple_customer_detail_opens_with_and_without_invoice(self):
+        order_without_invoice = Order.objects.create(
+            order_number='ORD-CUST-NOINV',
+            order_type=Order.TYPE_B2C,
+            customer=self.customer,
+            status=Order.STATUS_COMPLETED,
+            total=Decimal('100.00'),
+            paid_amount=Decimal('0.00'),
+            remaining_amount=Decimal('100.00'),
+            created_by=self.user,
+        )
+        order_with_invoice = Order.objects.create(
+            order_number='ORD-CUST-INV',
+            order_type=Order.TYPE_B2C,
+            customer=self.customer,
+            status=Order.STATUS_COMPLETED,
+            total=Decimal('200.00'),
+            paid_amount=Decimal('50.00'),
+            remaining_amount=Decimal('150.00'),
+            created_by=self.user,
+        )
+        Invoice.objects.create(order=order_with_invoice, invoice_number='INV-CUST-001')
+
+        response = self.client.get(reverse('customers:simple_detail', kwargs={'pk': self.customer.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, order_without_invoice.order_number)
+        self.assertContains(response, order_with_invoice.order_number)
+        self.assertContains(response, reverse('finance:collection_create'))
 
     def test_create_edit_and_complete_interaction_flow(self):
         create_url = reverse('customers:interaction_create', kwargs={'pk': self.customer.pk})

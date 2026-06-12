@@ -196,6 +196,26 @@ class SalesReturnServiceTests(TestCase):
         with self.assertRaises(ValidationError):
             complete_sales_return(sales_return=sales_return, user=self.user, cash_account=self.cash)
 
+    def test_exchange_rejects_new_quantity_greater_than_returned_quantity(self):
+        sales_return = create_sales_return(order=self.order, return_type=SalesReturn.TYPE_EXCHANGE, reason='Exchange', user=self.user)
+        add_return_item(sales_return=sales_return, original_order_item=self.order_item, quantity=1)
+
+        with self.assertRaises(ValidationError):
+            add_exchange_item(
+                sales_return=sales_return,
+                old_order_item=self.order_item,
+                new_product_variant=self.exchange_variant,
+                quantity=2,
+                new_unit_price=Decimal('380.00'),
+            )
+
+    def test_exchange_requires_new_items_before_approval(self):
+        sales_return = create_sales_return(order=self.order, return_type=SalesReturn.TYPE_EXCHANGE, reason='Exchange', user=self.user)
+        add_return_item(sales_return=sales_return, original_order_item=self.order_item, quantity=1)
+
+        with self.assertRaises(ValidationError):
+            approve_sales_return(sales_return=sales_return, user=self.user)
+
     def test_exchange_with_customer_favor_records_refund_difference(self):
         sales_return = create_sales_return(order=self.order, return_type=SalesReturn.TYPE_EXCHANGE, reason='Exchange', user=self.user)
         add_return_item(sales_return=sales_return, original_order_item=self.order_item, quantity=1)
@@ -250,3 +270,54 @@ class SalesReturnServiceTests(TestCase):
         self.assertEqual(sales_return.order, self.order)
         self.assertEqual(sales_return.items.count(), 1)
         self.assertEqual(sales_return.items.first().quantity, 2)
+
+    def test_simple_return_view_displays_and_records_selected_items(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('returns:simple_create'), data={'invoice_number': self.invoice.invoice_number})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.order.order_number)
+        self.assertContains(response, f'selected_{self.order_item.pk}')
+        self.assertContains(response, 'name="reason"')
+        self.assertNotContains(response, 'customer_search')
+        self.assertNotContains(response, 'advanced-options')
+
+        response = self.client.post(reverse('returns:simple_create'), data={
+            'invoice_number': self.invoice.invoice_number,
+            'return_type': SalesReturn.TYPE_PARTIAL_RETURN,
+            'reason': 'Simple return',
+            f'selected_{self.order_item.pk}': 'on',
+            f'quantity_{self.order_item.pk}': '1',
+            f'condition_{self.order_item.pk}': SalesReturnItem.CONDITION_GOOD,
+            f'return_to_stock_{self.order_item.pk}': 'on',
+        })
+
+        sales_return = SalesReturn.objects.latest('pk')
+        self.assertRedirects(response, reverse('returns:detail', kwargs={'pk': sales_return.pk}))
+        self.assertEqual(sales_return.items.first().quantity, 1)
+
+    def test_simple_exchange_view_displays_and_records_exchange_items(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('returns:simple_exchange'), data={'invoice_number': self.invoice.invoice_number})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.order.order_number)
+        self.assertContains(response, self.exchange_variant.product.name)
+
+        response = self.client.post(reverse('returns:simple_exchange'), data={
+            'invoice_number': self.invoice.invoice_number,
+            'return_type': SalesReturn.TYPE_EXCHANGE,
+            'reason': 'Simple exchange',
+            f'selected_{self.order_item.pk}': 'on',
+            f'quantity_{self.order_item.pk}': '1',
+            'new_product_variant_0': str(self.exchange_variant.pk),
+            'new_quantity_0': '1',
+            'new_price_0': '380.00',
+        })
+
+        sales_return = SalesReturn.objects.latest('pk')
+        self.assertRedirects(response, reverse('returns:detail', kwargs={'pk': sales_return.pk}))
+        self.assertEqual(sales_return.items.count(), 1)
+        self.assertEqual(sales_return.exchange_items.count(), 1)

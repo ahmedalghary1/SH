@@ -84,7 +84,13 @@
                     <tbody>
                         {% for order in orders %}
                         <tr>
-                            <td><a href="{% url 'invoices:detail' order.pk %}">{{ order.order_number }}</a></td>
+                            <td>
+                                {% if order.invoice %}
+                                    <a href="{% url 'invoices:detail' order.invoice.pk %}">{{ order.order_number }}</a>
+                                {% else %}
+                                    <a href="{% url 'orders:detail' order.pk %}">{{ order.order_number }}</a>
+                                {% endif %}
+                            </td>
                             <td>{{ order.created_at|date:'Y-m-d' }}</td>
                             <td>{{ order.total }}</td>
                             <td>{{ order.paid_amount }}</td>
@@ -156,7 +162,7 @@
                 </table>
             </div>
             <div class="form-actions">
-                <a href="{% url 'finance:customer_payment' customer.pk %}" class="btn btn-primary btn-large">تحصيل من العميل</a>
+                <a href="{% url 'finance:collection_create' %}?customer={{ customer.pk }}" class="btn btn-primary btn-large">تحصيل من العميل</a>
             </div>
         </div>
 

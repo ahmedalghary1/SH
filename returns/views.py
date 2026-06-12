@@ -1,18 +1,24 @@
+from decimal import Decimal, InvalidOperation
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Count, Sum
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
+from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.views.generic import DetailView, FormView, ListView, TemplateView, View
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, SalesRequiredMixin
 from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
+from products.models import ProductVariant
 
 from .forms import CompleteReturnForm, ExchangeItemForm, ReturnItemForm, SalesReturnCreateForm
 from .models import SalesReturn, SalesReturnItem
 from .services import (
+    _line_refund_unit_price,
     add_exchange_item,
     add_return_item,
     approve_sales_return,
@@ -69,18 +75,6 @@ class SimpleReturnCreateView(SalesRequiredMixin, FormView):
         if self.request.method == 'GET':
             data = self.request.GET.copy()
             invoice_number = data.get('invoice_number')
-            customer_search = data.get('customer_search')
-            
-            # Handle customer search
-            if customer_search and not invoice_number:
-                # Search by customer name or phone
-                from orders.models import Order
-                orders = Order.objects.filter(
-                    customer__name__icontains=customer_search
-                ).order_by('-created_at').first()
-                if orders:
-                    data['invoice_number'] = orders.order_number
-            
             if invoice_number:
                 data.setdefault('return_type', SalesReturn.TYPE_PARTIAL_RETURN)
                 kwargs['data'] = data
@@ -102,6 +96,8 @@ class SimpleReturnCreateView(SalesRequiredMixin, FormView):
         context['order_preview'] = order
         context['item_rows'] = self._build_item_rows(order) if order else []
         context['condition_choices'] = SalesReturnItem.CONDITION_CHOICES
+        context['SalesReturn'] = SalesReturn
+        context['SalesReturnItem'] = SalesReturnItem
         context['searched_invoice_number'] = (
             self.request.POST.get('invoice_number') or self.request.GET.get('invoice_number') or ''
         )
@@ -114,6 +110,10 @@ class SimpleReturnCreateView(SalesRequiredMixin, FormView):
             posted_quantity = self.request.POST.get(f'quantity_{item.pk}')
             is_post = self.request.method == 'POST'
             unit_price = _line_refund_unit_price(item)
+            try:
+                preview_quantity = Decimal(str(posted_quantity if posted_quantity is not None else available_quantity))
+            except (InvalidOperation, ValueError):
+                preview_quantity = Decimal('0')
             rows.append({
                 'item': item,
                 'available_quantity': available_quantity,
@@ -123,7 +123,7 @@ class SimpleReturnCreateView(SalesRequiredMixin, FormView):
                 'return_to_stock': self.request.POST.get(f'return_to_stock_{item.pk}', 'on') == 'on',
                 'notes_value': self.request.POST.get(f'notes_{item.pk}', ''),
                 'unit_price': unit_price,
-                'refund_amount': (item.total / item.quantity) * (posted_quantity if posted_quantity is not None else available_quantity) if item.quantity > 0 else 0,
+                'refund_amount': unit_price * preview_quantity,
             })
         return rows
 
@@ -223,6 +223,7 @@ class SimpleExchangeCreateView(SalesRequiredMixin, FormView):
         context['order_preview'] = order
         context['item_rows'] = self._build_item_rows(order) if order else []
         context['available_variants'] = ProductVariant.objects.filter(is_active=True).select_related('product', 'color', 'size') if order else []
+        context['SalesReturn'] = SalesReturn
         context['searched_invoice_number'] = (
             self.request.POST.get('invoice_number') or self.request.GET.get('invoice_number') or ''
         )
@@ -334,15 +335,16 @@ class SimpleExchangeCreateView(SalesRequiredMixin, FormView):
                 
                 try:
                     price_val = Decimal(str(price))
-                except ValueError:
+                except (InvalidOperation, ValueError):
                     errors.append(f'سعر المنتج {variant} غير صحيح')
                     continue
                 
                 # Find the corresponding old item
                 old_item = None
                 for row in self._build_item_rows(self.order_preview):
-                    if self.request.POST.get(f'selected_{row.item.pk}') == 'on':
-                        old_item = row.item
+                    row_item = row['item']
+                    if self.request.POST.get(f'selected_{row_item.pk}') == 'on':
+                        old_item = row_item
                         break
                 
                 if not old_item:

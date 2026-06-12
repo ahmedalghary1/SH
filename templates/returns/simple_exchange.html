@@ -96,7 +96,7 @@
                         <select name="new_product_variant_0" class="new-variant-select">
                             <option value="">اختر منتج...</option>
                             {% for variant in available_variants %}
-                            <option value="{{ variant.pk }}" data-price="{{ variant.selling_price }}">{{ variant.product.name }} - {{ variant.color.name }} - {{ variant.size.name }} - {{ variant.selling_price }}</option>
+                            <option value="{{ variant.pk }}" data-price="{{ variant.sale_price }}">{{ variant.product.name }} - {{ variant.color.name }} - {{ variant.size.name }} - {{ variant.sale_price }}</option>
                             {% endfor %}
                         </select>
                         <input type="number" name="new_quantity_0" placeholder="الكمية" class="new-quantity-input" min="1" value="1">
@@ -170,7 +170,7 @@ function addNewItem() {
         <select name="new_product_variant_${newItemIndex}" class="new-variant-select">
             <option value="">اختر منتج...</option>
             {% for variant in available_variants %}
-            <option value="{{ variant.pk }}" data-price="{{ variant.selling_price }}">{{ variant.product.name }} - {{ variant.color.name }} - {{ variant.size.name }} - {{ variant.selling_price }}</option>
+            <option value="{{ variant.pk }}" data-price="{{ variant.sale_price }}">{{ variant.product.name }} - {{ variant.color.name }} - {{ variant.size.name }} - {{ variant.sale_price }}</option>
             {% endfor %}
         </select>
         <input type="number" name="new_quantity_${newItemIndex}" placeholder="الكمية" class="new-quantity-input" min="1" value="1">

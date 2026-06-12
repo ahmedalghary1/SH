@@ -141,7 +141,8 @@
         const afterItems = Math.max(subtotal - itemDiscount, 0);
         const discountInput = document.getElementById("discount-input");
         const orderDiscountAmount = isSample() ? 0 : Number(discountInput?.value || 0);
-        const orderDiscount = Math.min(afterItems, orderDiscountAmount);
+        const orderDiscountPercentage = isSample() ? 0 : Number(generalDiscountPercentage?.value || 0);
+        const orderDiscount = Math.min(afterItems, orderDiscountAmount + (afterItems * orderDiscountPercentage / 100));
         const discount = itemDiscount + orderDiscount;
         const total = Math.max(subtotal - discount, 0);
         document.getElementById("summary-subtotal").textContent = money(subtotal);
@@ -405,6 +406,7 @@
     qtyInput.addEventListener("input", updateLineTotal);
     priceInput.addEventListener("input", updateLineTotal);
     document.getElementById("discount-input")?.addEventListener("input", updateSummary);
+    generalDiscountPercentage?.addEventListener("input", updateSummary);
     invoiceItemSearch?.addEventListener("input", renderItems);
 
     addButton.addEventListener("click", () => {
@@ -499,14 +501,4 @@
     updateDocumentMode();
     updateLineTotal();
 
-    // Advanced Options Toggle
-    const advancedToggle = document.querySelector('[data-advanced-toggle]');
-    const advancedPanel = document.querySelector('[data-advanced-panel]');
-    if (advancedToggle && advancedPanel) {
-        advancedToggle.addEventListener('click', () => {
-            const isExpanded = advancedToggle.getAttribute('aria-expanded') === 'true';
-            advancedToggle.setAttribute('aria-expanded', !isExpanded);
-            advancedPanel.setAttribute('aria-hidden', isExpanded);
-        });
-    }
 })();
