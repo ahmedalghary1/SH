@@ -92,7 +92,6 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -177,12 +176,13 @@ USE_TZ = True
 
 
 # Static and media files
-# On cPanel/Passenger, Apache should serve collected static files and uploaded
-# media from a public directory. Keep uploaded media outside the project code in
-# production so deployments and git pulls do not remove user files.
+# On cPanel/Passenger, Apache serves collected static files and uploaded media
+# directly from public_html. Uploaded media stays outside the project code so
+# deployments and git pulls do not remove user files.
+DEFAULT_PUBLIC_ROOT = BASE_DIR / 'public' if DEBUG else Path('/home/elwsamst/public_html')
 PUBLIC_ROOT = env_path(
     'PUBLIC_ROOT',
-    Path.home() / 'public_html' if (Path.home() / 'public_html').exists() else BASE_DIR / 'public',
+    DEFAULT_PUBLIC_ROOT,
 )
 
 STATIC_URL = env_url('STATIC_URL', 'static/')
@@ -192,8 +192,6 @@ STATIC_SOURCE_DIR = BASE_DIR / 'static'
 STATICFILES_DIRS = []
 if STATIC_SOURCE_DIR.exists() and STATIC_SOURCE_DIR.resolve() != STATIC_ROOT.resolve():
     STATICFILES_DIRS.append(STATIC_SOURCE_DIR)
-
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_MEDIA_URL = 'media/' if DEBUG else 'sh_media/'
 DEFAULT_MEDIA_ROOT = BASE_DIR / 'media' if DEBUG else PUBLIC_ROOT / 'sh_media'
