@@ -9,4 +9,6 @@ staticfiles/
 media/
 logs/
 media/products/
+public/static/
+public/shop_media/
 backups/

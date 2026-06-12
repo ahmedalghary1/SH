@@ -42,6 +42,13 @@ def env_url(name, default):
     return value
 
 
+def env_path(name, default):
+    value = os.environ.get(name)
+    if not value:
+        return Path(default)
+    return Path(value).expanduser()
+
+
 load_dotenv(BASE_DIR / '.env')
 
 
@@ -169,16 +176,29 @@ USE_I18N = True
 USE_TZ = True
 
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/6.0/howto/static-files/
+# Static and media files
+# On cPanel/Passenger, Apache should serve collected static files and uploaded
+# media from a public directory. Keep uploaded media outside the project code in
+# production so deployments and git pulls do not remove user files.
+PUBLIC_ROOT = env_path(
+    'PUBLIC_ROOT',
+    Path.home() / 'public_html' if (Path.home() / 'public_html').exists() else BASE_DIR / 'public',
+)
 
 STATIC_URL = env_url('STATIC_URL', 'static/')
-STATICFILES_DIRS = [BASE_DIR / 'static']
-STATIC_ROOT = BASE_DIR / Path(os.environ.get('STATIC_ROOT', 'staticfiles'))
+STATIC_ROOT = env_path('STATIC_ROOT', PUBLIC_ROOT / 'static')
+
+STATIC_SOURCE_DIR = BASE_DIR / 'static'
+STATICFILES_DIRS = []
+if STATIC_SOURCE_DIR.exists() and STATIC_SOURCE_DIR.resolve() != STATIC_ROOT.resolve():
+    STATICFILES_DIRS.append(STATIC_SOURCE_DIR)
+
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-MEDIA_URL = env_url('MEDIA_URL', 'media/')
-MEDIA_ROOT = BASE_DIR / Path(os.environ.get('MEDIA_ROOT', 'media'))
+DEFAULT_MEDIA_URL = 'media/' if DEBUG else 'shop_media/'
+DEFAULT_MEDIA_ROOT = BASE_DIR / 'media' if DEBUG else PUBLIC_ROOT / 'shop_media'
+MEDIA_URL = env_url('MEDIA_URL', DEFAULT_MEDIA_URL)
+MEDIA_ROOT = env_path('MEDIA_ROOT', DEFAULT_MEDIA_ROOT)
 
 AUTH_USER_MODEL = 'accounts.User'
 LOGIN_URL = 'accounts:login'
