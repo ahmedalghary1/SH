@@ -60,6 +60,18 @@ def env_path(name, default):
     return Path(value).expanduser()
 
 
+def env_paths(name):
+    value = os.environ.get(name, '')
+    paths = []
+    for item in value.split(','):
+        item = item.strip()
+        if not item:
+            continue
+        path = Path(item).expanduser()
+        paths.append(path if path.is_absolute() else BASE_DIR / path)
+    return paths
+
+
 load_dotenv(BASE_DIR / '.env')
 
 
@@ -213,6 +225,10 @@ DEFAULT_MEDIA_ROOT = BASE_DIR / 'media' if DEBUG else PUBLIC_ROOT / 'sh_media'
 MEDIA_URL = env_url('MEDIA_URL', DEFAULT_MEDIA_URL)
 MEDIA_ROOT = env_path('MEDIA_ROOT', DEFAULT_MEDIA_ROOT)
 SERVE_MEDIA_WITH_DJANGO = env_bool('SERVE_MEDIA_WITH_DJANGO', not DEBUG)
+MEDIA_FALLBACK_ROOTS = env_paths('MEDIA_FALLBACK_ROOTS')
+for media_fallback_root in (BASE_DIR / 'media', PUBLIC_ROOT / 'media'):
+    if media_fallback_root.resolve() != MEDIA_ROOT.resolve() and media_fallback_root not in MEDIA_FALLBACK_ROOTS:
+        MEDIA_FALLBACK_ROOTS.append(media_fallback_root)
 
 AUTH_USER_MODEL = 'accounts.User'
 LOGIN_URL = 'accounts:login'

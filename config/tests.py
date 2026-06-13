@@ -255,9 +255,37 @@ class MediaFileServingTests(TestCase):
                     HTTP_HOST='sh.elwsamstore.com',
                     secure=True,
                 )
+                status_code = response.status_code
+                content_type = response['Content-Type']
+                response.close()
 
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response['Content-Type'].startswith('image/jpeg'))
+        self.assertEqual(status_code, 200)
+        self.assertTrue(content_type.startswith('image/jpeg'))
+
+    def test_product_media_image_can_be_served_from_fallback_root(self):
+        with tempfile.TemporaryDirectory() as primary_tmpdir, tempfile.TemporaryDirectory() as fallback_tmpdir:
+            primary_root = Path(primary_tmpdir)
+            fallback_root = Path(fallback_tmpdir)
+            image_path = fallback_root / 'products' / 'images.jpg'
+            image_path.parent.mkdir(parents=True, exist_ok=True)
+            image_path.write_bytes(b'\xff\xd8\xff\xd9')
+
+            with override_settings(
+                MEDIA_ROOT=primary_root,
+                MEDIA_FALLBACK_ROOTS=[fallback_root],
+                SERVE_MEDIA_WITH_DJANGO=True,
+            ):
+                response = self.client.get(
+                    '/sh_media/products/images.jpg',
+                    HTTP_HOST='sh.elwsamstore.com',
+                    secure=True,
+                )
+                status_code = response.status_code
+                content_type = response['Content-Type']
+                response.close()
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(content_type.startswith('image/jpeg'))
 
 
 # ================================================================== #

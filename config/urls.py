@@ -24,9 +24,10 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.contrib.staticfiles.views import serve as staticfiles_serve
 from django.db import connection
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.urls import include, path, re_path
 from django.utils import timezone
+from django.utils._os import safe_join
 from django.views.static import serve as static_serve
 
 
@@ -131,8 +132,30 @@ def _prefix_pattern(url):
     return r'^%s(?P<path>.*)$' % re.escape(url.lstrip('/'))
 
 
+def _media_roots():
+    roots = [Path(settings.MEDIA_ROOT), *getattr(settings, 'MEDIA_FALLBACK_ROOTS', [])]
+    unique_roots = []
+    seen = set()
+    for root in roots:
+        root = Path(root).expanduser()
+        marker = root.resolve()
+        if marker in seen:
+            continue
+        seen.add(marker)
+        unique_roots.append(root)
+    return unique_roots
+
+
 def serve_media_file(request, path):
-    return static_serve(request, path=path, document_root=settings.MEDIA_ROOT)
+    for media_root in _media_roots():
+        try:
+            candidate = Path(safe_join(media_root, path))
+        except ValueError as exc:
+            raise Http404('Media file not found') from exc
+        if candidate.is_file():
+            return static_serve(request, path=path, document_root=media_root)
+    raise Http404('Media file not found')
+
 
 
 static_urlpatterns = []
