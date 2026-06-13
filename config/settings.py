@@ -140,19 +140,16 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 
+import os
 
 DATABASES = {
-    'default': {
-        'ENGINE': os.environ.get('DJANGO_DB_ENGINE', 'django.db.backends.mysql'),
-        'NAME': os.environ.get('DJANGO_DB_NAME', 'elwsamst_system'),
-        'USER': os.environ.get('DJANGO_DB_USER', 'elwsamst_sh'),
-        'PASSWORD': os.environ.get('DJANGO_DB_PASSWORD', 'elwsam@100'),
-        'HOST': os.environ.get('DJANGO_DB_HOST', '127.0.0.1'),
-        'PORT': os.environ.get('DJANGO_DB_PORT', '3306'),
-        'OPTIONS': {
-            'charset': 'utf8mb4',
-            'init_command': "SET NAMES 'utf8mb4'"
-        },
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME":  "elwsamst_sh",
+        "USER": "elwsamst_system",
+        "PASSWORD": "ahmed01552810113",
+        "HOST": "localhost",
+        "PORT": 5432,
     }
 }
 # Password validation
