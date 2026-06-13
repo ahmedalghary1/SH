@@ -21,11 +21,11 @@ from pathlib import Path
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.contrib.staticfiles.views import serve as staticfiles_serve
 from django.db import connection
 from django.http import JsonResponse
 from django.urls import include, path, re_path
 from django.utils import timezone
-from django.views.static import serve as static_serve
 
 
 def _check_database():
@@ -125,7 +125,19 @@ def health_check(request):
 
     return JsonResponse(payload, status=http_status)
 
-urlpatterns = [
+static_urlpatterns = []
+if settings.SERVE_STATIC_WITH_DJANGO:
+    static_urlpatterns = [
+        re_path(
+            r'^static/(?P<path>.*)$',
+            staticfiles_serve,
+            {'insecure': True},
+        ),
+    ]
+elif settings.DEBUG:
+    static_urlpatterns = static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+
+urlpatterns = static_urlpatterns + [
     path('health/', health_check, name='health_check'),
     path('admin/', admin.site.urls),
     path('', include('dashboard.urls')),
@@ -144,14 +156,5 @@ urlpatterns = [
     path('audit/', include('audit.urls')),
 ]
 
-if settings.SERVE_STATIC_WITH_DJANGO:
-    urlpatterns += [
-        re_path(
-            r'^static/(?P<path>.*)$',
-            static_serve,
-            {'document_root': settings.STATIC_SOURCE_DIR},
-        ),
-    ]
-elif settings.DEBUG:
-    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

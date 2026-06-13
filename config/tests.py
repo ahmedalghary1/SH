@@ -216,6 +216,32 @@ class HealthCheckTests(TestCase):
 
 
 # ================================================================== #
+#  Static File Serving Tests                                         #
+# ================================================================== #
+
+class StaticFileServingTests(TestCase):
+    def test_main_css_returns_css_mime_type(self):
+        response = self.client.get(
+            '/static/css/main.css',
+            HTTP_HOST='sh.elwsamstore.com',
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response['Content-Type'].startswith('text/css'))
+
+    def test_main_js_returns_javascript_mime_type(self):
+        response = self.client.get(
+            '/static/js/main.js',
+            HTTP_HOST='sh.elwsamstore.com',
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('javascript', response['Content-Type'])
+
+
+# ================================================================== #
 #  Backup Command Tests                                              #
 # ================================================================== #
 
@@ -378,4 +404,3 @@ class BackupCommandTests(TestCase):
                 exit_code = e.code
         self.assertEqual(exit_code, 1)
         self.assertIn('Unsupported', cmd.stderr.getvalue())
-
