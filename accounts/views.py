@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.views import LoginView, LogoutView
 from django.utils.decorators import method_decorator
@@ -37,6 +38,12 @@ class AppLoginView(LoginView):
         """Log failed authentication attempts."""
         log_failed_login(self.request, reason='invalid_credentials')
         return super().form_invalid(form)
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        self.request.session.set_expiry(settings.SESSION_COOKIE_AGE)
+        self.request.session.modified = True
+        return response
 
 
 class AppLogoutView(LogoutView):
