@@ -1,3 +1,8 @@
+import pymysql
+# Override the version reported to Django
+pymysql.version_info = (2, 2, 1, "final", 0)
+pymysql.install_as_MySQLdb()
+
 import importlib.util
 import os
 from pathlib import Path
@@ -135,30 +140,21 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-if os.environ.get('DB_ENGINE', '').lower() in {'postgres', 'postgresql'} or os.environ.get('POSTGRES_DB'):
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ.get('POSTGRES_DB', os.environ.get('DB_NAME', 'sh_erp')),
-            'USER': os.environ.get('POSTGRES_USER', os.environ.get('DB_USER', 'postgres')),
-            'PASSWORD': os.environ.get('POSTGRES_PASSWORD', os.environ.get('DB_PASSWORD', '')),
-            'HOST': os.environ.get('POSTGRES_HOST', os.environ.get('DB_HOST', 'localhost')),
-            'PORT': os.environ.get('POSTGRES_PORT', os.environ.get('DB_PORT', '5432')),
-            'CONN_MAX_AGE': int(os.environ.get('DB_CONN_MAX_AGE', '60')),
-        }
+DATABASES = {
+    'default': {
+        'ENGINE': os.environ.get('DJANGO_DB_ENGINE', 'django.db.backends.mysql'),
+        'NAME': os.environ.get('DJANGO_DB_NAME', 'elwsamst_system'),
+        'USER': os.environ.get('DJANGO_DB_USER', 'elwsamst_sh'),
+        'PASSWORD': os.environ.get('DJANGO_DB_PASSWORD', 'elwsam@100'),
+        'HOST': os.environ.get('DJANGO_DB_HOST', '127.0.0.1'),
+        'PORT': os.environ.get('DJANGO_DB_PORT', '3306'),
+        'OPTIONS': {
+            'charset': 'utf8mb4',
+            'init_command': "SET NAMES 'utf8mb4'"
+        },
     }
-else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': os.environ.get('SQLITE_NAME', BASE_DIR / 'db.sqlite3'),
-        }
-    }
-
-
+}
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 
