@@ -16,6 +16,7 @@ Including another URLconf
 """
 import shutil
 import tempfile
+import re
 from pathlib import Path
 
 from django.conf import settings
@@ -26,6 +27,7 @@ from django.db import connection
 from django.http import JsonResponse
 from django.urls import include, path, re_path
 from django.utils import timezone
+from django.views.static import serve as static_serve
 
 
 def _check_database():
@@ -125,11 +127,19 @@ def health_check(request):
 
     return JsonResponse(payload, status=http_status)
 
+def _prefix_pattern(url):
+    return r'^%s(?P<path>.*)$' % re.escape(url.lstrip('/'))
+
+
+def serve_media_file(request, path):
+    return static_serve(request, path=path, document_root=settings.MEDIA_ROOT)
+
+
 static_urlpatterns = []
 if settings.SERVE_STATIC_WITH_DJANGO:
     static_urlpatterns = [
         re_path(
-            r'^static/(?P<path>.*)$',
+            _prefix_pattern(settings.STATIC_URL),
             staticfiles_serve,
             {'insecure': True},
         ),
@@ -137,7 +147,16 @@ if settings.SERVE_STATIC_WITH_DJANGO:
 elif settings.DEBUG:
     static_urlpatterns = static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 
-urlpatterns = static_urlpatterns + [
+media_urlpatterns = []
+if settings.SERVE_MEDIA_WITH_DJANGO:
+    media_urlpatterns = [
+        re_path(
+            _prefix_pattern(settings.MEDIA_URL),
+            serve_media_file,
+        ),
+    ]
+
+urlpatterns = static_urlpatterns + media_urlpatterns + [
     path('health/', health_check, name='health_check'),
     path('admin/', admin.site.urls),
     path('', include('dashboard.urls')),

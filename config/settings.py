@@ -203,6 +203,7 @@ DEFAULT_MEDIA_URL = 'media/' if DEBUG else 'sh_media/'
 DEFAULT_MEDIA_ROOT = BASE_DIR / 'media' if DEBUG else PUBLIC_ROOT / 'sh_media'
 MEDIA_URL = env_url('MEDIA_URL', DEFAULT_MEDIA_URL)
 MEDIA_ROOT = env_path('MEDIA_ROOT', DEFAULT_MEDIA_ROOT)
+SERVE_MEDIA_WITH_DJANGO = env_bool('SERVE_MEDIA_WITH_DJANGO', not DEBUG)
 
 AUTH_USER_MODEL = 'accounts.User'
 LOGIN_URL = 'accounts:login'

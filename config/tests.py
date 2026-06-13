@@ -241,6 +241,25 @@ class StaticFileServingTests(TestCase):
         self.assertIn('javascript', response['Content-Type'])
 
 
+class MediaFileServingTests(TestCase):
+    def test_product_media_image_returns_image_mime_type(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            media_root = Path(tmpdir)
+            image_path = media_root / 'products' / 'images.jpg'
+            image_path.parent.mkdir(parents=True, exist_ok=True)
+            image_path.write_bytes(b'\xff\xd8\xff\xd9')
+
+            with override_settings(MEDIA_ROOT=media_root, SERVE_MEDIA_WITH_DJANGO=True):
+                response = self.client.get(
+                    '/sh_media/products/images.jpg',
+                    HTTP_HOST='sh.elwsamstore.com',
+                    secure=True,
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response['Content-Type'].startswith('image/jpeg'))
+
+
 # ================================================================== #
 #  PDF Arabic Rendering Tests                                        #
 # ================================================================== #
