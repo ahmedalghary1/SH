@@ -1,5 +1,8 @@
 from django.contrib import messages
 from django.contrib.auth.views import LoginView, LogoutView
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import never_cache
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, ListView, UpdateView, View
@@ -14,6 +17,8 @@ from .models import User
 from .permissions import ManagerRequiredMixin
 
 
+@method_decorator(ensure_csrf_cookie, name='dispatch')
+@method_decorator(never_cache, name='dispatch')
 class AppLoginView(LoginView):
     template_name = 'accounts/login.html'
     authentication_form = ArabicAuthenticationForm
