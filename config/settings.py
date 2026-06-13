@@ -201,15 +201,14 @@ PUBLIC_ROOT = env_path(
 )
 
 STATIC_URL = env_url('STATIC_URL', 'static/')
-STATIC_ROOT = env_path('STATIC_ROOT', BASE_DIR / 'staticfiles')
-if USE_WHITENOISE:
-    STATIC_ROOT.mkdir(parents=True, exist_ok=True)
+STATIC_ROOT = env_path('STATIC_ROOT', PUBLIC_ROOT / 'static')
 
 STATIC_SOURCE_DIR = BASE_DIR / 'static'
 STATICFILES_DIRS = []
 if STATIC_SOURCE_DIR.exists() and STATIC_SOURCE_DIR.resolve() != STATIC_ROOT.resolve():
     STATICFILES_DIRS.append(STATIC_SOURCE_DIR)
 WHITENOISE_USE_FINDERS = env_bool('WHITENOISE_USE_FINDERS', USE_WHITENOISE)
+SERVE_STATIC_WITH_DJANGO = env_bool('SERVE_STATIC_WITH_DJANGO', False)
 
 DEFAULT_MEDIA_URL = 'media/' if DEBUG else 'sh_media/'
 DEFAULT_MEDIA_ROOT = BASE_DIR / 'media' if DEBUG else PUBLIC_ROOT / 'sh_media'
