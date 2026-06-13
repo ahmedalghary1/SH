@@ -61,10 +61,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-local-development-key
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env_bool('DEBUG', True)
 
-ALLOWED_HOSTS = env_list('ALLOWED_HOSTS', '127.0.0.1,localhost,192.168.1.19')
-CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS')
-
-
+ALLOWED_HOSTS = ['sh.elwsamstore.com','localhost','192.168.1.19']
 # Application definition
 
 INSTALLED_APPS = [
@@ -205,15 +202,7 @@ LOGOUT_REDIRECT_URL = 'accounts:login'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-SESSION_COOKIE_SECURE = env_bool('SESSION_COOKIE_SECURE', not DEBUG)
-CSRF_COOKIE_SECURE = env_bool('CSRF_COOKIE_SECURE', not DEBUG)
-SECURE_SSL_REDIRECT = env_bool('SECURE_SSL_REDIRECT', False)
-SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '0' if DEBUG else '31536000'))
-SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', not DEBUG)
-SECURE_HSTS_PRELOAD = env_bool('SECURE_HSTS_PRELOAD', False)
-X_FRAME_OPTIONS = os.environ.get('X_FRAME_OPTIONS', 'DENY')
-SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_BROWSER_XSS_FILTER = True
+
 
 LOG_DIR = Path(os.environ.get('LOG_DIR', BASE_DIR / 'logs'))
 LOG_DIR.mkdir(exist_ok=True)
