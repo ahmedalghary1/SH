@@ -1,3 +1,4 @@
+import importlib.util
 import os
 from pathlib import Path
 
@@ -65,11 +66,15 @@ DEBUG = env_bool('DEBUG', False)
 
 ALLOWED_HOSTS = env_list(
     'ALLOWED_HOSTS',
-    'sh.elwsamstore.com,localhost,127.0.0.1',
+    'sh.elwsamstore.com,www.sh.elwsamstore.com,localhost,127.0.0.1',
 )
 CSRF_TRUSTED_ORIGINS = env_list(
     'CSRF_TRUSTED_ORIGINS',
-    'https://sh.elwsamstore.com',
+    'https://sh.elwsamstore.com,https://www.sh.elwsamstore.com',
+)
+USE_WHITENOISE = (
+    env_bool('USE_WHITENOISE', not DEBUG)
+    and importlib.util.find_spec('whitenoise') is not None
 )
 # Application definition
 
@@ -98,6 +103,10 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+]
+if USE_WHITENOISE:
+    MIDDLEWARE.append('whitenoise.middleware.WhiteNoiseMiddleware')
+MIDDLEWARE += [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -182,9 +191,9 @@ USE_TZ = True
 
 
 # Static and media files
-# On cPanel/Passenger, Apache serves collected static files and uploaded media
-# directly from public_html. Uploaded media stays outside the project code so
-# deployments and git pulls do not remove user files.
+# On cPanel/Passenger, uploaded media stays outside the project code so
+# deployments and git pulls do not remove user files. Static files can be
+# served by Apache from STATIC_ROOT or by WhiteNoise from the Django app.
 DEFAULT_PUBLIC_ROOT = BASE_DIR / 'public' if DEBUG else Path('/home/elwsamst/public_html')
 PUBLIC_ROOT = env_path(
     'PUBLIC_ROOT',
@@ -192,12 +201,15 @@ PUBLIC_ROOT = env_path(
 )
 
 STATIC_URL = env_url('STATIC_URL', 'static/')
-STATIC_ROOT = env_path('STATIC_ROOT', PUBLIC_ROOT / 'static')
+STATIC_ROOT = env_path('STATIC_ROOT', BASE_DIR / 'staticfiles')
+if USE_WHITENOISE:
+    STATIC_ROOT.mkdir(parents=True, exist_ok=True)
 
 STATIC_SOURCE_DIR = BASE_DIR / 'static'
 STATICFILES_DIRS = []
 if STATIC_SOURCE_DIR.exists() and STATIC_SOURCE_DIR.resolve() != STATIC_ROOT.resolve():
     STATICFILES_DIRS.append(STATIC_SOURCE_DIR)
+WHITENOISE_USE_FINDERS = env_bool('WHITENOISE_USE_FINDERS', USE_WHITENOISE)
 
 DEFAULT_MEDIA_URL = 'media/' if DEBUG else 'sh_media/'
 DEFAULT_MEDIA_ROOT = BASE_DIR / 'media' if DEBUG else PUBLIC_ROOT / 'sh_media'
@@ -215,8 +227,10 @@ SESSION_COOKIE_SECURE = env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = env_bool('CSRF_COOKIE_SECURE', not DEBUG)
 SESSION_COOKIE_SAMESITE = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
 CSRF_COOKIE_SAMESITE = os.environ.get('CSRF_COOKIE_SAMESITE', 'Lax')
+SESSION_COOKIE_DOMAIN = os.environ.get('SESSION_COOKIE_DOMAIN') or None
+CSRF_COOKIE_DOMAIN = os.environ.get('CSRF_COOKIE_DOMAIN') or None
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-SECURE_SSL_REDIRECT = env_bool('SECURE_SSL_REDIRECT', False)
+SECURE_SSL_REDIRECT = env_bool('SECURE_SSL_REDIRECT', not DEBUG)
 SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '0'))
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', False)
 SECURE_HSTS_PRELOAD = env_bool('SECURE_HSTS_PRELOAD', False)

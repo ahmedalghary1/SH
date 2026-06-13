@@ -48,7 +48,11 @@ class EnvironmentSettingHelperTests(SimpleTestCase):
 
 class LoginCsrfCookieTests(TestCase):
     def test_login_page_sets_csrf_cookie(self):
-        response = self.client.get(reverse('accounts:login'), HTTP_HOST='sh.elwsamstore.com')
+        response = self.client.get(
+            reverse('accounts:login'),
+            HTTP_HOST='sh.elwsamstore.com',
+            secure=True,
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('csrftoken', response.cookies)
@@ -56,7 +60,7 @@ class LoginCsrfCookieTests(TestCase):
     def test_login_post_with_csrf_cookie_is_not_rejected(self):
         client = Client(enforce_csrf_checks=True)
         login_url = reverse('accounts:login')
-        get_response = client.get(login_url, HTTP_HOST='sh.elwsamstore.com')
+        get_response = client.get(login_url, HTTP_HOST='sh.elwsamstore.com', secure=True)
         csrf_token = get_response.cookies['csrftoken'].value
 
         response = client.post(
@@ -67,6 +71,8 @@ class LoginCsrfCookieTests(TestCase):
                 'csrfmiddlewaretoken': csrf_token,
             },
             HTTP_HOST='sh.elwsamstore.com',
+            HTTP_REFERER='https://sh.elwsamstore.com/accounts/login/',
+            secure=True,
         )
 
         self.assertEqual(response.status_code, 200)
