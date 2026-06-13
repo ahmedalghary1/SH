@@ -133,7 +133,7 @@ def record_supplier_payment(*, supplier, amount, user, cash_account=None, notes=
 def record_order_sale_payment(*, order, user, cash_account=None, notes=''):
     from orders.models import Order
 
-    order = Order.objects.select_for_update().select_related('customer').get(pk=order.pk)
+    order = Order.objects.select_for_update().get(pk=order.pk)
     target_amount = Decimal(str(order.total or 0))
     if target_amount <= 0:
         return None
@@ -171,7 +171,7 @@ def record_order_sale_payment(*, order, user, cash_account=None, notes=''):
 
 @transaction.atomic
 def record_order_refund(*, order, user, cash_account=None, amount=None, notes=''):
-    order = order.__class__.objects.select_for_update().select_related('customer').get(pk=order.pk)
+    order = order.__class__.objects.select_for_update().get(pk=order.pk)
     incoming = PaymentTransaction.objects.filter(
         related_order=order,
         transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,

@@ -11,7 +11,13 @@ from orders.models import Order
 from purchases.models import Supplier
 
 from .models import CashAccount, PaymentTransaction
-from .services import add_expense, collect_order_payment, record_customer_payment, transfer_between_accounts
+from .services import (
+    add_expense,
+    collect_order_payment,
+    record_customer_payment,
+    record_order_sale_payment,
+    transfer_between_accounts,
+)
 
 
 class FinanceServiceTests(TestCase):
@@ -54,6 +60,27 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(self.order.paid_amount, Decimal('300.00'))
         self.assertEqual(self.order.remaining_amount, Decimal('200.00'))
         self.assertEqual(self.cash.balance, Decimal('1200.00'))
+
+    def test_record_order_sale_payment_accepts_nullable_customer(self):
+        order = Order.objects.create(
+            order_number='ORD-FIN-NO-CUSTOMER',
+            order_type=Order.TYPE_B2C,
+            customer=None,
+            warehouse=self.warehouse,
+            total=Decimal('250.00'),
+            created_by=self.user,
+        )
+
+        tx = record_order_sale_payment(order=order, cash_account=self.cash, user=self.user)
+        order.refresh_from_db()
+        self.cash.refresh_from_db()
+
+        self.assertIsNotNone(tx)
+        self.assertIsNone(tx.related_customer)
+        self.assertEqual(order.paid_amount, Decimal('250.00'))
+        self.assertEqual(order.remaining_amount, Decimal('0'))
+        self.assertEqual(order.payment_status, Order.PAYMENT_PAID)
+        self.assertEqual(self.cash.balance, Decimal('1250.00'))
 
     def test_transfer_between_accounts_moves_balance(self):
         transfer_between_accounts(from_account=self.cash, to_account=self.bank, amount=Decimal('300.00'), user=self.user)

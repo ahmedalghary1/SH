@@ -465,7 +465,7 @@ def ajax_search_customers(request):
 @require_POST
 @sales_required
 def ajax_quick_create_customer(request):
-    form = CustomerForm(request.POST)
+    form = SimpleCustomerForm(request.POST)
     if form.is_valid():
         customer = form.save(commit=False)
         customer.created_by = request.user

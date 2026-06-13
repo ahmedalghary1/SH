@@ -207,13 +207,16 @@
 
     async function fetchJson(url, options = {}) {
         try {
+            const headers = {
+                'X-CSRFToken': getCookie('csrftoken'),
+                ...options.headers,
+            };
+            if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+                headers['Content-Type'] = 'application/json';
+            }
             const response = await fetch(url, {
                 ...options,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCookie('csrftoken'),
-                    ...options.headers,
-                },
+                headers,
             });
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
