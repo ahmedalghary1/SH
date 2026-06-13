@@ -242,6 +242,25 @@ class StaticFileServingTests(TestCase):
 
 
 # ================================================================== #
+#  PDF Arabic Rendering Tests                                        #
+# ================================================================== #
+
+class PDFArabicRenderingTests(TestCase):
+    def test_pdf_uses_arabic_capable_font(self):
+        from config.pdf_utils import register_arabic_font
+
+        font_name = register_arabic_font()
+
+        self.assertNotEqual(font_name, 'Helvetica')
+        self.assertIn('NotoNaskhArabic', font_name)
+
+    def test_pdf_arabic_text_is_shaped_for_rtl_display(self):
+        from config.pdf_utils import shape_arabic
+
+        self.assertNotEqual(shape_arabic('تقرير العملاء'), 'تقرير العملاء')
+
+
+# ================================================================== #
 #  Backup Command Tests                                              #
 # ================================================================== #
 
