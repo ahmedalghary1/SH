@@ -55,9 +55,8 @@ def create_sales_return(*, order, return_type, reason='', user):
     
     return sales_return
 
-
 @transaction.atomic
-def add_return_item(*, sales_return, original_order_item, quantity, condition=SalesReturnItem.CONDITION_GOOD, return_to_stock=True, notes=''):
+def add_return_item(*, sales_return, original_order_item, quantity, condition='good', return_to_stock=True, notes=''):
     sales_return = SalesReturn.objects.select_for_update().get(pk=sales_return.pk)
     if sales_return.status != SalesReturn.STATUS_DRAFT:
         raise ValidationError('يمكن تعديل المرتجع في حالة المسودة فقط')
