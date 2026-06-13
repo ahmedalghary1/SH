@@ -659,11 +659,11 @@ class Command(BaseCommand):
             # Update payment status
             if order.status != Order.STATUS_DRAFT and order.document_type != Order.DOCUMENT_QUOTE:
                 if random.random() > 0.3:
-                    order.payment_status = Order.STATUS_PAID
+                    order.payment_status = Order.PAYMENT_PAID
                     order.paid_amount = order.total
                     order.remaining_amount = Decimal('0')
                 elif random.random() > 0.5:
-                    order.payment_status = Order.STATUS_PARTIAL
+                    order.payment_status = Order.PAYMENT_PARTIAL
                     order.paid_amount = order.total * Decimal(random.uniform(0.3, 0.7))
                     order.remaining_amount = order.total - order.paid_amount
                 order.save()

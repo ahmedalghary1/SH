@@ -136,18 +136,33 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 
-import os
+# Database
+# PostgreSQL is selected when DB_ENGINE=postgres/postgresql or DB_NAME/POSTGRES_DB
+# is provided. Otherwise SQLite is kept for local development.
+USE_POSTGRES = (
+    os.environ.get('DB_ENGINE', '').lower() in {'postgres', 'postgresql'}
+    or bool(os.environ.get('DB_NAME') or os.environ.get('POSTGRES_DB'))
+)
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME":  "elwsamst_sh",
-        "USER": "elwsamst_system",
-        "PASSWORD": "ahmed01552810113",
-        "HOST": "localhost",
-        "PORT": 5432,
+if USE_POSTGRES:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ.get('DB_NAME', os.environ.get('POSTGRES_DB', '')),
+            'USER': os.environ.get('DB_USER', os.environ.get('POSTGRES_USER', '')),
+            'PASSWORD': os.environ.get('DB_PASSWORD', os.environ.get('POSTGRES_PASSWORD', '')),
+            'HOST': os.environ.get('DB_HOST', os.environ.get('POSTGRES_HOST', 'localhost')),
+            'PORT': os.environ.get('DB_PORT', os.environ.get('POSTGRES_PORT', '5432')),
+            'CONN_MAX_AGE': int(os.environ.get('DB_CONN_MAX_AGE', '60')),
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': os.environ.get('SQLITE_NAME', BASE_DIR / 'db.sqlite3'),
+        }
+    }
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 
