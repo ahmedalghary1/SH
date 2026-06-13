@@ -52,20 +52,20 @@ class SalesReturn(models.Model):
 
 
 class SalesReturnItem(models.Model):
-    CONDITION_GOOD = 'good'
-    CONDITION_DAMAGED = 'damaged'
-    CONDITION_NEEDS_REVIEW = 'needs_review'
-    CONDITION_CHOICES = [
-        (CONDITION_GOOD, 'سليم'),
-        (CONDITION_DAMAGED, 'تالف'),
-        (CONDITION_NEEDS_REVIEW, 'يحتاج مراجعة'),
+    check_GOOD = 'good'
+    check_DAMAGED = 'damaged'
+    check_NEEDS_REVIEW = 'needs_review'
+    check_CHOICES = [
+        (check_GOOD, 'سليم'),
+        (check_DAMAGED, 'تالف'),
+        (check_NEEDS_REVIEW, 'يحتاج مراجعة'),
     ]
 
     sales_return = models.ForeignKey(SalesReturn, on_delete=models.CASCADE, related_name='items')
     original_order_item = models.ForeignKey(OrderItem, on_delete=models.PROTECT, related_name='return_items')
     product_variant = models.ForeignKey(ProductVariant, on_delete=models.PROTECT, related_name='return_items')
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
-    condition = models.CharField(max_length=30, choices=CONDITION_CHOICES, default=CONDITION_GOOD, db_index=True)
+    check = models.CharField(max_length=30, choices=check_CHOICES, default=check_GOOD, db_index=True)
     return_to_stock = models.BooleanField(default=True)
     refund_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     notes = models.TextField(blank=True, null=True)
