@@ -1,4 +1,5 @@
-from django.test import SimpleTestCase
+from django.test import Client, SimpleTestCase, TestCase
+from django.urls import reverse
 
 from .models import User
 from .permissions import can_manage_purchases, can_view_costs, has_role
@@ -37,3 +38,35 @@ class EnvironmentSettingHelperTests(SimpleTestCase):
         os.environ['ERP_TEST_LIST'] = 'localhost, example.com,'
         self.assertEqual(env_list('ERP_TEST_LIST'), ['localhost', 'example.com'])
         os.environ.pop('ERP_TEST_LIST', None)
+
+    def test_env_list_uses_default_for_empty_values(self):
+        import os
+        os.environ['ERP_TEST_EMPTY_LIST'] = ''
+        self.assertEqual(env_list('ERP_TEST_EMPTY_LIST', 'example.com'), ['example.com'])
+        os.environ.pop('ERP_TEST_EMPTY_LIST', None)
+
+
+class LoginCsrfCookieTests(TestCase):
+    def test_login_page_sets_csrf_cookie(self):
+        response = self.client.get(reverse('accounts:login'), HTTP_HOST='sh.elwsamstore.com')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('csrftoken', response.cookies)
+
+    def test_login_post_with_csrf_cookie_is_not_rejected(self):
+        client = Client(enforce_csrf_checks=True)
+        login_url = reverse('accounts:login')
+        get_response = client.get(login_url, HTTP_HOST='sh.elwsamstore.com')
+        csrf_token = get_response.cookies['csrftoken'].value
+
+        response = client.post(
+            login_url,
+            {
+                'username': 'missing-user',
+                'password': 'bad-password',
+                'csrfmiddlewaretoken': csrf_token,
+            },
+            HTTP_HOST='sh.elwsamstore.com',
+        )
+
+        self.assertEqual(response.status_code, 200)
