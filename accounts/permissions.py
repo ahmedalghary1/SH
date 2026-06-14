@@ -10,9 +10,13 @@ from config.security_logger import log_permission_denied
 def has_role(user, *roles):
     if not user.is_authenticated:
         return False
-    if user.is_superuser or getattr(user, 'role', None) == 'manager':
+    if user.is_superuser or getattr(user, 'role', None) in {'manager', 'director'}:
         return True
     return getattr(user, 'role', None) in roles
+
+
+def can_hard_delete(user):
+    return bool(user.is_authenticated and (user.is_superuser or getattr(user, 'role', None) == 'manager'))
 
 
 def is_manager(user):

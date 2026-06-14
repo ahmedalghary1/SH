@@ -59,6 +59,7 @@
                     </div>
                     <div class="product-stats">
                         <span class="quantity">{{ product.total_quantity|default:0 }} قطعة</span>
+                        <span class="quantity">{{ product.pieces_per_dozen }} قطعة/دستة</span>
                         <span class="status {% if product.is_active %}active{% else %}inactive{% endif %}">
                             {% if product.is_active %}نشط{% else %}متوقف{% endif %}
                         </span>
@@ -68,7 +69,9 @@
                     <a class="btn btn-primary" href="{% url 'products:detail' product.pk %}">عرض</a>
                     {% if request.user.is_manager %}
                         <a class="btn btn-light" href="{% url 'products:update' product.pk %}">تعديل</a>
-                        <a class="btn btn-danger" href="{% url 'products:delete' product.pk %}">حذف</a>
+                        {% if request.user.can_hard_delete %}
+                            <a class="btn btn-danger" href="{% url 'products:delete' product.pk %}">حذف</a>
+                        {% endif %}
                     {% endif %}
                 </div>
             </div>

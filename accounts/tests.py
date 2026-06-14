@@ -2,7 +2,7 @@ from django.test import Client, SimpleTestCase, TestCase
 from django.urls import reverse
 
 from .models import User
-from .permissions import can_manage_purchases, can_view_costs, has_role
+from .permissions import can_hard_delete, can_manage_purchases, can_view_costs, has_role
 from config.settings import env_bool, env_list
 
 
@@ -23,6 +23,20 @@ class PermissionHelperTests(SimpleTestCase):
         user = User(username='admin', role=User.ROLE_SALES, is_superuser=True)
 
         self.assertTrue(has_role(user, User.ROLE_WAREHOUSE))
+
+    def test_director_has_manager_permissions_without_hard_delete(self):
+        user = User(username='director', role=User.ROLE_DIRECTOR)
+
+        self.assertTrue(user.is_manager)
+        self.assertTrue(can_view_costs(user))
+        self.assertTrue(can_manage_purchases(user))
+        self.assertTrue(has_role(user, User.ROLE_WAREHOUSE))
+        self.assertFalse(can_hard_delete(user))
+
+    def test_system_manager_can_hard_delete(self):
+        user = User(username='manager', role=User.ROLE_MANAGER)
+
+        self.assertTrue(can_hard_delete(user))
 
 
 class EnvironmentSettingHelperTests(SimpleTestCase):

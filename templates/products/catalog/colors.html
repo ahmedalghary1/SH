@@ -17,7 +17,9 @@
                 <td>{% if color.hex_code %}<span class="color-swatch" style="background: {{ color.hex_code }}"></span>{% else %}-{% endif %}</td>
                 <td class="actions">
                     <a class="btn btn-light" href="{% url 'products:color_update' color.pk %}">تعديل</a>
-                    <a class="btn btn-danger" href="{% url 'products:color_delete' color.pk %}">حذف</a>
+                    {% if request.user.can_hard_delete %}
+                        <a class="btn btn-danger" href="{% url 'products:color_delete' color.pk %}">حذف</a>
+                    {% endif %}
                 </td>
             </tr>
         {% empty %}

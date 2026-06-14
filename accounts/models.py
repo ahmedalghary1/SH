@@ -4,11 +4,13 @@ from django.db import models
 
 class User(AbstractUser):
     ROLE_MANAGER = 'manager'
+    ROLE_DIRECTOR = 'director'
     ROLE_SALES = 'sales'
     ROLE_WAREHOUSE = 'warehouse'
 
     ROLE_CHOICES = [
         (ROLE_MANAGER, 'مسؤول النظام'),
+        (ROLE_DIRECTOR, 'المدير'),
         (ROLE_SALES, 'مندوب مبيعات'),
         (ROLE_WAREHOUSE, 'مسؤول مخزن'),
     ]
@@ -32,6 +34,14 @@ class User(AbstractUser):
 
     @property
     def is_manager(self):
+        return self.role in {self.ROLE_MANAGER, self.ROLE_DIRECTOR} or self.is_superuser
+
+    @property
+    def is_director(self):
+        return self.role == self.ROLE_DIRECTOR
+
+    @property
+    def can_hard_delete(self):
         return self.role == self.ROLE_MANAGER or self.is_superuser
 
     @property

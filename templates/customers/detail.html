@@ -6,7 +6,7 @@
     <div class="button-row">
         <a class="btn btn-accent" href="{% url 'orders:create' %}">إضافة فاتورة</a>
         <a class="btn btn-light" href="{% url 'customers:update' customer.pk %}">تعديل</a>
-        {% if request.user.is_manager %}
+        {% if request.user.can_hard_delete %}
             <a class="btn btn-danger" href="{% url 'customers:delete' customer.pk %}">حذف</a>
         {% endif %}
         <a class="btn btn-light" href="{% url 'customers:list' %}">رجوع</a>

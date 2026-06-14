@@ -45,6 +45,8 @@ class AuditLog(models.Model):
     SECTION_CUSTOMERS = 'customers'
     SECTION_SALES_REPS = 'sales_reps'
     SECTION_SETTINGS = 'settings'
+    SECTION_ACCOUNTS = 'accounts'
+    SECTION_INVOICES = 'invoices'
     
     SECTION_CHOICES = [
         (SECTION_PRODUCTS, 'المنتجات'),
@@ -56,6 +58,8 @@ class AuditLog(models.Model):
         (SECTION_CUSTOMERS, 'العملاء'),
         (SECTION_SALES_REPS, 'المندوبين'),
         (SECTION_SETTINGS, 'الإعدادات'),
+        (SECTION_ACCOUNTS, 'الحسابات'),
+        (SECTION_INVOICES, 'الفواتير'),
     ]
     
     user = models.ForeignKey(

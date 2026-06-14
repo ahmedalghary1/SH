@@ -41,7 +41,7 @@ def _is_restricted_sales_user(user):
 def _available_variants_for_user(user):
     qs = ProductVariant.objects.filter(is_active=True)
     # Allow managers to see all active variants regardless of stock
-    if user.role == 'manager' or user.is_superuser:
+    if user.role in {'manager', 'director'} or user.is_superuser:
         return qs
     if _is_restricted_sales_user(user):
         qs = qs.filter(
@@ -281,8 +281,17 @@ def ajax_search_products(request):
 def ajax_get_product_variants(request, product_id):
     variants = _available_variants_for_user(request.user).filter(
         product_id=product_id,
-    ).select_related('color', 'size')
-    data = [{'id': v.id, 'sku': v.variant_sku, 'color': v.color.name if v.color else '', 'size': v.size.name if v.size else ''} for v in variants]
+    ).select_related('product', 'color', 'size')
+    data = [
+        {
+            'id': v.id,
+            'sku': v.variant_sku,
+            'color': v.color.name if v.color else '',
+            'size': v.size.name if v.size else '',
+            'pieces_per_dozen': v.product.pieces_per_dozen,
+        }
+        for v in variants
+    ]
     return JsonResponse({'success': True, 'message': 'تم جلب المتغيرات', 'data': data})
 
 

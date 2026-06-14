@@ -53,6 +53,7 @@ class ProductListView(RoleRequiredMixin, ExportListMixin, ListView):
         ('كود المنتج', 'sku'),
         ('التصنيف', 'category'),
         ('الخامة', 'material'),
+        ('عدد القطع في الدستة', 'pieces_per_dozen'),
         ('عدد الألوان/المقاسات', 'variant_count'),
         ('الكمية المتاحة', 'total_quantity'),
         ('الحالة', lambda product: 'نشط' if product.is_active else 'متوقف'),
@@ -633,13 +634,14 @@ def ajax_search_products(request):
 @require_GET
 @role_required('manager', 'sales', 'warehouse')
 def ajax_get_product_variants(request, product_id):
-    variants = ProductVariant.objects.filter(product_id=product_id, is_active=True).select_related('color', 'size')
+    variants = ProductVariant.objects.filter(product_id=product_id, is_active=True).select_related('product', 'color', 'size')
     data = [
         {
             'id': v.id,
             'variant_sku': v.variant_sku,
             'color': v.color.name if v.color else '',
             'size': v.size.name if v.size else '',
+            'pieces_per_dozen': v.product.pieces_per_dozen,
         }
         for v in variants
     ]
@@ -708,6 +710,7 @@ def api_products(request):
                 'size': variant.size.name if variant.size else '',
                 'image': variant.image.url if variant.image else '',
                 'sale_price': str(variant.sale_price),
+                'pieces_per_dozen': variant.product.pieces_per_dozen,
                 'quantity': quantity,
                 'is_active': variant.is_active,
             })
@@ -716,6 +719,7 @@ def api_products(request):
             'name': product.name,
             'code': product.sku,
             'category': product.category.name if product.category else '',
+            'pieces_per_dozen': product.pieces_per_dozen,
             'image': product.image.url if product.image else '',
             'variants': variants,
         })

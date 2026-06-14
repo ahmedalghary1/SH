@@ -18,7 +18,9 @@
                 <td><span class="badge {% if user.is_active %}success{% else %}danger{% endif %}">{% if user.is_active %}نشط{% else %}معطل{% endif %}</span></td>
                 <td class="actions">
                     <a class="btn btn-light" href="{% url 'accounts:user_update' user.pk %}">تعديل</a>
-                    <a class="btn btn-danger" href="{% url 'accounts:user_delete' user.pk %}">حذف</a>
+                    {% if request.user.can_hard_delete %}
+                        <a class="btn btn-danger" href="{% url 'accounts:user_delete' user.pk %}">حذف</a>
+                    {% endif %}
                     <form method="post" action="{% url 'accounts:user_deactivate' user.pk %}" data-confirm="تعطيل هذا الموظف؟">{% csrf_token %}<button class="btn btn-danger">تعطيل</button></form>
                 </td>
             </tr>

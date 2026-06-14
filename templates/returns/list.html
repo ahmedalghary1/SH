@@ -35,7 +35,7 @@
                 <td>{{ ret.created_at }}</td>
                 <td>
                     <a class="btn btn-light" href="{% url 'returns:detail' ret.pk %}">عرض</a>
-                    {% if request.user.is_manager %}
+                    {% if request.user.can_hard_delete %}
                         <a class="btn btn-danger" href="{% url 'returns:delete' ret.pk %}">حذف</a>
                     {% endif %}
                 </td>

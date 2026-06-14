@@ -24,6 +24,12 @@
     </label>
 
     <label>
+        <span>{{ product_form.pieces_per_dozen.label }}</span>
+        {{ product_form.pieces_per_dozen }}
+        {% if product_form.pieces_per_dozen.errors %}<small class="error">{{ product_form.pieces_per_dozen.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <label>
         <span>{{ product_form.category.label }}</span>
         {{ product_form.category }}
         {% if product_form.category.errors %}<small class="error">{{ product_form.category.errors|join:', ' }}</small>{% endif %}

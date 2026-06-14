@@ -10,8 +10,23 @@ from products.models import ProductVariant
 from .models import SalesRepStockAssignment
 
 
+UNIT_PIECE = 'piece'
+UNIT_DOZEN = 'dozen'
+UNIT_CHOICES = (
+    (UNIT_PIECE, 'قطعة'),
+    (UNIT_DOZEN, 'دستة'),
+)
+
+
 def sales_rep_queryset():
     return User.objects.filter(role=User.ROLE_SALES, is_active=True)
+
+
+def convert_quantity_to_pieces(quantity, quantity_unit, variant):
+    quantity = int(quantity or 0)
+    if quantity_unit == UNIT_DOZEN:
+        return quantity * variant.product.pieces_per_dozen
+    return quantity
 
 
 class AssignStockForm(forms.Form):
@@ -29,7 +44,18 @@ class AssignStockForm(forms.Form):
         label='من مخزن',
     )
     quantity = forms.IntegerField(min_value=1, label='الكمية')
+    quantity_unit = forms.ChoiceField(choices=UNIT_CHOICES, initial=UNIT_PIECE, label='الوحدة')
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
+
+    def clean(self):
+        cleaned = super().clean()
+        quantity = cleaned.get('quantity')
+        quantity_unit = cleaned.get('quantity_unit')
+        product_variant = cleaned.get('product_variant')
+        if quantity and quantity_unit and product_variant:
+            cleaned['quantity'] = convert_quantity_to_pieces(quantity, quantity_unit, product_variant)
+        cleaned.pop('quantity_unit', None)
+        return cleaned
 
 
 class AssignmentActionForm(forms.Form):
@@ -38,7 +64,18 @@ class AssignmentActionForm(forms.Form):
         label='العهدة',
     )
     quantity = forms.IntegerField(min_value=1, label='الكمية')
+    quantity_unit = forms.ChoiceField(choices=UNIT_CHOICES, initial=UNIT_PIECE, label='الوحدة')
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
+
+    def clean(self):
+        cleaned = super().clean()
+        quantity = cleaned.get('quantity')
+        quantity_unit = cleaned.get('quantity_unit')
+        assignment = cleaned.get('assignment')
+        if quantity and quantity_unit and assignment:
+            cleaned['quantity'] = convert_quantity_to_pieces(quantity, quantity_unit, assignment.product_variant)
+        cleaned.pop('quantity_unit', None)
+        return cleaned
 
 
 class SalesRepCollectionForm(forms.Form):

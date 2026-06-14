@@ -8,6 +8,7 @@
     const stockInput = document.getElementById("available-stock");
     const priceInput = document.getElementById("unit-price");
     const qtyInput = document.getElementById("item-quantity");
+    const unitInput = document.getElementById("item-unit");
     const lineTotalInput = document.getElementById("line-total");
     const addButton = document.getElementById("add-item");
     const body = document.getElementById("order-items-body");
@@ -97,13 +98,34 @@
     }
 
     function updateLineTotal() {
+        const pieces = getQuantityInPieces();
         if (isSample()) {
             setFieldValue(priceInput, "0.00");
             setFieldReadOnly(priceInput, true);
         } else {
             setFieldReadOnly(priceInput, false);
         }
-        setFieldValue(lineTotalInput, money(Number(getFieldValue(priceInput) || 0) * Number(qtyInput.value || 0)));
+        setFieldValue(lineTotalInput, money(Number(getFieldValue(priceInput) || 0) * pieces));
+    }
+
+    function getSelectedPiecesPerDozen() {
+        const selected = variantSelect.options[variantSelect.selectedIndex];
+        return Number(selected?.dataset.piecesPerDozen || 12);
+    }
+
+    function getQuantityInPieces() {
+        const quantity = Number(qtyInput.value || 0);
+        if (unitInput?.value === "dozen") {
+            return quantity * getSelectedPiecesPerDozen();
+        }
+        return quantity;
+    }
+
+    function quantityLabel(item) {
+        if (item.quantity_unit === "dozen") {
+            return `${item.input_quantity} دستة (${item.quantity} قطعة)`;
+        }
+        return `${item.quantity} قطعة`;
     }
 
     function toggleWalletFields() {
@@ -180,7 +202,7 @@
             row.innerHTML = `
                 <td>${item.product_name}</td>
                 <td>${item.color || "-"} / ${item.size || "-"}</td>
-                <td>${item.quantity}</td>
+                <td>${quantityLabel(item)}</td>
                 <td>${money(item.unit_price)}</td>
                 <td>${money(total)}</td>
                 <td><button type="button" class="btn btn-danger" data-remove="${index}">✕</button></td>
@@ -317,6 +339,7 @@
                     option.textContent = `${variant.color || "-"} / ${variant.size || "-"} - ${variant.sku}`;
                     option.dataset.color = variant.color;
                     option.dataset.size = variant.size;
+                    option.dataset.piecesPerDozen = variant.pieces_per_dozen || 12;
                     variantSelect.appendChild(option);
                     console.log('Added variant:', variant.color, variant.size, variant.sku);
                 });
@@ -407,6 +430,7 @@
     });
     customerSelect.addEventListener("change", refreshVariantMeta);
     qtyInput.addEventListener("input", updateLineTotal);
+    unitInput?.addEventListener("change", updateLineTotal);
     priceInput.addEventListener("input", updateLineTotal);
     document.getElementById("discount-input")?.addEventListener("input", updateSummary);
     generalDiscountPercentage?.addEventListener("input", updateSummary);
@@ -415,7 +439,8 @@
     addButton.addEventListener("click", () => {
         const selected = variantSelect.options[variantSelect.selectedIndex];
         const selectedWarehouse = itemWarehouse.options[itemWarehouse.selectedIndex];
-        const quantity = Number(qtyInput.value || 0);
+        const inputQuantity = Number(qtyInput.value || 0);
+        const quantity = getQuantityInPieces();
         const available = Number(getFieldValue(stockInput) || 0);
         if (!selectedProduct || !variantSelect.value) {
             window.alert("اختر المنتج واللون والمقاس أولا");
@@ -443,6 +468,9 @@
             warehouse_name: selectedWarehouse?.dataset.name || "",
             available_quantity: available,
             quantity,
+            input_quantity: inputQuantity,
+            quantity_unit: unitInput?.value || "piece",
+            pieces_per_dozen: getSelectedPiecesPerDozen(),
             unit_price: unitPrice,
             discount_amount: 0,
             discount_percentage: 0,

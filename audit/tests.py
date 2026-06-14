@@ -1,14 +1,21 @@
 from django.core.exceptions import PermissionDenied
+from django.test import RequestFactory
 from django.test import TestCase
 
 from accounts.models import User
+from audit.context import clear_current_request, set_current_request
 from audit.models import AuditLog
 from audit.services import log_audit
+from products.models import Product
 
 
 class AuditLogTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='manager', password='pass', role='manager')
+        self.factory = RequestFactory()
+
+    def tearDown(self):
+        clear_current_request()
     
     def test_log_audit_creates_entry(self):
         log_audit(
@@ -113,4 +120,37 @@ class AuditLogTests(TestCase):
         self.assertEqual(log.user, self.user)
         self.assertEqual(log.action, AuditLog.ACTION_CREATE)
         self.assertEqual(log.notes, 'Test log entry')
+
+    def test_model_update_is_logged_with_current_user(self):
+        product = Product.objects.create(name='Shirt', sku='SH-001', retail_price='100.00')
+        request = self.factory.post('/products/')
+        request.user = self.user
+        set_current_request(request)
+
+        product.retail_price = '125.00'
+        product.save()
+
+        log = AuditLog.objects.get(action=AuditLog.ACTION_UPDATE)
+        self.assertEqual(log.user, self.user)
+        self.assertEqual(log.section, AuditLog.SECTION_PRODUCTS)
+        self.assertEqual(log.model_name, 'Product')
+        self.assertEqual(log.object_id, str(product.pk))
+        self.assertEqual(log.changes_before['retail_price'], '100.00')
+        self.assertEqual(log.changes_after['retail_price'], '125.00')
+
+    def test_model_delete_is_logged_with_current_user(self):
+        product = Product.objects.create(name='Deleted Shirt', sku='SH-DEL')
+        request = self.factory.post('/products/delete/')
+        request.user = self.user
+        set_current_request(request)
+
+        product_id = product.pk
+        product.delete()
+
+        log = AuditLog.objects.get(action=AuditLog.ACTION_DELETE)
+        self.assertEqual(log.user, self.user)
+        self.assertEqual(log.section, AuditLog.SECTION_PRODUCTS)
+        self.assertEqual(log.model_name, 'Product')
+        self.assertEqual(log.object_id, str(product_id))
+        self.assertEqual(log.changes_before['sku'], 'SH-DEL')
 

@@ -118,7 +118,7 @@ INSTALLED_APPS = [
     'reports',
     'dashboard',
     'settings_app',
-    'audit',
+    'audit.apps.AuditConfig',
 ]
 
 MIDDLEWARE = [
@@ -131,6 +131,7 @@ MIDDLEWARE += [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'audit.middleware.AuditRequestMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]

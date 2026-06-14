@@ -38,12 +38,13 @@ class SizeForm(forms.ModelForm):
 class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
-        fields = ('name', 'sku', 'category', 'material', 'image')
+        fields = ('name', 'sku', 'category', 'material', 'pieces_per_dozen', 'image')
         labels = {
             'name': 'اسم المنتج',
             'sku': 'كود المنتج',
             'category': 'التصنيف',
             'material': 'الخامة',
+            'pieces_per_dozen': 'عدد القطع في الدستة',
             'image': 'صورة المنتج',
         }
         widgets = {
@@ -51,6 +52,7 @@ class ProductForm(forms.ModelForm):
             'sku': forms.TextInput(attrs={'placeholder': 'مثال: 001'}),
             'category': forms.Select(attrs={'data-filterable-select': 'true'}),
             'material': forms.TextInput(attrs={'placeholder': 'مثال: قطن'}),
+            'pieces_per_dozen': forms.NumberInput(attrs={'min': '1', 'step': '1', 'placeholder': '12'}),
         }
 
     def save(self, commit=True):

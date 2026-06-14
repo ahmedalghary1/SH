@@ -34,7 +34,9 @@
                     <td>
                         {% if request.user.is_manager %}
                             <a class="btn btn-light" href="{% url 'inventory:warehouse_update' warehouse.pk %}">تعديل</a>
-                            <a class="btn btn-danger" href="{% url 'inventory:warehouse_delete' warehouse.pk %}">حذف</a>
+                            {% if request.user.can_hard_delete %}
+                                <a class="btn btn-danger" href="{% url 'inventory:warehouse_delete' warehouse.pk %}">حذف</a>
+                            {% endif %}
                         {% endif %}
                     </td>
                 </tr>

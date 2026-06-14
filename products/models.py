@@ -42,6 +42,7 @@ class Product(models.Model):
     season = models.CharField(max_length=100, blank=True, null=True)
     retail_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     wholesale_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    pieces_per_dozen = models.PositiveIntegerField(default=12, validators=[MinValueValidator(1)])
     image = models.ImageField(upload_to='products/', blank=True, null=True)
     is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)

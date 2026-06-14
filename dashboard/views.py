@@ -15,7 +15,7 @@ class DashboardView(RoleRequiredMixin, TemplateView):
 
     def get_template_names(self):
         role = self.request.user.role
-        if self.request.user.is_superuser or role == 'manager':
+        if self.request.user.is_superuser or role in {'manager', 'director'}:
             return ['dashboard/manager.html']
         if role == 'warehouse':
             return ['dashboard/warehouse.html']
@@ -26,7 +26,7 @@ class DashboardView(RoleRequiredMixin, TemplateView):
         context['can_view_costs'] = can_view_costs(self.request.user)
         today = timezone.localdate()
         user = self.request.user
-        if user.is_superuser or user.role == 'manager':
+        if user.is_superuser or user.role in {'manager', 'director'}:
             context['workflow_title'] = 'من الخام إلى الفاتورة'
             context['workflow_actions'] = [
                 {'label': 'شراء خام', 'href': reverse('purchases:raw_purchase'), 'icon': 'icon-money'},

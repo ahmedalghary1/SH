@@ -16,7 +16,9 @@
                 <td>{{ size.sort_order }}</td>
                 <td class="actions">
                     <a class="btn btn-light" href="{% url 'products:size_update' size.pk %}">تعديل</a>
-                    <a class="btn btn-danger" href="{% url 'products:size_delete' size.pk %}">حذف</a>
+                    {% if request.user.can_hard_delete %}
+                        <a class="btn btn-danger" href="{% url 'products:size_delete' size.pk %}">حذف</a>
+                    {% endif %}
                 </td>
             </tr>
         {% empty %}
