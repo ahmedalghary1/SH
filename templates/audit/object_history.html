@@ -1,52 +1,55 @@
 {% if show_history %}
-<section class="card audit-history-card">
-    <h2>&#1587;&#1580;&#1604; &#1575;&#1604;&#1578;&#1593;&#1583;&#1610;&#1604;&#1575;&#1578; &#1608;&#1575;&#1604;&#1581;&#1584;&#1601;</h2>
-    {% if history_logs %}
-        <div class="table-wrap">
-            <table class="audit-history-table">
-                <thead>
-                    <tr>
-                        <th>&#1575;&#1604;&#1578;&#1575;&#1585;&#1610;&#1582;</th>
-                        <th>&#1575;&#1604;&#1605;&#1587;&#1578;&#1582;&#1583;&#1605;</th>
-                        <th>&#1575;&#1604;&#1573;&#1580;&#1585;&#1575;&#1569;</th>
-                        {% if show_object %}<th>&#1575;&#1604;&#1587;&#1580;&#1604; &#1575;&#1604;&#1605;&#1578;&#1571;&#1579;&#1585;</th>{% endif %}
-                        <th>&#1575;&#1604;&#1578;&#1594;&#1610;&#1610;&#1585; &#1576;&#1575;&#1604;&#1578;&#1581;&#1583;&#1610;&#1583;</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in history_logs %}
+<section class="audit-history-widget">
+    <button class="btn btn-light audit-history-toggle" type="button" data-audit-history-toggle aria-expanded="false">
+        &#1587;&#1580;&#1604; &#1575;&#1604;&#1578;&#1594;&#1610;&#1610;&#1585;&#1575;&#1578;
+    </button>
+    <div class="card audit-history-card" data-audit-history-panel hidden>
+        <h2>&#1587;&#1580;&#1604; &#1575;&#1604;&#1578;&#1593;&#1583;&#1610;&#1604;&#1575;&#1578; &#1608;&#1575;&#1604;&#1581;&#1584;&#1601;</h2>
+        {% if history_logs %}
+            <div class="table-wrap">
+                <table class="audit-history-table">
+                    <thead>
                         <tr>
-                            <td>{{ item.log.created_at|date:"Y-m-d H:i" }}</td>
-                            <td>{{ item.log.user.username|default:"&#1575;&#1604;&#1606;&#1592;&#1575;&#1605;" }}</td>
-                            <td>{{ item.log.get_action_display }}</td>
-                            {% if show_object %}<td>{{ item.log.object_repr|default:item.log.object_id|default:"-" }}</td>{% endif %}
-                            <td>
-                                {% if item.rows %}
-                                    <div class="audit-change-list">
-                                        {% for row in item.rows %}
-                                            <div class="audit-change-row">
-                                                <strong>{{ row.field }}</strong>
-                                                {% if item.log.action == 'delete' %}
-                                                    <span>{{ row.before }}</span>
-                                                {% else %}
-                                                    <span>{{ row.before }}</span>
-                                                    <span class="audit-arrow">-></span>
-                                                    <span>{{ row.after }}</span>
-                                                {% endif %}
-                                            </div>
-                                        {% endfor %}
-                                    </div>
-                                {% else %}
-                                    -
-                                {% endif %}
-                            </td>
+                            <th>&#1575;&#1604;&#1578;&#1575;&#1585;&#1610;&#1582;</th>
+                            <th>&#1575;&#1604;&#1605;&#1587;&#1578;&#1582;&#1583;&#1605;</th>
+                            <th>&#1575;&#1604;&#1573;&#1580;&#1585;&#1575;&#1569;</th>
+                            <th>&#1575;&#1604;&#1578;&#1594;&#1610;&#1610;&#1585; &#1576;&#1575;&#1604;&#1578;&#1581;&#1583;&#1610;&#1583;</th>
                         </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    {% else %}
-        <p class="muted">{{ empty_message }}</p>
-    {% endif %}
+                    </thead>
+                    <tbody>
+                        {% for item in history_logs %}
+                            <tr>
+                                <td>{{ item.log.created_at|date:"Y-m-d H:i" }}</td>
+                                <td>{{ item.log.user.username|default:"&#1575;&#1604;&#1606;&#1592;&#1575;&#1605;" }}</td>
+                                <td>{{ item.log.get_action_display }}</td>
+                                <td>
+                                    {% if item.rows %}
+                                        <div class="audit-change-list">
+                                            {% for row in item.rows %}
+                                                <div class="audit-change-row">
+                                                    <strong>{{ row.field }}</strong>
+                                                    {% if item.log.action == 'delete' %}
+                                                        <span>{{ row.before }}</span>
+                                                    {% else %}
+                                                        <span>{{ row.before }}</span>
+                                                        <span class="audit-arrow">-></span>
+                                                        <span>{{ row.after }}</span>
+                                                    {% endif %}
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="muted">{{ empty_message }}</p>
+        {% endif %}
+    </div>
 </section>
 {% endif %}

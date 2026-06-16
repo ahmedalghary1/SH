@@ -4349,6 +4349,20 @@ tbody tr:hover {
     outline: none;
 }
 
+.audit-history-widget {
+    margin-top: clamp(1rem, 2vw, 1.25rem);
+}
+
+.audit-history-toggle {
+    margin-bottom: .75rem;
+}
+
+.audit-history-toggle[aria-expanded="true"] {
+    border-color: var(--accent-color);
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+}
+
 .audit-history-card {
     border-inline-start: .25rem solid var(--accent-color);
 }

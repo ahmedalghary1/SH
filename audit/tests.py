@@ -189,7 +189,7 @@ class AuditLogTests(TestCase):
 
         self.assertFalse(context['show_history'])
 
-    def test_current_page_history_returns_section_rows_without_object(self):
+    def test_current_page_history_hidden_without_object(self):
         product = Product.objects.create(name='Section Shirt', sku='SH-SECTION')
         log_audit(
             user=self.user,
@@ -206,7 +206,5 @@ class AuditLogTests(TestCase):
 
         context = current_page_audit_history({'request': request, 'products': [product]})
 
-        self.assertTrue(context['show_history'])
-        self.assertTrue(context['show_object'])
-        self.assertEqual(context['history_logs'][0]['log'].object_repr, str(product))
+        self.assertFalse(context['show_history'])
 

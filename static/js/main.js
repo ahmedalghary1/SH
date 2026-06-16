@@ -402,6 +402,17 @@ function setupStockWarehouseFilters(root = document) {
 }
 
 document.addEventListener("click", (event) => {
+    const historyToggle = event.target.closest("[data-audit-history-toggle]");
+    if (historyToggle) {
+        const widget = historyToggle.closest(".audit-history-widget");
+        const panel = widget?.querySelector("[data-audit-history-panel]");
+        if (panel) {
+            const isOpen = panel.hidden;
+            panel.hidden = !isOpen;
+            historyToggle.setAttribute("aria-expanded", String(isOpen));
+        }
+    }
+
     if (!event.target.closest(".combo-field")) {
         closeAllCombos();
     }
