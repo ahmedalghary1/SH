@@ -6,6 +6,7 @@ from accounts.models import User
 from audit.context import clear_current_request, set_current_request
 from audit.models import AuditLog
 from audit.services import log_audit
+from audit.templatetags.audit_history import current_page_audit_history
 from products.models import Product
 
 
@@ -153,4 +154,38 @@ class AuditLogTests(TestCase):
         self.assertEqual(log.model_name, 'Product')
         self.assertEqual(log.object_id, str(product_id))
         self.assertEqual(log.changes_before['sku'], 'SH-DEL')
+
+    def test_current_page_history_returns_object_update_rows(self):
+        product = Product.objects.create(name='Shirt', sku='SH-HIST', retail_price='100.00')
+        log_audit(
+            user=self.user,
+            action=AuditLog.ACTION_UPDATE,
+            section=AuditLog.SECTION_PRODUCTS,
+            model_name='Product',
+            object_id=product.pk,
+            object_repr=str(product),
+            changes_before={'retail_price': '100.00'},
+            changes_after={'retail_price': '125.00'},
+        )
+        request = self.factory.get('/products/1/')
+        request.user = self.user
+
+        context = current_page_audit_history({'request': request, 'object': product})
+
+        self.assertTrue(context['show_history'])
+        self.assertEqual(len(context['history_logs']), 1)
+        row = context['history_logs'][0]['rows'][0]
+        self.assertEqual(row['field'], 'retail_price')
+        self.assertEqual(row['before'], '100.00')
+        self.assertEqual(row['after'], '125.00')
+
+    def test_current_page_history_hidden_for_non_manager(self):
+        sales_user = User.objects.create_user(username='sales', password='pass', role='sales')
+        product = Product.objects.create(name='Hidden Shirt', sku='SH-HIDDEN')
+        request = self.factory.get('/products/1/')
+        request.user = sales_user
+
+        context = current_page_audit_history({'request': request, 'object': product})
+
+        self.assertFalse(context['show_history'])
 

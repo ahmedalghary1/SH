@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load audit_history %}
 
 {% block content %}
 <div class="container mt-4">
@@ -71,6 +72,7 @@
                             <th>الموديل</th>
                             <th>الكائن</th>
                             <th>ملاحظات</th>
+                            <th>التغيير بالتحديد</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -83,6 +85,28 @@
                             <td>{{ log.model_name|default:"-" }}</td>
                             <td>{{ log.object_repr|default:log.object_id|default:"-" }}</td>
                             <td>{{ log.notes|default:"-" }}</td>
+                            <td>
+                                {% with rows=log|audit_change_rows %}
+                                    {% if rows %}
+                                        <div class="audit-change-list">
+                                            {% for row in rows %}
+                                                <div class="audit-change-row">
+                                                    <strong>{{ row.field }}</strong>
+                                                    {% if log.action == 'delete' %}
+                                                        <span>{{ row.before }}</span>
+                                                    {% else %}
+                                                        <span>{{ row.before }}</span>
+                                                        <span class="audit-arrow">-></span>
+                                                        <span>{{ row.after }}</span>
+                                                    {% endif %}
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                {% endwith %}
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>

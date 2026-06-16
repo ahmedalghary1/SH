@@ -1,4 +1,4 @@
-{% load static %}
+{% load static audit_history %}
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
@@ -22,6 +22,7 @@
         <section class="page-content">
             {% include 'partials/messages.html' %}
             {% block content %}{% endblock %}
+            {% current_page_audit_history %}
         </section>
     </main>
 </div>

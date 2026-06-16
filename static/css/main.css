@@ -4348,3 +4348,39 @@ tbody tr:hover {
     color: var(--text-color);
     outline: none;
 }
+
+.audit-history-card {
+    border-inline-start: .25rem solid var(--accent-color);
+}
+
+.audit-history-table td {
+    vertical-align: top;
+}
+
+.audit-change-list {
+    display: grid;
+    gap: .45rem;
+    min-width: min(28rem, 100%);
+}
+
+.audit-change-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .45rem;
+    line-height: 1.7;
+    word-break: break-word;
+}
+
+.audit-change-row strong {
+    color: var(--text-color);
+}
+
+.audit-change-row span {
+    color: var(--muted-text);
+}
+
+.audit-arrow {
+    color: var(--accent-strong);
+    font-weight: 800;
+}
