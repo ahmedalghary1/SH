@@ -175,7 +175,7 @@ class AuditLogTests(TestCase):
         self.assertTrue(context['show_history'])
         self.assertEqual(len(context['history_logs']), 1)
         row = context['history_logs'][0]['rows'][0]
-        self.assertEqual(row['field'], 'retail_price')
+        self.assertEqual(row['field'], 'سعر التجزئة')
         self.assertEqual(row['before'], '100.00')
         self.assertEqual(row['after'], '125.00')
 

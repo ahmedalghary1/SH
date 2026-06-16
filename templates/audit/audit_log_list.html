@@ -82,7 +82,7 @@
                             <td>{{ log.user.username|default:"-" }}</td>
                             <td>{{ log.get_action_display }}</td>
                             <td>{{ log.get_section_display }}</td>
-                            <td>{{ log.model_name|default:"-" }}</td>
+                            <td>{{ log.model_name|audit_model_label }}</td>
                             <td>{{ log.object_repr|default:log.object_id|default:"-" }}</td>
                             <td>{{ log.notes|default:"-" }}</td>
                             <td>
@@ -95,8 +95,10 @@
                                                     {% if log.action == 'delete' %}
                                                         <span>{{ row.before }}</span>
                                                     {% else %}
+                                                        <span>قبل:</span>
                                                         <span>{{ row.before }}</span>
-                                                        <span class="audit-arrow">-></span>
+                                                        <span class="audit-arrow">إلى</span>
+                                                        <span>بعد:</span>
                                                         <span>{{ row.after }}</span>
                                                     {% endif %}
                                                 </div>
