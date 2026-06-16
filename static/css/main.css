@@ -4398,3 +4398,46 @@ tbody tr:hover {
     color: var(--accent-strong);
     font-weight: 800;
 }
+
+.audit-related-link {
+    display: inline-flex;
+    margin-top: .35rem;
+    color: var(--accent-strong);
+    font-size: .82rem;
+    font-weight: 800;
+}
+
+.audit-filter-notice {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .75rem;
+}
+
+.audit-deleted-details {
+    margin-top: .65rem;
+    padding-top: .65rem;
+    border-top: .0625rem solid var(--border-color);
+}
+
+.audit-deleted-details summary {
+    color: var(--accent-strong);
+    font-weight: 800;
+}
+
+.audit-snapshot-list {
+    display: grid;
+    gap: .4rem;
+    margin-top: .55rem;
+}
+
+.audit-snapshot-row {
+    display: grid;
+    grid-template-columns: minmax(7rem, 12rem) minmax(0, 1fr);
+    gap: .5rem;
+}
+
+.audit-snapshot-row span {
+    color: var(--muted-text);
+    word-break: break-word;
+}

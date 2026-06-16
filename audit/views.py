@@ -19,6 +19,8 @@ def audit_log_list(request):
     user_filter = request.GET.get('user')
     section_filter = request.GET.get('section')
     action_filter = request.GET.get('action')
+    model_name_filter = request.GET.get('model_name')
+    object_id_filter = request.GET.get('object_id')
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
     search = request.GET.get('q')
@@ -29,6 +31,10 @@ def audit_log_list(request):
         queryset = queryset.filter(section=section_filter)
     if action_filter:
         queryset = queryset.filter(action=action_filter)
+    if model_name_filter:
+        queryset = queryset.filter(model_name=model_name_filter)
+    if object_id_filter:
+        queryset = queryset.filter(object_id=object_id_filter)
     if date_from:
         queryset = queryset.filter(created_at__date__gte=date_from)
     if date_to:
@@ -55,6 +61,8 @@ def audit_log_list(request):
             'user': user_filter,
             'section': section_filter,
             'action': action_filter,
+            'model_name': model_name_filter,
+            'object_id': object_id_filter,
             'date_from': date_from,
             'date_to': date_to,
             'q': search,

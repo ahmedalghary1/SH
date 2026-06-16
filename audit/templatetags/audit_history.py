@@ -155,6 +155,12 @@ FIELD_LABELS = {
     'issued_at': 'تاريخ الإصدار',
 }
 
+IGNORED_CHANGE_FIELDS = {
+    'updated_at',
+    'modified_at',
+    'last_login',
+}
+
 
 def _current_object(context):
     for key in CONTEXT_OBJECT_KEYS:
@@ -203,16 +209,39 @@ def _format_value(value):
 
 
 def _change_rows(log):
+    if log.action == AuditLog.ACTION_DELETE:
+        return [{
+            'field': 'الحالة',
+            'before': 'موجود',
+            'after': 'محذوف',
+        }]
+
     model = _model_for_log(log)
     before = log.changes_before or {}
     after = log.changes_after or {}
-    keys = sorted(set(before) | set(after))
+    keys = sorted((set(before) | set(after)) - IGNORED_CHANGE_FIELDS)
     rows = []
     for key in keys:
+        before_value = before.get(key)
+        after_value = after.get(key)
+        if before_value == after_value:
+            continue
         rows.append({
             'field': _field_label(model, key),
-            'before': _format_value(before.get(key)),
-            'after': _format_value(after.get(key)),
+            'before': _format_value(before_value),
+            'after': _format_value(after_value),
+        })
+    return rows
+
+
+def _snapshot_rows(log):
+    model = _model_for_log(log)
+    snapshot = log.changes_before or {}
+    rows = []
+    for key in sorted(set(snapshot) - IGNORED_CHANGE_FIELDS):
+        rows.append({
+            'field': _field_label(model, key),
+            'value': _format_value(snapshot.get(key)),
         })
     return rows
 
@@ -220,6 +249,13 @@ def _change_rows(log):
 @register.filter
 def audit_change_rows(log):
     return _change_rows(log)
+
+
+@register.filter
+def audit_deleted_snapshot_rows(log):
+    if log.action != AuditLog.ACTION_DELETE:
+        return []
+    return _snapshot_rows(log)
 
 
 @register.filter

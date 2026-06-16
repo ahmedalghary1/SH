@@ -58,6 +58,14 @@
         </div>
     </div>
     
+    {% if filters.model_name and filters.object_id %}
+    <div class="card audit-filter-notice">
+        <strong>يتم عرض سجل عنصر محدد:</strong>
+        <span>{{ filters.model_name|audit_model_label }} رقم {{ filters.object_id }}</span>
+        <a class="btn btn-light" href="{% url 'audit:audit_log_list' %}">عرض كل السجلات</a>
+    </div>
+    {% endif %}
+
     <div class="card">
         <div class="card-body">
             {% if logs %}
@@ -83,7 +91,12 @@
                             <td>{{ log.get_action_display }}</td>
                             <td>{{ log.get_section_display }}</td>
                             <td>{{ log.model_name|audit_model_label }}</td>
-                            <td>{{ log.object_repr|default:log.object_id|default:"-" }}</td>
+                            <td>
+                                <div>{{ log.object_repr|default:log.object_id|default:"-" }}</div>
+                                {% if log.model_name and log.object_id %}
+                                    <a class="audit-related-link" href="?model_name={{ log.model_name|urlencode }}&object_id={{ log.object_id|urlencode }}">عرض سجل هذا السجل</a>
+                                {% endif %}
+                            </td>
                             <td>{{ log.notes|default:"-" }}</td>
                             <td>
                                 {% with rows=log|audit_change_rows %}
@@ -92,15 +105,11 @@
                                             {% for row in rows %}
                                                 <div class="audit-change-row">
                                                     <strong>{{ row.field }}</strong>
-                                                    {% if log.action == 'delete' %}
-                                                        <span>{{ row.before }}</span>
-                                                    {% else %}
-                                                        <span>قبل:</span>
-                                                        <span>{{ row.before }}</span>
-                                                        <span class="audit-arrow">إلى</span>
-                                                        <span>بعد:</span>
-                                                        <span>{{ row.after }}</span>
-                                                    {% endif %}
+                                                    <span>قبل:</span>
+                                                    <span>{{ row.before }}</span>
+                                                    <span class="audit-arrow">إلى</span>
+                                                    <span>بعد:</span>
+                                                    <span>{{ row.after }}</span>
                                                 </div>
                                             {% endfor %}
                                         </div>
@@ -108,6 +117,23 @@
                                         -
                                     {% endif %}
                                 {% endwith %}
+                                {% if log.action == 'delete' %}
+                                    {% with deleted_rows=log|audit_deleted_snapshot_rows %}
+                                        {% if deleted_rows %}
+                                            <details class="audit-deleted-details">
+                                                <summary>تفاصيل السجل المحذوف</summary>
+                                                <div class="audit-snapshot-list">
+                                                    {% for row in deleted_rows %}
+                                                        <div class="audit-snapshot-row">
+                                                            <strong>{{ row.field }}</strong>
+                                                            <span>{{ row.value }}</span>
+                                                        </div>
+                                                    {% endfor %}
+                                                </div>
+                                            </details>
+                                        {% endif %}
+                                    {% endwith %}
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}

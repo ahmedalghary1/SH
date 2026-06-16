@@ -6,7 +6,7 @@ from accounts.models import User
 from audit.context import clear_current_request, set_current_request
 from audit.models import AuditLog
 from audit.services import log_audit
-from audit.templatetags.audit_history import current_page_audit_history
+from audit.templatetags.audit_history import audit_deleted_snapshot_rows, current_page_audit_history
 from products.models import Product
 
 
@@ -207,4 +207,41 @@ class AuditLogTests(TestCase):
         context = current_page_audit_history({'request': request, 'products': [product]})
 
         self.assertFalse(context['show_history'])
+
+    def test_delete_history_displays_status_only(self):
+        product = Product.objects.create(name='Deleted Shirt', sku='SH-STATUS')
+        log_audit(
+            user=self.user,
+            action=AuditLog.ACTION_DELETE,
+            section=AuditLog.SECTION_PRODUCTS,
+            model_name='Product',
+            object_id=product.pk,
+            object_repr=str(product),
+            changes_before={'name': product.name, 'sku': product.sku, 'retail_price': '100.00'},
+        )
+        request = self.factory.get('/products/1/')
+        request.user = self.user
+
+        context = current_page_audit_history({'request': request, 'object': product})
+
+        rows = context['history_logs'][0]['rows']
+        self.assertEqual(rows, [{'field': 'الحالة', 'before': 'موجود', 'after': 'محذوف'}])
+
+    def test_delete_snapshot_details_are_available_separately(self):
+        product = Product.objects.create(name='Deleted Shirt', sku='SH-SNAPSHOT', retail_price='100.00')
+        log_audit(
+            user=self.user,
+            action=AuditLog.ACTION_DELETE,
+            section=AuditLog.SECTION_PRODUCTS,
+            model_name='Product',
+            object_id=product.pk,
+            object_repr=str(product),
+            changes_before={'name': product.name, 'sku': product.sku, 'retail_price': '100.00'},
+        )
+
+        rows = audit_deleted_snapshot_rows(AuditLog.objects.get(action=AuditLog.ACTION_DELETE))
+        labels = {row['field']: row['value'] for row in rows}
+
+        self.assertEqual(labels['الاسم'], 'Deleted Shirt')
+        self.assertEqual(labels['كود المنتج'], 'SH-SNAPSHOT')
 
