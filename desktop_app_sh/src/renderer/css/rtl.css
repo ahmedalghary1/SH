@@ -1,0 +1,16 @@
+.ltr {
+  direction: ltr;
+  text-align: left;
+}
+
+.row-actions,
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .6rem;
+}
+
+.topbar-user {
+  margin-right: auto;
+}

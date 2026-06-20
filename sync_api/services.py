@@ -6,8 +6,8 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from customers.models import Customer
-from finance.models import CashAccount
-from finance.services import collect_order_payment, record_customer_payment
+from finance.models import CashAccount, PaymentTransaction
+from finance.services import collect_order_payment, record_customer_payment, record_transaction
 from inventory.models import Warehouse
 from orders.models import Order
 from orders.services import create_order
@@ -150,6 +150,23 @@ def process_return(operation, user):
         reason=data.get('reason') or '',
         user=user,
     )
+    refund_amount = Decimal(str(data.get('refund_amount') or 0))
+    if refund_amount > 0:
+        sales_return.refund_amount = refund_amount
+        sales_return.status = SalesReturn.STATUS_COMPLETED
+        sales_return.approved_by = user
+        sales_return.completed_by = user
+        sales_return.save(update_fields=['refund_amount', 'status', 'approved_by', 'completed_by'])
+        record_transaction(
+            transaction_type=PaymentTransaction.TYPE_REFUND,
+            direction=PaymentTransaction.DIRECTION_OUT,
+            amount=refund_amount,
+            cash_account=CashAccount.get_default(),
+            related_order=order,
+            related_customer=order.customer,
+            notes=data.get('reason') or f'Offline return {operation["local_uuid"]}',
+            created_by=user,
+        )
     return response_success(operation['local_uuid'], sales_return.pk, 'SalesReturn')
 
 

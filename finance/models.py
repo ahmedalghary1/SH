@@ -45,9 +45,22 @@ class CashAccount(models.Model):
 
     @classmethod
     def get_default(cls):
-        account, _ = cls.objects.get_or_create(
+        account = cls.objects.filter(is_active=True).order_by('created_at', 'pk').first()
+        if account:
+            updates = []
+            if account.account_type != cls.TYPE_CASH:
+                account.account_type = cls.TYPE_CASH
+                updates.append('account_type')
+            if account.assigned_user_id is not None:
+                account.assigned_user = None
+                updates.append('assigned_user')
+            if updates:
+                account.save(update_fields=updates)
+            return account
+        account = cls.objects.create(
             name='الخزنة الرئيسية',
-            defaults={'account_type': cls.TYPE_CASH, 'is_active': True},
+            account_type=cls.TYPE_CASH,
+            is_active=True,
         )
         return account
 

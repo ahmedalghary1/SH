@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Count, Sum
+from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.utils import timezone
@@ -26,6 +26,10 @@ from .services import (
     complete_sales_return,
     create_sales_return,
 )
+
+
+def _validation_error_message(exc):
+    return getattr(exc, 'message', None) or '; '.join(getattr(exc, 'messages', [str(exc)]))
 
 
 class SalesReturnListView(RoleRequiredMixin, ExportListMixin, ListView):
@@ -58,9 +62,9 @@ class SalesReturnListView(RoleRequiredMixin, ExportListMixin, ListView):
         q = self.request.GET.get('q')
         if q:
             qs = qs.filter(
-                pk__icontains=q,
-                order__order_number__icontains=q,
-                customer__name__icontains=q
+                Q(pk__icontains=q) |
+                Q(order__order_number__icontains=q) |
+                Q(customer__name__icontains=q)
             )
         return qs
 
@@ -190,7 +194,7 @@ class SimpleReturnCreateView(SalesRequiredMixin, FormView):
             messages.success(self.request, 'تم تسجيل مسودة المرتجع بالأصناف المحددة')
             return redirect('returns:detail', pk=sales_return.pk)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, _validation_error_message(exc))
             return self.form_invalid(form)
 
 
@@ -271,7 +275,7 @@ class SimpleExchangeCreateView(SalesRequiredMixin, FormView):
             messages.success(self.request, 'تم تسجيل مسودة الاستبدال')
             return redirect('returns:detail', pk=sales_return.pk)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, _validation_error_message(exc))
             return self.form_invalid(form)
 
     def _selected_return_items(self, order):
@@ -479,7 +483,7 @@ class SalesReturnCreateView(SalesRequiredMixin, FormView):
             messages.success(self.request, 'تم تسجيل مسودة المرتجع بالأصناف المحددة')
             return redirect('returns:detail', pk=sales_return.pk)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, _validation_error_message(exc))
             return self.form_invalid(form)
 
 
@@ -518,7 +522,7 @@ class ReturnItemAddView(SalesRequiredMixin, FormView):
             messages.success(self.request, 'تمت إضافة الصنف المرتجع')
             return redirect('returns:detail', pk=self.sales_return.pk)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, _validation_error_message(exc))
             return self.form_invalid(form)
 
 
@@ -541,7 +545,7 @@ class ExchangeItemAddView(SalesRequiredMixin, FormView):
             messages.success(self.request, 'تمت إضافة صنف الاستبدال')
             return redirect('returns:detail', pk=self.sales_return.pk)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, _validation_error_message(exc))
             return self.form_invalid(form)
 
 
@@ -552,7 +556,7 @@ class SalesReturnApproveView(ManagerRequiredMixin, View):
             approve_sales_return(sales_return=sales_return, user=request.user)
             messages.success(request, 'تم اعتماد المرتجع')
         except ValidationError as exc:
-            messages.error(request, exc.message)
+            messages.error(request, _validation_error_message(exc))
         return redirect('returns:detail', pk=pk)
 
 
@@ -569,12 +573,11 @@ class SalesReturnCompleteView(ManagerRequiredMixin, FormView):
             complete_sales_return(
                 sales_return=self.sales_return,
                 user=self.request.user,
-                cash_account=form.cleaned_data.get('cash_account'),
             )
             messages.success(self.request, 'تم إكمال المرتجع وتسجيل آثاره')
             return redirect('returns:detail', pk=self.sales_return.pk)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, _validation_error_message(exc))
             return self.form_invalid(form)
 
 

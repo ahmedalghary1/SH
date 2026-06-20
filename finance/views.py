@@ -17,6 +17,10 @@ from .models import CashAccount, PaymentTransaction
 from .services import add_expense, collect_order_payment, delete_transaction, record_customer_payment, record_supplier_payment, transfer_between_accounts
 
 
+def _validation_error_message(exc):
+    return getattr(exc, 'message', None) or '; '.join(getattr(exc, 'messages', [str(exc)]))
+
+
 class CashDashboardView(ManagerRequiredMixin, TemplateView):
     template_name = 'finance/cash.html'
 
@@ -127,7 +131,7 @@ class CashAccountListView(ManagerRequiredMixin, ExportListMixin, ListView):
     )
 
     def get_queryset(self):
-        return CashAccount.objects.select_related('assigned_user').order_by('account_type', 'name')
+        return CashAccount.objects.filter(pk=CashAccount.get_default().pk)
 
 
 class CashAccountCreateView(ManagerRequiredMixin, CreateView):
@@ -135,6 +139,9 @@ class CashAccountCreateView(ManagerRequiredMixin, CreateView):
     form_class = CashAccountForm
     template_name = 'finance/accounts/form.html'
     success_url = reverse_lazy('finance:accounts')
+
+    def dispatch(self, request, *args, **kwargs):
+        return redirect('finance:account_update', pk=CashAccount.get_default().pk)
 
     def form_valid(self, form):
         messages.success(self.request, 'تم إنشاء الحساب المالي')
@@ -147,6 +154,12 @@ class CashAccountUpdateView(ManagerRequiredMixin, UpdateView):
     template_name = 'finance/accounts/form.html'
     success_url = reverse_lazy('finance:accounts')
 
+    def dispatch(self, request, *args, **kwargs):
+        default_account = CashAccount.get_default()
+        if kwargs.get('pk') != default_account.pk:
+            return redirect('finance:account_update', pk=default_account.pk)
+        return super().dispatch(request, *args, **kwargs)
+
     def form_valid(self, form):
         messages.success(self.request, 'تم تحديث الحساب المالي')
         return super().form_valid(form)
@@ -157,12 +170,22 @@ class CashAccountDeleteView(ManagerDeleteView):
     success_url = reverse_lazy('finance:accounts')
     success_message = 'تم حذف الحساب المالي'
 
+    def dispatch(self, request, *args, **kwargs):
+        messages.error(request, 'لا يمكن حذف الخزنة الرئيسية الوحيدة')
+        return redirect('finance:accounts')
+
 
 class CashAccountDetailView(ManagerRequiredMixin, DetailView):
     model = CashAccount
     template_name = 'finance/accounts/detail.html'
     context_object_name = 'account'
     paginate_by = 30
+
+    def dispatch(self, request, *args, **kwargs):
+        default_account = CashAccount.get_default()
+        if kwargs.get('pk') != default_account.pk:
+            return redirect('finance:account_detail', pk=default_account.pk)
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -290,7 +313,7 @@ class ExpenseCreateView(ManagerRequiredMixin, FormView):
             messages.success(self.request, 'تم تسجيل المصروف وخصمه من الخزنة')
             return redirect(self.success_url)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, _validation_error_message(exc))
             return self.form_invalid(form)
 
 
@@ -313,7 +336,6 @@ class CustomerCollectionView(ManagerRequiredMixin, FormView):
                 collect_order_payment(
                     order=order,
                     amount=form.cleaned_data['amount'],
-                    cash_account=form.cleaned_data['cash_account'],
                     user=self.request.user,
                     notes=form.cleaned_data.get('notes') or '',
                     transaction_date=form.cleaned_data.get('transaction_date'),
@@ -323,7 +345,6 @@ class CustomerCollectionView(ManagerRequiredMixin, FormView):
                     order=None,
                     customer=form.cleaned_data.get('customer'),
                     amount=form.cleaned_data['amount'],
-                    cash_account=form.cleaned_data['cash_account'],
                     user=self.request.user,
                     notes=form.cleaned_data.get('notes') or '',
                     transaction_date=form.cleaned_data.get('transaction_date'),
@@ -331,7 +352,7 @@ class CustomerCollectionView(ManagerRequiredMixin, FormView):
             messages.success(self.request, 'تم تسجيل التحصيل')
             return redirect(self.success_url)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, _validation_error_message(exc))
             return self.form_invalid(form)
 
 
@@ -340,13 +361,17 @@ class TransferView(ManagerRequiredMixin, FormView):
     form_class = TransferForm
     success_url = reverse_lazy('finance:transactions')
 
+    def dispatch(self, request, *args, **kwargs):
+        messages.error(request, 'النظام يعمل بخزنة واحدة، لذلك التحويل بين الخزن غير متاح')
+        return redirect('finance:cash')
+
     def form_valid(self, form):
         try:
             transfer_between_accounts(user=self.request.user, **form.cleaned_data)
             messages.success(self.request, 'تم التحويل بين الخزن')
             return redirect(self.success_url)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, _validation_error_message(exc))
             return self.form_invalid(form)
 
 
@@ -359,11 +384,9 @@ class SupplierPaymentView(ManagerRequiredMixin, FormView):
         try:
             supplier = form.cleaned_data['supplier']
             amount = form.cleaned_data['amount']
-            cash_account = form.cleaned_data['cash_account']
             record_supplier_payment(
                 supplier=supplier,
                 amount=amount,
-                cash_account=cash_account,
                 user=self.request.user,
                 notes=form.cleaned_data.get('notes') or f'دفع للمورد {supplier.name}',
                 transaction_date=form.cleaned_data.get('transaction_date'),

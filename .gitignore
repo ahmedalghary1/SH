@@ -12,3 +12,4 @@ media/products/
 public/static/
 public/shop_media/
 backups/
+node_modules/

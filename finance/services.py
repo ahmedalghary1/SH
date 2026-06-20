@@ -20,8 +20,7 @@ def _as_decimal(amount):
 
 
 def _locked_account(account):
-    if account is None:
-        account = CashAccount.get_default()
+    account = CashAccount.get_default()
     return CashAccount.objects.select_for_update().get(pk=account.pk)
 
 

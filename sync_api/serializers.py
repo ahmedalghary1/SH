@@ -1,5 +1,6 @@
 from customers.models import Customer
 from inventory.models import Stock
+from orders.models import Order
 from products.models import Product, ProductVariant
 
 
@@ -53,4 +54,29 @@ def serialize_customer(customer: Customer):
         'credit_limit': str(customer.credit_limit),
         'opening_balance': str(customer.opening_balance),
         'updated_at': customer.created_at.isoformat() if customer.created_at else '',
+    }
+
+
+def serialize_order(order: Order):
+    return {
+        'id': order.pk,
+        'local_uuid': f'server-order-{order.pk}',
+        'order_number': order.order_number,
+        'customer_id': order.customer_id,
+        'customer_local_uuid': f'server-{order.customer_id}' if order.customer_id else '',
+        'document_type': order.document_type,
+        'order_type': order.order_type,
+        'status': order.status,
+        'payment_status': order.payment_status,
+        'payment_method': order.payment_method,
+        'subtotal': str(order.subtotal),
+        'discount': str(order.discount),
+        'total': str(order.total),
+        'paid_amount': str(order.paid_amount),
+        'remaining_amount': str(order.remaining_amount),
+        'notes': order.notes or '',
+        'created_by_id': order.created_by_id,
+        'created_by_name': order.created_by.get_full_name() or order.created_by.username if order.created_by else '',
+        'created_at': order.created_at.isoformat() if order.created_at else '',
+        'updated_at': order.updated_at.isoformat() if order.updated_at else '',
     }
