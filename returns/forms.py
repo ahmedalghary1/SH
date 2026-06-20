@@ -51,7 +51,7 @@ class SalesReturnCreateForm(forms.Form):
 class ReturnItemForm(forms.Form):
     original_order_item = forms.ModelChoiceField(queryset=OrderItem.objects.none(), label='الصنف المرتجع')
     quantity = forms.IntegerField(min_value=1, label='الكمية')
-    condition = forms.ChoiceField(choices=SalesReturnItem.CONDITION_CHOICES, label='حالة القطعة')
+    check = forms.ChoiceField(choices=SalesReturnItem.check_CHOICES, label='حالة القطعة')
     return_to_stock = forms.BooleanField(required=False, initial=True, label='تعود للمخزون')
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
 

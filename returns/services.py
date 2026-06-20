@@ -56,7 +56,7 @@ def create_sales_return(*, order, return_type, reason='', user):
     return sales_return
 
 @transaction.atomic
-def add_return_item(*, sales_return, original_order_item, quantity, condition='good', return_to_stock=True, notes=''):
+def add_return_item(*, sales_return, original_order_item, quantity, check='good', return_to_stock=True, notes=''):
     sales_return = SalesReturn.objects.select_for_update().get(pk=sales_return.pk)
     if sales_return.status != SalesReturn.STATUS_DRAFT:
         raise ValidationError('يمكن تعديل المرتجع في حالة المسودة فقط')
@@ -77,7 +77,7 @@ def add_return_item(*, sales_return, original_order_item, quantity, condition='g
         original_order_item=original_order_item,
         product_variant=original_order_item.variant,
         quantity=quantity,
-        condition=condition,
+        check=check,
         return_to_stock=return_to_stock,
         refund_amount=refund_amount,
         notes=notes,
@@ -192,9 +192,9 @@ def complete_sales_return(*, sales_return, user, cash_account=None):
     order = Order.objects.select_for_update().get(pk=sales_return.order_id)
     for item in sales_return.items.select_related('product_variant', 'original_order_item__warehouse'):
         item_warehouse = get_order_item_warehouse(item.original_order_item, order=order)
-        if item.condition == SalesReturnItem.CONDITION_GOOD and item.return_to_stock:
+        if item.check == SalesReturnItem.check_GOOD and item.return_to_stock:
             _increase_stock_for_return(order=order, item=item, user=user)
-        elif item.condition == SalesReturnItem.CONDITION_DAMAGED:
+        elif item.check == SalesReturnItem.check_DAMAGED:
             StockMovement.objects.create(
                 movement_type=StockMovement.TYPE_DAMAGED_RETURN,
                 variant=item.product_variant,
