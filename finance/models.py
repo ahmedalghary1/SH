@@ -133,7 +133,7 @@ class PaymentTransaction(models.Model):
             models.Index(fields=['created_at']),
         ]
         constraints = [
-            models.CheckConstraint(check=models.Q(amount__gt=0), name='finance_paymenttransaction_amount_gt_0'),
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name='finance_paymenttransaction_amount_gt_0'),
         ]
 
     def __str__(self):

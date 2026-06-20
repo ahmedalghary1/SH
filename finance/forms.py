@@ -1,6 +1,7 @@
 from django import forms
 from django.utils import timezone
 
+from accounts.models import User
 from customers.models import Customer
 from orders.models import Order
 from purchases.models import Supplier
