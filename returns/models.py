@@ -65,7 +65,7 @@ class SalesReturnItem(models.Model):
     original_order_item = models.ForeignKey(OrderItem, on_delete=models.PROTECT, related_name='return_items')
     product_variant = models.ForeignKey(ProductVariant, on_delete=models.PROTECT, related_name='return_items')
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
-    check = models.CharField(max_length=30, choices=CONDITION_CHOICES, default=CONDITION_GOOD, db_index=True)
+    condition = models.CharField(max_length=30, choices=CONDITION_CHOICES, default=CONDITION_GOOD, db_index=True)
     return_to_stock = models.BooleanField(default=True)
     refund_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     notes = models.TextField(blank=True, null=True)
