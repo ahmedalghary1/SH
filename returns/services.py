@@ -184,7 +184,7 @@ def approve_sales_return(*, sales_return, user):
 
 @transaction.atomic
 def complete_sales_return(*, sales_return, user, cash_account=None):
-    sales_return = SalesReturn.objects.select_for_update().select_related('order', 'customer').get(pk=sales_return.pk)
+    sales_return = SalesReturn.objects.select_for_update().get(pk=sales_return.pk)
     old_status = sales_return.status
     if sales_return.status != SalesReturn.STATUS_APPROVED:
         raise ValidationError('يجب اعتماد المرتجع قبل إكماله')
