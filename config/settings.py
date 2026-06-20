@@ -118,6 +118,7 @@ INSTALLED_APPS = [
     'reports',
     'dashboard',
     'settings_app',
+    'sync_api',
     'audit.apps.AuditConfig',
 ]
 
@@ -127,6 +128,7 @@ MIDDLEWARE = [
 if USE_WHITENOISE:
     MIDDLEWARE.append('whitenoise.middleware.WhiteNoiseMiddleware')
 MIDDLEWARE += [
+    'sync_api.middleware.SyncApiCorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
