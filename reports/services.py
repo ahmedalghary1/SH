@@ -319,37 +319,53 @@ def manager_dashboard_kpis():
     today_orders = valid_orders.filter(created_at__date=today)
     month_orders = valid_orders.filter(created_at__date__gte=month_start)
     expenses = PaymentTransaction.objects.filter(transaction_type=PaymentTransaction.TYPE_EXPENSE)
-    gross_profit = _sum(month_orders, 'gross_profit')
-    expenses_total = _sum(expenses.filter(created_at__date__gte=month_start), 'amount')
     completed_returns = SalesReturn.objects.filter(status=SalesReturn.STATUS_COMPLETED)
-    sold_qty = OrderItem.objects.filter(order__in=month_orders).aggregate(v=Sum('quantity'))['v'] or 0
+
+    month_order_items = OrderItem.objects.filter(order__in=month_orders)
+    month_agg = month_orders.aggregate(
+        gross_profit=Sum('gross_profit'),
+        total=Sum('total'),
+        total_cost=Sum('total_cost'),
+        discount=Sum('discount'),
+    )
+    gross_profit = month_agg['gross_profit'] or ZERO
+    expenses_total = _sum(expenses.filter(created_at__date__gte=month_start), 'amount')
+
+    sold_qty = month_order_items.aggregate(v=Sum('quantity'))['v'] or 0
     returned_qty = SalesReturnItem.objects.filter(sales_return__in=completed_returns).aggregate(v=Sum('quantity'))['v'] or 0
     return_rate = (Decimal(returned_qty) / Decimal(sold_qty) * 100) if sold_qty else ZERO
+
+    today_agg = today_orders.aggregate(sales=Sum('total'), count=Count('id'))
+    month_agg_count = month_orders.aggregate(count=Count('id'))
+
+    collections_in = PaymentTransaction.objects.filter(direction=PaymentTransaction.DIRECTION_IN)
+    today_collections = _sum(collections_in.filter(created_at__date=today), 'amount')
+
     return {
-        'today_sales': _sum(today_orders, 'total'),
-        'month_sales': _sum(month_orders, 'total'),
-        'today_orders': today_orders.count(),
-        'month_orders': month_orders.count(),
-        'sales_cost_total': _sum(month_orders, 'total_cost'),
+        'today_sales': today_agg['sales'] or ZERO,
+        'month_sales': month_agg['total'] or ZERO,
+        'today_orders': today_agg['count'],
+        'month_orders': month_agg_count['count'],
+        'sales_cost_total': month_agg['total_cost'] or ZERO,
         'gross_profit': gross_profit,
         'expenses_total': expenses_total,
         'net_profit': gross_profit - expenses_total,
-        'collections_total': _sum(PaymentTransaction.objects.filter(direction=PaymentTransaction.DIRECTION_IN), 'amount'),
+        'collections_total': _sum(collections_in, 'amount'),
         'customer_remaining_total': _sum(valid_orders, 'remaining_amount'),
         'supplier_dues_total': _sum(Supplier.objects.filter(is_active=True), 'current_balance'),
-        'discount_total': _sum(month_orders, 'discount'),
+        'discount_total': month_agg['discount'] or ZERO,
         'returns_rate': round(return_rate, 2),
         'returns_count': completed_returns.count(),
-        'today_collections': _sum(PaymentTransaction.objects.filter(direction=PaymentTransaction.DIRECTION_IN, created_at__date=today), 'amount'),
+        'today_collections': today_collections,
         'sales_rep_collections': _sum(SalesRepCollection.objects.filter(collection_date__gte=month_start), 'amount'),
         'cash_accounts': CashAccount.objects.filter(is_active=True).order_by('account_type', 'name'),
         'return_reasons': SalesReturn.objects.values('reason').annotate(count=Count('id')).order_by('-count')[:5],
         'employee_sales': valid_orders.values('created_by__username').annotate(total=Sum('total'), count=Count('id')).order_by('-total')[:10],
         'sales_rep_performance': SalesRepCollection.objects.values('sales_rep__username').annotate(total=Sum('amount'), count=Count('id')).order_by('-total')[:10],
         'purchase_period_total': _sum(PurchaseOrder.objects.filter(order_date__gte=month_start).exclude(status=PurchaseOrder.STATUS_CANCELLED), 'total_amount'),
-        'top_products': OrderItem.objects.filter(order__in=month_orders).values('variant__product__name').annotate(qty=Sum('quantity')).order_by('-qty')[:10],
-        'top_profit_products': OrderItem.objects.filter(order__in=month_orders).values('variant__product__name').annotate(profit=Sum('profit_total')).order_by('-profit')[:10],
-        'low_profit_products': OrderItem.objects.filter(order__in=month_orders).values('variant__product__name').annotate(profit=Sum('profit_total')).order_by('profit')[:10],
+        'top_products': month_order_items.values('variant__product__name').annotate(qty=Sum('quantity')).order_by('-qty')[:10],
+        'top_profit_products': month_order_items.values('variant__product__name').annotate(profit=Sum('profit_total')).order_by('-profit')[:10],
+        'low_profit_products': month_order_items.values('variant__product__name').annotate(profit=Sum('profit_total')).order_by('profit')[:10],
         'low_stocks': Stock.objects.select_related('warehouse', 'variant__product').filter(quantity__lte=F('min_quantity'))[:10],
         'stale_products': stale_products_report()['rows'][:10],
         'latest_orders': Order.objects.select_related('customer', 'created_by').order_by('-created_at')[:10],

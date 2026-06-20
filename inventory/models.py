@@ -38,12 +38,12 @@ class Stock(models.Model):
     min_quantity = models.IntegerField(default=0, validators=[MinValueValidator(0)])
 
     class Meta:
-        unique_together = ('warehouse', 'variant')
         indexes = [
             models.Index(fields=['warehouse', 'variant']),
             models.Index(fields=['quantity']),
         ]
         constraints = [
+            models.UniqueConstraint(fields=['warehouse', 'variant'], name='stock_warehouse_variant_unique'),
             models.CheckConstraint(check=models.Q(quantity__gte=0), name='stock_quantity_non_negative'),
             models.CheckConstraint(check=models.Q(min_quantity__gte=0), name='stock_min_quantity_non_negative'),
         ]
@@ -101,16 +101,15 @@ class StockMovement(models.Model):
         (TYPE_SALE, 'بيع'),
         (TYPE_RETURN, 'مرتجع'),
         (TYPE_ADJUSTMENT, 'تسوية'),
+        (TYPE_PURCHASE_RECEIVE, 'استلام شراء'),
+        (TYPE_SALES_RETURN, 'مرتجع بيع'),
+        (TYPE_DAMAGED_RETURN, 'مرتجع تالف'),
+        (TYPE_EXCHANGE_OUT, 'خروج استبدال'),
+        (TYPE_SALES_REP_ASSIGNMENT, 'تهيئة مندوب'),
+        (TYPE_SALES_REP_RETURN, 'مرتجع مندوب'),
+        (TYPE_SALES_REP_SALE, 'بيع مندوب'),
+        (TYPE_SAMPLE, 'عينة / إصدار مجاني'),
     ]
-
-    MOVEMENT_TYPE_CHOICES.append((TYPE_PURCHASE_RECEIVE, 'Purchase receive'))
-    MOVEMENT_TYPE_CHOICES.append((TYPE_SALES_RETURN, 'Sales return'))
-    MOVEMENT_TYPE_CHOICES.append((TYPE_DAMAGED_RETURN, 'Damaged return'))
-    MOVEMENT_TYPE_CHOICES.append((TYPE_EXCHANGE_OUT, 'Exchange out'))
-    MOVEMENT_TYPE_CHOICES.append((TYPE_SALES_REP_ASSIGNMENT, 'Sales rep assignment'))
-    MOVEMENT_TYPE_CHOICES.append((TYPE_SALES_REP_RETURN, 'Sales rep return'))
-    MOVEMENT_TYPE_CHOICES.append((TYPE_SALES_REP_SALE, 'Sales rep sale'))
-    MOVEMENT_TYPE_CHOICES.append((TYPE_SAMPLE, 'Sample / free issue'))
 
     movement_type = models.CharField(max_length=20, choices=MOVEMENT_TYPE_CHOICES, db_index=True)
     variant = models.ForeignKey(ProductVariant, on_delete=models.CASCADE)

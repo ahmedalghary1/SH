@@ -47,20 +47,10 @@ class CashAccount(models.Model):
     def get_default(cls):
         account = cls.objects.filter(is_active=True).order_by('created_at', 'pk').first()
         if account:
-            updates = []
-            if account.account_type != cls.TYPE_CASH:
-                account.account_type = cls.TYPE_CASH
-                updates.append('account_type')
-            if account.assigned_user_id is not None:
-                account.assigned_user = None
-                updates.append('assigned_user')
-            if updates:
-                account.save(update_fields=updates)
             return account
-        account = cls.objects.create(
+        account, _ = cls.objects.get_or_create(
             name='الخزنة الرئيسية',
-            account_type=cls.TYPE_CASH,
-            is_active=True,
+            defaults={'account_type': cls.TYPE_CASH, 'is_active': True},
         )
         return account
 
@@ -80,11 +70,10 @@ class PaymentTransaction(models.Model):
         (TYPE_EXPENSE, 'مصروف'),
         (TYPE_REFUND, 'استرداد للعميل'),
         (TYPE_SALES_REP_COLLECTION, 'تحصيل مندوب'),
+        (TYPE_SALES_REP_HANDOVER, 'تسليم مندوب'),
         (TYPE_TRANSFER, 'تحويل بين الخزن'),
         (TYPE_ADJUSTMENT, 'تسوية رصيد'),
     ]
-
-    TRANSACTION_TYPE_CHOICES.append((TYPE_SALES_REP_HANDOVER, 'Sales rep handover'))
 
     DIRECTION_IN = 'in'
     DIRECTION_OUT = 'out'

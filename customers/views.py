@@ -1,5 +1,5 @@
 from django.contrib import messages
-from django.db.models import Q, Sum
+from django.db.models import Max, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
@@ -36,7 +36,11 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
     def get_queryset(self):
         qs = Customer.objects.select_related('created_by').filter(is_active=True).annotate(
             total_purchases=Sum('order__total', filter=Q(order__status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED])),
-            current_balance=Sum('order__remaining_amount', filter=Q(order__status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED]))
+            current_balance=Sum('order__remaining_amount', filter=Q(order__status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED])),
+            last_transaction_date=Max(
+                'order__created_at',
+                filter=~Q(order__status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED])
+            ),
         )
         
         q = self.request.GET.get('q')
@@ -59,11 +63,6 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         for customer in context['customers']:
             customer.current_balance = (customer.opening_balance or 0) + (customer.current_balance or 0)
-            customer.last_transaction_date = Order.objects.filter(customer=customer).exclude(
-                status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED]
-            ).order_by('-created_at').first()
-            if customer.last_transaction_date:
-                customer.last_transaction_date = customer.last_transaction_date.created_at
         return context
 
 

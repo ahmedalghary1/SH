@@ -1,6 +1,6 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.db.models import Q, Sum
+from django.db.models import Max, Q, Sum
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView, View
@@ -26,7 +26,11 @@ class SimpleSupplierListView(ManagerRequiredMixin, ListView):
     def get_queryset(self):
         qs = Supplier.objects.filter(is_active=True).annotate(
             total_purchases=Sum('purchase_orders__total_amount', filter=Q(purchase_orders__status__in=[PurchaseOrder.STATUS_RECEIVED, PurchaseOrder.STATUS_PARTIALLY_RECEIVED])),
-            total_paid=Sum('purchase_orders__paid_amount', filter=Q(purchase_orders__status__in=[PurchaseOrder.STATUS_RECEIVED, PurchaseOrder.STATUS_PARTIALLY_RECEIVED]))
+            total_paid=Sum('purchase_orders__paid_amount', filter=Q(purchase_orders__status__in=[PurchaseOrder.STATUS_RECEIVED, PurchaseOrder.STATUS_PARTIALLY_RECEIVED])),
+            last_transaction_date=Max(
+                'purchase_orders__created_at',
+                filter=~Q(purchase_orders__status=PurchaseOrder.STATUS_CANCELLED)
+            ),
         )
         
         q = self.request.GET.get('q')
@@ -40,16 +44,6 @@ class SimpleSupplierListView(ManagerRequiredMixin, ListView):
             qs = qs.filter(current_balance=0)
         
         return qs.order_by('-created_at')
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        for supplier in context['suppliers']:
-            supplier.last_transaction_date = PurchaseOrder.objects.filter(supplier=supplier).exclude(
-                status=PurchaseOrder.STATUS_CANCELLED
-            ).order_by('-created_at').first()
-            if supplier.last_transaction_date:
-                supplier.last_transaction_date = supplier.last_transaction_date.created_at
-        return context
 
 
 class SimpleSupplierCreateView(ManagerRequiredMixin, CreateView):
@@ -411,10 +405,15 @@ class PurchaseReportView(ManagerRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         orders = PurchaseOrder.objects.exclude(status=PurchaseOrder.STATUS_CANCELLED)
+        agg = orders.aggregate(
+            total_amount=Sum('total_amount'),
+            paid_amount=Sum('paid_amount'),
+            remaining_amount=Sum('remaining_amount'),
+        )
         context['orders'] = orders.select_related('supplier').order_by('-created_at')[:100]
-        context['total_amount'] = orders.aggregate(v=Sum('total_amount'))['v'] or 0
-        context['paid_amount'] = orders.aggregate(v=Sum('paid_amount'))['v'] or 0
-        context['remaining_amount'] = orders.aggregate(v=Sum('remaining_amount'))['v'] or 0
+        context['total_amount'] = agg['total_amount'] or 0
+        context['paid_amount'] = agg['paid_amount'] or 0
+        context['remaining_amount'] = agg['remaining_amount'] or 0
         return context
 
 

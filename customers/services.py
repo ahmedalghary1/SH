@@ -15,60 +15,47 @@ def _customer_orders(customer):
     return Order.objects.filter(customer=customer).exclude(status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
 
 
-def get_customer_total_purchases(customer):
-    return _customer_orders(customer).aggregate(total=Sum('total'))['total'] or Decimal('0')
+def get_customer_summary(customer):
+    orders_qs = _customer_orders(customer)
 
+    order_agg = orders_qs.aggregate(
+        total_purchases=Sum('total'),
+        total_remaining=Sum('remaining_amount'),
+    )
+    total_purchases = order_agg['total_purchases'] or Decimal('0')
+    orders_remaining = order_agg['total_remaining'] or Decimal('0')
+    total_remaining = customer.opening_balance + orders_remaining
 
-def get_customer_total_paid(customer):
-    return PaymentTransaction.objects.filter(
+    total_paid = PaymentTransaction.objects.filter(
         related_customer=customer,
         direction=PaymentTransaction.DIRECTION_IN,
         transaction_type__in=[PaymentTransaction.TYPE_CUSTOMER_PAYMENT, PaymentTransaction.TYPE_SALES_REP_COLLECTION],
     ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
+    last_order = Order.objects.filter(customer=customer).exclude(status=Order.STATUS_CANCELLED).order_by('-created_at').first()
 
-def get_customer_total_remaining(customer):
-    orders_remaining = _customer_orders(customer).aggregate(total=Sum('remaining_amount'))['total'] or Decimal('0')
-    return customer.opening_balance + orders_remaining
-
-
-def get_customer_last_order(customer):
-    return Order.objects.filter(customer=customer).exclude(status=Order.STATUS_CANCELLED).order_by('-created_at').first()
-
-
-def get_customer_last_interaction(customer):
-    return customer.interactions.order_by('-created_at').first()
-
-
-def get_customer_next_follow_up(customer):
-    return customer.interactions.filter(
+    interactions = customer.interactions.order_by('-created_at')
+    last_interaction = interactions.first()
+    next_follow_up = customer.interactions.filter(
         is_completed=False,
         next_follow_up_date__isnull=False,
     ).order_by('next_follow_up_date', 'created_at').first()
 
+    orders_count = orders_qs.count()
+    returns_count = SalesReturn.objects.filter(customer=customer, status=SalesReturn.STATUS_COMPLETED).count() if orders_count else 0
+    return_rate = (Decimal(returns_count) / Decimal(orders_count) * Decimal('100')) if orders_count else Decimal('0')
 
-def get_customer_return_rate(customer):
-    orders_count = _customer_orders(customer).count()
-    if orders_count == 0:
-        return Decimal('0')
-    returns_count = SalesReturn.objects.filter(customer=customer, status=SalesReturn.STATUS_COMPLETED).count()
-    return (Decimal(returns_count) / Decimal(orders_count)) * Decimal('100')
+    complaints_count = customer.interactions.filter(interaction_type=CustomerInteraction.TYPE_COMPLAINT, is_completed=False).count()
 
-
-def get_customer_complaints_count(customer):
-    return customer.interactions.filter(interaction_type=CustomerInteraction.TYPE_COMPLAINT, is_completed=False).count()
-
-
-def get_customer_summary(customer):
     return {
-        'total_purchases': get_customer_total_purchases(customer),
-        'total_paid': get_customer_total_paid(customer),
-        'total_remaining': get_customer_total_remaining(customer),
-        'last_order': get_customer_last_order(customer),
-        'last_interaction': get_customer_last_interaction(customer),
-        'next_follow_up': get_customer_next_follow_up(customer),
-        'return_rate': get_customer_return_rate(customer),
-        'complaints_count': get_customer_complaints_count(customer),
+        'total_purchases': total_purchases,
+        'total_paid': total_paid,
+        'total_remaining': total_remaining,
+        'last_order': last_order,
+        'last_interaction': last_interaction,
+        'next_follow_up': next_follow_up,
+        'return_rate': return_rate,
+        'complaints_count': complaints_count,
     }
 
 

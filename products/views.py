@@ -28,14 +28,14 @@ def generate_variant_sku(product, color_id=None, size_id=None, current_pk=None):
     base = f'{product.sku}-{color_id or "0"}-{size_id or "0"}'
     sku = base
     counter = 2
-    qs = ProductVariant.objects.filter(variant_sku=sku)
+    existing = set(
+        ProductVariant.objects.filter(variant_sku__startswith=base)
+        .values_list('variant_sku', flat=True)
+    )
     if current_pk:
-        qs = qs.exclude(pk=current_pk)
-    while qs.exists():
+        existing = {s for s in existing if s != ProductVariant.objects.filter(pk=current_pk).values_list('variant_sku', flat=True).first()}
+    while sku in existing:
         sku = f'{base}-{counter}'
-        qs = ProductVariant.objects.filter(variant_sku=sku)
-        if current_pk:
-            qs = qs.exclude(pk=current_pk)
         counter += 1
     return sku
 
@@ -101,14 +101,20 @@ class ProductDetailView(RoleRequiredMixin, DetailView):
         movements = StockMovement.objects.filter(variant__product=self.object).select_related(
             'variant__color', 'variant__size', 'from_warehouse', 'to_warehouse', 'created_by',
         ).order_by('-created_at')[:100]
+        agg = order_items.aggregate(
+            sold_quantity=Sum('quantity'),
+            product_sales_total=Sum('total'),
+            product_profit_total=Sum('profit_total'),
+        )
+        stock_agg = stocks.aggregate(current_quantity=Sum('quantity'))
         context['stock_rows'] = stocks
         context['movement_rows'] = movements
-        context['sold_quantity'] = order_items.aggregate(total=Sum('quantity'))['total'] or 0
+        context['sold_quantity'] = agg['sold_quantity'] or 0
         context['sales_count'] = order_items.values('order_id').distinct().count()
-        context['product_sales_total'] = order_items.aggregate(total=Sum('total'))['total'] or 0
-        context['product_profit_total'] = order_items.aggregate(total=Sum('profit_total'))['total'] or 0
+        context['product_sales_total'] = agg['product_sales_total'] or 0
+        context['product_profit_total'] = agg['product_profit_total'] or 0
         context['order_items'] = order_items[:50]
-        context['current_quantity'] = stocks.aggregate(total=Sum('quantity'))['total'] or 0
+        context['current_quantity'] = stock_agg['current_quantity'] or 0
         context['variants'] = variants
         return context
 
@@ -694,14 +700,18 @@ def api_products(request):
     if warehouse:
         warehouse_obj = Warehouse.objects.filter(pk=warehouse, is_active=True).first()
 
+    stock_filter = Q()
+    if warehouse_obj:
+        stock_filter = Q(warehouse=warehouse_obj)
+    stock_map = {}
+    for row in Stock.objects.filter(variant__product__in=qs[:100], **({'warehouse': warehouse_obj} if warehouse_obj else {})).values('variant_id').annotate(total=Sum('quantity')):
+        stock_map[row['variant_id']] = row['total']
+
     data = []
     for product in qs[:100]:
         variants = []
         for variant in product.variants.all():
-            stock_qs = Stock.objects.filter(variant=variant)
-            if warehouse_obj:
-                stock_qs = stock_qs.filter(warehouse=warehouse_obj)
-            quantity = sum(stock.quantity for stock in stock_qs)
+            quantity = stock_map.get(variant.id, 0)
             variants.append({
                 'id': variant.id,
                 'code': variant.variant_sku,
