@@ -1,2 +1,0 @@
--- The desktop app initializes from database/schema.sql.
--- Future migrations should be additive and safe for existing offline data.

@@ -17,6 +17,7 @@ urlpatterns = [
     path('suppliers/<int:pk>/statement/', views.SupplierStatementView.as_view(), name='supplier_statement'),
     path('orders/', views.PurchaseOrderListView.as_view(), name='orders'),
     path('orders/create/', views.PurchaseOrderCreateView.as_view(), name='order_create'),
+    path('orders/return/', views.PurchaseReturnView.as_view(), name='purchase_return'),
     path('orders/<int:pk>/', views.PurchaseOrderDetailView.as_view(), name='order_detail'),
     path('orders/<int:pk>/receive/', views.PurchaseReceiveView.as_view(), name='order_receive'),
     path('orders/<int:pk>/pay/', views.SupplierPaymentView.as_view(), name='order_pay'),

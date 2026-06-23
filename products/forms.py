@@ -1,6 +1,7 @@
 from django import forms
 
 from inventory.models import Warehouse
+from purchases.models import Supplier
 
 from .models import Category, Color, Product, ProductVariant, Size
 
@@ -38,7 +39,7 @@ class SizeForm(forms.ModelForm):
 class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
-        fields = ('name', 'sku', 'category', 'material', 'pieces_per_dozen', 'image')
+        fields = ('name', 'sku', 'category', 'supplier', 'material', 'pieces_per_dozen', 'image')
         labels = {
             'name': 'اسم المنتج',
             'sku': 'كود المنتج',
@@ -55,6 +56,11 @@ class ProductForm(forms.ModelForm):
             'pieces_per_dozen': forms.NumberInput(attrs={'min': '1', 'step': '1', 'placeholder': '12'}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['supplier'].queryset = Supplier.objects.filter(is_active=True).order_by('name')
+        self.fields['supplier'].required = False
+
     def save(self, commit=True):
         product = super().save(commit=False)
         product.retail_price = product.retail_price or 0
@@ -68,19 +74,21 @@ class ProductForm(forms.ModelForm):
 class ProductVariantForm(forms.ModelForm):
     class Meta:
         model = ProductVariant
-        fields = ('product', 'color', 'size', 'image', 'cost_price', 'sale_price', 'is_active')
+        fields = ('product', 'color', 'size', 'image', 'cost_price', 'retail_price', 'wholesale_price', 'is_active')
         labels = {
             'product': 'المنتج',
             'color': 'اللون',
             'size': 'المقاس',
             'image': 'صورة اللون / المقاس',
             'cost_price': 'سعر الشراء',
-            'sale_price': 'سعر البيع',
+            'retail_price': 'سعر القطاعي',
+            'wholesale_price': 'سعر الجملة',
             'is_active': 'نشط',
         }
         widgets = {
             'cost_price': forms.NumberInput(attrs={'min': '0', 'step': '0.01', 'placeholder': 'اكتب سعر الشراء'}),
-            'sale_price': forms.NumberInput(attrs={'min': '0', 'step': '0.01', 'placeholder': 'اكتب سعر البيع'}),
+            'retail_price': forms.NumberInput(attrs={'min': '0', 'step': '0.01', 'placeholder': 'سعر القطاعي'}),
+            'wholesale_price': forms.NumberInput(attrs={'min': '0', 'step': '0.01', 'placeholder': 'سعر الجملة'}),
         }
 
 
@@ -89,16 +97,18 @@ class InitialProductVariantForm(forms.ModelForm):
     size = forms.ModelChoiceField(queryset=Size.objects.all().order_by('sort_order', 'name'), label='المقاس')
     image = forms.ImageField(label='صورة اللون / المقاس', required=False)
     cost_price = forms.DecimalField(label='سعر الشراء', min_value=0)
-    sale_price = forms.DecimalField(label='سعر البيع', min_value=0)
+    retail_price = forms.DecimalField(label='سعر القطاعي', min_value=0)
+    wholesale_price = forms.DecimalField(label='سعر الجملة', min_value=0)
 
     class Meta:
         model = ProductVariant
-        fields = ('color', 'size', 'image', 'cost_price', 'sale_price')
+        fields = ('color', 'size', 'image', 'cost_price', 'retail_price', 'wholesale_price')
         widgets = {
             'color': forms.Select(attrs={'data-filterable-select': 'true'}),
             'size': forms.Select(attrs={'data-filterable-select': 'true'}),
             'cost_price': forms.NumberInput(attrs={'min': '0', 'step': '0.01', 'placeholder': 'سعر الشراء'}),
-            'sale_price': forms.NumberInput(attrs={'min': '0', 'step': '0.01', 'placeholder': 'سعر البيع'}),
+            'retail_price': forms.NumberInput(attrs={'min': '0', 'step': '0.01', 'placeholder': 'سعر القطاعي'}),
+            'wholesale_price': forms.NumberInput(attrs={'min': '0', 'step': '0.01', 'placeholder': 'سعر الجملة'}),
         }
 
     def has_variant_data(self):

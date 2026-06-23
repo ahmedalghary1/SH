@@ -45,14 +45,30 @@ class CashAccount(models.Model):
 
     @classmethod
     def get_default(cls):
-        account = cls.objects.filter(is_active=True).order_by('created_at', 'pk').first()
-        if account:
-            return account
         account, _ = cls.objects.get_or_create(
             name='الخزنة الرئيسية',
             defaults={'account_type': cls.TYPE_CASH, 'is_active': True},
         )
         return account
+
+    @classmethod
+    def get_cash_drawer(cls):
+        account, _ = cls.objects.get_or_create(
+            name='درج النقدية',
+            defaults={'account_type': cls.TYPE_CASH, 'is_active': True},
+        )
+        return account
+
+    @classmethod
+    def get_for_user(cls, user):
+        if user and getattr(user, 'role', None) == 'sales':
+            account, _ = cls.objects.get_or_create(
+                account_type=cls.TYPE_SALES_REP_CASH,
+                assigned_user=user,
+                defaults={'name': f'خزنة {user.get_full_name() or user.username}', 'is_active': True},
+            )
+            return account
+        return cls.get_cash_drawer()
 
 
 class PaymentTransaction(models.Model):
@@ -64,6 +80,7 @@ class PaymentTransaction(models.Model):
     TYPE_SALES_REP_HANDOVER = 'sales_rep_handover'
     TYPE_TRANSFER = 'transfer'
     TYPE_ADJUSTMENT = 'adjustment'
+    TYPE_CUSTOMER_ALLOWED_DISCOUNT = 'customer_allowed_discount'
     TRANSACTION_TYPE_CHOICES = [
         (TYPE_CUSTOMER_PAYMENT, 'تحصيل من عميل'),
         (TYPE_SUPPLIER_PAYMENT, 'دفع لمورد'),
@@ -73,6 +90,7 @@ class PaymentTransaction(models.Model):
         (TYPE_SALES_REP_HANDOVER, 'تسليم مندوب'),
         (TYPE_TRANSFER, 'تحويل بين الخزن'),
         (TYPE_ADJUSTMENT, 'تسوية رصيد'),
+        (TYPE_CUSTOMER_ALLOWED_DISCOUNT, 'خصم مسموح لعميل'),
     ]
 
     DIRECTION_IN = 'in'
@@ -106,6 +124,7 @@ class PaymentTransaction(models.Model):
     reference = models.CharField(max_length=80, blank=True, null=True, db_index=True)
     notes = models.TextField(blank=True, null=True)
     transaction_date = models.DateField(default=timezone.localdate, db_index=True)
+    affects_cash = models.BooleanField(default=True, db_index=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
@@ -122,7 +141,7 @@ class PaymentTransaction(models.Model):
             models.Index(fields=['created_at']),
         ]
         constraints = [
-            models.CheckConstraint(check=models.Q(amount__gt=0), name='finance_paymenttransaction_amount_gt_0'),
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name='finance_paymenttransaction_amount_gt_0'),
         ]
 
     def __str__(self):

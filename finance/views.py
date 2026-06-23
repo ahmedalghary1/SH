@@ -14,7 +14,7 @@ from config.exports import ExportListMixin
 
 from .forms import CashAccountForm, CustomerCollectionForm, ExpenseForm, SalesRepStatementForm, TransferForm, SupplierPaymentForm
 from .models import CashAccount, PaymentTransaction
-from .services import add_expense, collect_order_payment, delete_transaction, record_customer_payment, record_supplier_payment, transfer_between_accounts
+from .services import add_expense, collect_order_payment, delete_transaction, record_customer_allowed_discount, record_customer_payment, record_supplier_payment, transfer_between_accounts
 
 
 def _validation_error_message(exc):
@@ -131,7 +131,7 @@ class CashAccountListView(ManagerRequiredMixin, ExportListMixin, ListView):
     )
 
     def get_queryset(self):
-        return CashAccount.objects.filter(pk=CashAccount.get_default().pk)
+        return CashAccount.objects.select_related('assigned_user').order_by('account_type', 'name')
 
 
 class CashAccountCreateView(ManagerRequiredMixin, CreateView):
@@ -139,9 +139,6 @@ class CashAccountCreateView(ManagerRequiredMixin, CreateView):
     form_class = CashAccountForm
     template_name = 'finance/accounts/form.html'
     success_url = reverse_lazy('finance:accounts')
-
-    def dispatch(self, request, *args, **kwargs):
-        return redirect('finance:account_update', pk=CashAccount.get_default().pk)
 
     def form_valid(self, form):
         messages.success(self.request, 'تم إنشاء الحساب المالي')
@@ -153,12 +150,6 @@ class CashAccountUpdateView(ManagerRequiredMixin, UpdateView):
     form_class = CashAccountForm
     template_name = 'finance/accounts/form.html'
     success_url = reverse_lazy('finance:accounts')
-
-    def dispatch(self, request, *args, **kwargs):
-        default_account = CashAccount.get_default()
-        if kwargs.get('pk') != default_account.pk:
-            return redirect('finance:account_update', pk=default_account.pk)
-        return super().dispatch(request, *args, **kwargs)
 
     def form_valid(self, form):
         messages.success(self.request, 'تم تحديث الحساب المالي')
@@ -180,12 +171,6 @@ class CashAccountDetailView(ManagerRequiredMixin, DetailView):
     template_name = 'finance/accounts/detail.html'
     context_object_name = 'account'
     paginate_by = 30
-
-    def dispatch(self, request, *args, **kwargs):
-        default_account = CashAccount.get_default()
-        if kwargs.get('pk') != default_account.pk:
-            return redirect('finance:account_detail', pk=default_account.pk)
-        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -332,23 +317,47 @@ class CustomerCollectionView(ManagerRequiredMixin, FormView):
     def form_valid(self, form):
         try:
             order = form.cleaned_data.get('order')
+            cash_account = form.cleaned_data.get('cash_account')
+            allowed_discount = form.cleaned_data.get('allowed_discount') or 0
             if order:
                 collect_order_payment(
                     order=order,
                     amount=form.cleaned_data['amount'],
                     user=self.request.user,
+                    cash_account=cash_account,
                     notes=form.cleaned_data.get('notes') or '',
                     transaction_date=form.cleaned_data.get('transaction_date'),
                 )
+                if allowed_discount:
+                    record_customer_allowed_discount(
+                        order=order,
+                        customer=order.customer,
+                        amount=allowed_discount,
+                        user=self.request.user,
+                        notes=form.cleaned_data.get('notes') or '',
+                        transaction_date=form.cleaned_data.get('transaction_date'),
+                    )
+                    order.remaining_amount = max(order.remaining_amount - allowed_discount, 0)
+                    order.payment_status = order.PAYMENT_PAID if order.remaining_amount == 0 else order.PAYMENT_PARTIAL
+                    order.save(update_fields=['remaining_amount', 'payment_status'])
             else:
                 record_customer_payment(
                     order=None,
                     customer=form.cleaned_data.get('customer'),
                     amount=form.cleaned_data['amount'],
                     user=self.request.user,
+                    cash_account=cash_account,
                     notes=form.cleaned_data.get('notes') or '',
                     transaction_date=form.cleaned_data.get('transaction_date'),
                 )
+                if allowed_discount:
+                    record_customer_allowed_discount(
+                        customer=form.cleaned_data.get('customer'),
+                        amount=allowed_discount,
+                        user=self.request.user,
+                        notes=form.cleaned_data.get('notes') or '',
+                        transaction_date=form.cleaned_data.get('transaction_date'),
+                    )
             messages.success(self.request, 'تم تسجيل التحصيل')
             return redirect(self.success_url)
         except ValidationError as exc:
@@ -360,10 +369,6 @@ class TransferView(ManagerRequiredMixin, FormView):
     template_name = 'finance/transactions/transfer.html'
     form_class = TransferForm
     success_url = reverse_lazy('finance:transactions')
-
-    def dispatch(self, request, *args, **kwargs):
-        messages.error(request, 'النظام يعمل بخزنة واحدة، لذلك التحويل بين الخزن غير متاح')
-        return redirect('finance:cash')
 
     def form_valid(self, form):
         try:

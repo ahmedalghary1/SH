@@ -44,8 +44,8 @@ class Stock(models.Model):
         ]
         constraints = [
             models.UniqueConstraint(fields=['warehouse', 'variant'], name='stock_warehouse_variant_unique'),
-            models.CheckConstraint(check=models.Q(quantity__gte=0), name='stock_quantity_non_negative'),
-            models.CheckConstraint(check=models.Q(min_quantity__gte=0), name='stock_min_quantity_non_negative'),
+            models.CheckConstraint(condition=models.Q(quantity__gte=0), name='stock_quantity_non_negative'),
+            models.CheckConstraint(condition=models.Q(min_quantity__gte=0), name='stock_min_quantity_non_negative'),
         ]
 
     def __str__(self):
@@ -86,6 +86,7 @@ class StockMovement(models.Model):
     TYPE_RETURN = 'return'
     TYPE_ADJUSTMENT = 'adjustment'
     TYPE_PURCHASE_RECEIVE = 'purchase_receive'
+    TYPE_PURCHASE_RETURN = 'purchase_return'
     TYPE_SALES_RETURN = 'sales_return'
     TYPE_DAMAGED_RETURN = 'damaged_return'
     TYPE_EXCHANGE_OUT = 'exchange_out'
@@ -102,6 +103,7 @@ class StockMovement(models.Model):
         (TYPE_RETURN, 'مرتجع'),
         (TYPE_ADJUSTMENT, 'تسوية'),
         (TYPE_PURCHASE_RECEIVE, 'استلام شراء'),
+        (TYPE_PURCHASE_RETURN, 'مرتجع شراء'),
         (TYPE_SALES_RETURN, 'مرتجع بيع'),
         (TYPE_DAMAGED_RETURN, 'مرتجع تالف'),
         (TYPE_EXCHANGE_OUT, 'خروج استبدال'),
@@ -130,7 +132,7 @@ class StockMovement(models.Model):
             models.Index(fields=['created_at']),
         ]
         constraints = [
-            models.CheckConstraint(check=models.Q(quantity__gt=0), name='stock_movement_quantity_positive'),
+            models.CheckConstraint(condition=models.Q(quantity__gt=0), name='stock_movement_quantity_positive'),
         ]
 
     def __str__(self):

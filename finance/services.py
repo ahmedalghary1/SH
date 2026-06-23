@@ -20,7 +20,7 @@ def _as_decimal(amount):
 
 
 def _locked_account(account):
-    account = CashAccount.get_default()
+    account = account or CashAccount.get_cash_drawer()
     return CashAccount.objects.select_for_update().get(pk=account.pk)
 
 
@@ -103,6 +103,22 @@ def record_customer_payment(*, order, customer, amount, user, cash_account=None,
         notes=notes,
         created_by=user,
         transaction_date=transaction_date,
+    )
+
+
+def record_customer_allowed_discount(*, customer, amount, user, order=None, notes='', transaction_date=None):
+    amount = _as_decimal(amount)
+    return PaymentTransaction.objects.create(
+        transaction_type=PaymentTransaction.TYPE_CUSTOMER_ALLOWED_DISCOUNT,
+        direction=PaymentTransaction.DIRECTION_OUT,
+        amount=amount,
+        cash_account=CashAccount.get_cash_drawer(),
+        related_order=order,
+        related_customer=customer,
+        notes=notes,
+        transaction_date=transaction_date or timezone.localdate(),
+        created_by=user,
+        affects_cash=False,
     )
 
 
@@ -246,6 +262,24 @@ def delete_transaction(*, payment_transaction, user=None):
     tx = PaymentTransaction.objects.select_for_update().select_related('cash_account').get(pk=payment_transaction.pk)
     account = CashAccount.objects.select_for_update().get(pk=tx.cash_account_id)
     old_balance = account.balance
+    affects_cash = getattr(tx, 'affects_cash', True)
+    if not affects_cash:
+        tx_repr = str(tx)
+        tx_pk = tx.pk
+        tx_amount = tx.amount
+        tx.delete()
+        log_audit(
+            user=user,
+            action=AuditLog.ACTION_DELETE,
+            section=AuditLog.SECTION_FINANCE,
+            model_name='PaymentTransaction',
+            object_id=tx_pk,
+            object_repr=tx_repr,
+            changes_before={'account_balance': str(old_balance)},
+            changes_after={'account_balance': str(account.balance)},
+            notes=f'Ø­Ø°Ù Ø­Ø±ÙƒØ© Ù…Ø§Ù„ÙŠØ© - Ø§Ù„Ù…Ø¨Ù„Øº: {tx_amount}',
+        )
+        return
     if tx.direction == PaymentTransaction.DIRECTION_IN:
         if not account.allow_overdraft and account.balance < tx.amount:
             raise ValidationError('لا يمكن حذف حركة داخلة لأن رصيد الخزنة الحالي أقل من مبلغ الحركة')

@@ -97,6 +97,10 @@ class OrderListView(RoleRequiredMixin, ExportListMixin, ListView):
 
     def get_queryset(self):
         qs = Order.objects.select_related('customer', 'warehouse', 'created_by').order_by('-created_at')
+        if getattr(self, 'document_type', None):
+            qs = qs.filter(document_type=self.document_type)
+        if getattr(self, 'order_type', None):
+            qs = qs.filter(order_type=self.order_type)
         if self.request.user.role == 'sales' and not self.request.user.is_superuser:
             qs = qs.filter(created_by=self.request.user)
         q = self.request.GET.get('q')
@@ -108,6 +112,18 @@ class OrderListView(RoleRequiredMixin, ExportListMixin, ListView):
         return qs
 
 
+class RetailOrderListView(OrderListView):
+    order_type = Order.TYPE_B2C
+
+
+class WholesaleOrderListView(OrderListView):
+    order_type = Order.TYPE_B2B
+
+
+class QuoteListView(OrderListView):
+    document_type = Order.DOCUMENT_QUOTE
+
+
 class OrderCreateView(SalesRequiredMixin, FormView):
     form_class = OrderForm
     template_name = 'orders/create.html'
@@ -116,6 +132,14 @@ class OrderCreateView(SalesRequiredMixin, FormView):
         kwargs = super().get_form_kwargs()
         kwargs['user'] = self.request.user
         return kwargs
+
+    def get_initial(self):
+        initial = super().get_initial()
+        if self.request.GET.get('type') == 'wholesale':
+            initial['order_type'] = Order.TYPE_B2B
+        if self.request.GET.get('document') == 'quote':
+            initial['document_type'] = Order.DOCUMENT_QUOTE
+        return initial
 
     def get_item_warehouse(self, warehouse_id):
         warehouses = Warehouse.objects.filter(is_active=True)

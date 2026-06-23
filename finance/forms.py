@@ -12,7 +12,7 @@ from .models import CashAccount
 class CashAccountForm(forms.ModelForm):
     class Meta:
         model = CashAccount
-        fields = ('name', 'balance', 'allow_overdraft', 'is_active')
+        fields = ('name', 'account_type', 'assigned_user', 'balance', 'allow_overdraft', 'is_active')
         labels = {
             'name': 'اسم الخزنة / الحساب',
             'balance': 'الرصيد الافتتاحي',
@@ -22,8 +22,6 @@ class CashAccountForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
-        self.instance.account_type = CashAccount.TYPE_CASH
-        self.instance.assigned_user = None
         return cleaned
 
 
@@ -34,6 +32,8 @@ class ExpenseForm(forms.Form):
 
 
 class CustomerCollectionForm(forms.Form):
+    cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة', required=False)
+    allowed_discount = forms.DecimalField(min_value=0, required=False, initial=0, label='خصم مسموح به')
     customer = forms.ModelChoiceField(queryset=Customer.objects.filter(is_active=True), label='العميل', required=False)
     order = forms.ModelChoiceField(queryset=Order.objects.exclude(remaining_amount=0), label='الطلب', required=False)
     amount = forms.DecimalField(min_value=0.01, label='المبلغ')
@@ -45,9 +45,10 @@ class CustomerCollectionForm(forms.Form):
         order = cleaned.get('order')
         customer = cleaned.get('customer')
         amount = cleaned.get('amount')
+        allowed_discount = cleaned.get('allowed_discount') or 0
         if not order and not customer:
             raise forms.ValidationError('اختر طلبًا أو عميلًا لتسجيل التحصيل')
-        if order and amount and amount > order.remaining_amount:
+        if order and amount and amount + allowed_discount > order.remaining_amount:
             self.add_error('amount', 'مبلغ التحصيل أكبر من المتبقي على الطلب')
         if order and not customer:
             cleaned['customer'] = order.customer

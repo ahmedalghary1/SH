@@ -54,7 +54,7 @@
                     </div>
                     <div class="info-item">
                         <span>السعر:</span>
-                        <strong id="unit-price">0.00</strong>
+                        <input id="unit-price" type="number" min="0" step="0.01" value="0.00">
                     </div>
                 </div>
 
@@ -128,7 +128,12 @@
                     </div>
                     <div class="summary-row">
                         <span>الخصم</span>
+                        <select id="discount-type">
+                            <option value="amount">بالقيمة</option>
+                            <option value="percentage">بالنسبة %</option>
+                        </select>
                         <input id="discount-input" name="discount_amount" type="number" step="0.01" min="0" placeholder="0.00" value="{{ form.discount_amount.value|default:'0' }}">
+                        <input id="id_discount_percentage" name="discount_percentage" type="number" step="0.01" min="0" max="100" placeholder="0" value="{{ form.discount_percentage.value|default:'0' }}" hidden>
                     </div>
                     <div class="summary-row total">
                         <span>الإجمالي النهائي</span>
@@ -137,7 +142,7 @@
                 </div>
 
                 <!-- خيارات متقدمة -->
-                <div class="advanced-options">
+                <div class="advanced-options" hidden>
                     <button class="advanced-toggle" type="button" data-advanced-toggle aria-expanded="false">
                         <svg class="ui-icon"><use href="#icon-settings"></use></svg>
                         خيارات متقدمة
@@ -146,7 +151,7 @@
                     <div class="advanced-panel" data-advanced-panel aria-hidden="true">
                         <label>
                             <span>نسبة الخصم %</span>
-                            <input id="id_discount_percentage" name="discount_percentage" type="number" step="0.01" min="0" max="100" placeholder="0" value="{{ form.discount_percentage.value|default:'0' }}">
+                            <input id="id_discount_percentage_advanced" type="number" step="0.01" min="0" max="100" placeholder="0" value="{{ form.discount_percentage.value|default:'0' }}" disabled>
                         </label>
                     </div>
                 </div>

@@ -26,7 +26,9 @@ def generate_order_number():
 
 
 def get_price_for_customer(variant, customer=None, order_type=None):
-    return getattr(variant, 'sale_price', None) or Decimal('0')
+    if order_type == Order.TYPE_B2B:
+        return getattr(variant, 'wholesale_price', None) or getattr(variant, 'sale_price', None) or Decimal('0')
+    return getattr(variant, 'retail_price', None) or getattr(variant, 'sale_price', None) or Decimal('0')
 
 
 def get_discount_limits(user, customer=None):

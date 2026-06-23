@@ -9,7 +9,7 @@ from audit.models import AuditLog
 from audit.services import log_audit
 from finance.models import PaymentTransaction
 from finance.services import record_transaction
-from inventory.services import stock_in
+from inventory.services import stock_in, stock_out
 
 from .models import PurchaseOrder, PurchaseOrderItem, Supplier
 
@@ -223,3 +223,27 @@ def cancel_purchase_order(*, purchase_order, user=None):
     )
     
     return purchase_order
+
+
+@transaction.atomic
+def create_purchase_return(*, supplier, product_variant, warehouse, quantity, unit_cost, user, notes=''):
+    quantity = int(quantity)
+    unit_cost = Decimal(str(unit_cost or 0))
+    if quantity <= 0:
+        raise ValidationError('كمية المرتجع يجب أن تكون أكبر من صفر')
+    if unit_cost < 0:
+        raise ValidationError('تكلفة المرتجع لا يمكن أن تكون سالبة')
+    movement = stock_out(
+        variant=product_variant,
+        warehouse=warehouse,
+        quantity=quantity,
+        user=user,
+        note=notes or f'مرتجع شراء إلى المورد {supplier}',
+    )
+    movement.movement_type = movement.TYPE_PURCHASE_RETURN
+    movement.save(update_fields=['movement_type'])
+    amount = unit_cost * quantity
+    supplier = Supplier.objects.select_for_update().get(pk=supplier.pk)
+    supplier.current_balance = F('current_balance') - amount
+    supplier.save(update_fields=['current_balance'])
+    return movement

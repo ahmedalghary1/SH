@@ -36,6 +36,12 @@
     </label>
 
     <label>
+        <span>{{ product_form.supplier.label }}</span>
+        {{ product_form.supplier }}
+        {% if product_form.supplier.errors %}<small class="error">{{ product_form.supplier.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <label>
         <span>{{ product_form.material.label }}</span>
         {{ product_form.material }}
         {% if product_form.material.errors %}<small class="error">{{ product_form.material.errors|join:', ' }}</small>{% endif %}
@@ -50,9 +56,15 @@
     {% endif %}
 
     <label>
-        <span>{{ variant_form.sale_price.label }}</span>
-        {{ variant_form.sale_price }}
-        {% if variant_form.sale_price.errors %}<small class="error">{{ variant_form.sale_price.errors|join:', ' }}</small>{% endif %}
+        <span>{{ variant_form.retail_price.label }}</span>
+        {{ variant_form.retail_price }}
+        {% if variant_form.retail_price.errors %}<small class="error">{{ variant_form.retail_price.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <label>
+        <span>{{ variant_form.wholesale_price.label }}</span>
+        {{ variant_form.wholesale_price }}
+        {% if variant_form.wholesale_price.errors %}<small class="error">{{ variant_form.wholesale_price.errors|join:', ' }}</small>{% endif %}
     </label>
 
     <label>

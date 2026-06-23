@@ -18,6 +18,7 @@
     const warehouse = document.getElementById("id_warehouse");
     const generalDiscount = document.getElementById("id_discount_amount");
     const generalDiscountPercentage = document.getElementById("id_discount_percentage");
+    const discountType = document.getElementById("discount-type");
     const customerSelect = document.getElementById("id_customer");
     const customerSearch = document.getElementById("customer-search");
     const customerResults = document.getElementById("customer-results");
@@ -162,8 +163,11 @@
         const itemDiscount = items.reduce((sum, item) => sum + lineDiscount(item), 0);
         const afterItems = Math.max(subtotal - itemDiscount, 0);
         const discountInput = document.getElementById("discount-input");
-        const orderDiscountAmount = isSample() ? 0 : Number(discountInput?.value || 0);
-        const orderDiscountPercentage = isSample() ? 0 : Number(generalDiscountPercentage?.value || 0);
+        const orderDiscountAmount = isSample() || discountType?.value === "percentage" ? 0 : Number(discountInput?.value || 0);
+        const orderDiscountPercentage = isSample() || discountType?.value !== "percentage" ? 0 : Number(discountInput?.value || 0);
+        if (generalDiscount) generalDiscount.value = orderDiscountAmount;
+        if (generalDiscountPercentage) generalDiscountPercentage.value = orderDiscountPercentage;
+        if (discountInput) discountInput.name = discountType?.value === "percentage" ? "" : "discount_amount";
         const orderDiscount = Math.min(afterItems, orderDiscountAmount + (afterItems * orderDiscountPercentage / 100));
         const discount = itemDiscount + orderDiscount;
         const total = Math.max(subtotal - discount, 0);
@@ -433,6 +437,7 @@
     unitInput?.addEventListener("change", updateLineTotal);
     priceInput.addEventListener("input", updateLineTotal);
     document.getElementById("discount-input")?.addEventListener("input", updateSummary);
+    discountType?.addEventListener("change", updateSummary);
     generalDiscountPercentage?.addEventListener("input", updateSummary);
     invoiceItemSearch?.addEventListener("input", renderItems);
 

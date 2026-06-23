@@ -11,10 +11,10 @@ from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
 
-from .forms import PurchaseOrderForm, PurchaseReceiveForm, SupplierForm, SupplierPaymentForm, SimpleSupplierForm
+from .forms import PurchaseOrderForm, PurchaseReceiveForm, PurchaseReturnForm, SupplierForm, SupplierPaymentForm, SimpleSupplierForm
 from .models import PurchaseOrder, Supplier
 from .raw_material import RawMaterialPurchaseForm, record_raw_material_purchase
-from .services import cancel_purchase_order, create_purchase_order, pay_supplier, receive_purchase_order_items
+from .services import cancel_purchase_order, create_purchase_order, create_purchase_return, pay_supplier, receive_purchase_order_items
 
 
 class SimpleSupplierListView(ManagerRequiredMixin, ListView):
@@ -307,6 +307,15 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
                 }],
                 user=self.request.user,
             )
+            if form.cleaned_data.get('warehouse'):
+                item = po.items.first()
+                receive_purchase_order_items(
+                    purchase_order=po,
+                    warehouse=form.cleaned_data['warehouse'],
+                    received_items={item.pk: item.quantity},
+                    user=self.request.user,
+                    note=form.cleaned_data.get('notes') or '',
+                )
             messages.success(self.request, 'تم إنشاء أمر الشراء')
             return redirect('purchases:order_detail', pk=po.pk)
         except ValidationError as exc:
@@ -379,6 +388,21 @@ class SupplierPaymentView(ManagerRequiredMixin, FormView):
             return redirect('purchases:order_detail', pk=self.purchase_order.pk)
         except ValidationError as exc:
             form.add_error(None, exc.message)
+            return self.form_invalid(form)
+
+
+class PurchaseReturnView(ManagerRequiredMixin, FormView):
+    template_name = 'purchases/orders/return.html'
+    form_class = PurchaseReturnForm
+    success_url = reverse_lazy('purchases:orders')
+
+    def form_valid(self, form):
+        try:
+            create_purchase_return(user=self.request.user, **form.cleaned_data)
+            messages.success(self.request, 'تم تسجيل مرتجع الشراء وخصمه من المخزن وحساب المورد')
+            return redirect(self.success_url)
+        except ValidationError as exc:
+            form.add_error(None, getattr(exc, 'message', str(exc)))
             return self.form_invalid(form)
 
 

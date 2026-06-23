@@ -37,10 +37,10 @@ class OrderForm(forms.ModelForm):
         self.fields['customer'].required = False
         self.fields['warehouse'].required = False
         # Set default document type to sale and hide it
-        self.fields['document_type'].initial = Order.DOCUMENT_SALE
+        self.fields['document_type'].initial = self.initial.get('document_type', Order.DOCUMENT_SALE)
         self.fields['document_type'].widget = forms.HiddenInput()
         # Set default order type to b2c and hide it
-        self.fields['order_type'].initial = Order.TYPE_B2C
+        self.fields['order_type'].initial = self.initial.get('order_type', Order.TYPE_B2C)
         self.fields['order_type'].widget = forms.HiddenInput()
         # Hide discount percentage - use only discount amount
         self.fields['discount_percentage'].widget = forms.HiddenInput()

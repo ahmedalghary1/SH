@@ -71,6 +71,7 @@ class PurchaseOrderForm(forms.Form):
         queryset=ProductVariant.objects.filter(is_active=True).select_related('product', 'color', 'size'),
         label='الصنف',
     )
+    warehouse = forms.ModelChoiceField(queryset=Warehouse.objects.filter(is_active=True), label='مخزن الإضافة', required=False)
     quantity = forms.IntegerField(min_value=1, label='الكمية')
     unit_cost = forms.DecimalField(min_value=0, label='تكلفة الوحدة')
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
@@ -105,3 +106,15 @@ class SupplierPaymentForm(forms.Form):
     cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة')
     amount = forms.DecimalField(min_value=0.01, label='المبلغ')
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات الدفع')
+
+
+class PurchaseReturnForm(forms.Form):
+    supplier = forms.ModelChoiceField(queryset=Supplier.objects.filter(is_active=True), label='المورد')
+    product_variant = forms.ModelChoiceField(
+        queryset=ProductVariant.objects.filter(is_active=True).select_related('product', 'color', 'size'),
+        label='الصنف',
+    )
+    warehouse = forms.ModelChoiceField(queryset=Warehouse.objects.filter(is_active=True), label='المخزن')
+    quantity = forms.IntegerField(min_value=1, label='الكمية')
+    unit_cost = forms.DecimalField(min_value=0, label='تكلفة الوحدة')
+    notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')

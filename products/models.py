@@ -37,6 +37,7 @@ class Product(models.Model):
     name = models.CharField(max_length=200, db_index=True)
     sku = models.CharField(max_length=100, unique=True, db_index=True)
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True)
+    supplier = models.ForeignKey('purchases.Supplier', on_delete=models.SET_NULL, null=True, blank=True, related_name='products')
     description = models.TextField(blank=True, null=True)
     material = models.CharField(max_length=100, blank=True, null=True)
     season = models.CharField(max_length=100, blank=True, null=True)
@@ -67,6 +68,8 @@ class ProductVariant(models.Model):
     barcode = models.CharField(max_length=120, blank=True, null=True, db_index=True)
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     sale_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    retail_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    wholesale_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     is_active = models.BooleanField(default=True, db_index=True)
 
     class Meta:
@@ -77,11 +80,11 @@ class ProductVariant(models.Model):
         ]
         constraints = [
             models.CheckConstraint(
-                check=models.Q(cost_price__gte=0),
+                condition=models.Q(cost_price__gte=0),
                 name='products_productvariant_cost_price_gte_0'
             ),
             models.CheckConstraint(
-                check=models.Q(sale_price__gte=0),
+                condition=models.Q(sale_price__gte=0),
                 name='products_productvariant_sale_price_gte_0'
             ),
         ]
@@ -99,7 +102,7 @@ class ProductVariant(models.Model):
 
     @property
     def effective_sale_price(self):
-        return self.sale_price
+        return self.retail_price or self.sale_price
 
     @property
     def retail_profit_margin_percentage(self):

@@ -197,6 +197,7 @@ class ProductCreateView(ManagerRequiredMixin, View):
                     variant.product = product
                     if not variant.variant_sku:
                         variant.variant_sku = generate_variant_sku(product, variant.color_id, variant.size_id)
+                    variant.sale_price = variant.retail_price
                     variant.save()
                 if stock_form.has_stock_data() and variant:
                     warehouse = stock_form.cleaned_data['warehouse']
@@ -583,6 +584,7 @@ class ProductVariantCreateView(ManagerRequiredMixin, CreateView):
                 form.instance.color_id,
                 form.instance.size_id,
             )
+        form.instance.sale_price = form.instance.retail_price
         messages.success(self.request, 'تم إضافة اللون والمقاس')
         return super().form_valid(form)
 
@@ -602,6 +604,7 @@ class ProductVariantUpdateView(ManagerRequiredMixin, UpdateView):
             form.instance.size_id,
             current_pk=form.instance.pk,
         )
+        form.instance.sale_price = form.instance.retail_price
         messages.success(self.request, 'تم تحديث اللون والمقاس')
         return super().form_valid(form)
 
