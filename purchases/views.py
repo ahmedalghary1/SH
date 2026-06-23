@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Max, Q, Sum
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
@@ -10,6 +11,7 @@ from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
+from products.models import Category, Color, Product, ProductVariant, Size
 
 from .forms import PurchaseOrderForm, PurchaseReceiveForm, PurchaseReturnForm, SupplierForm, SupplierPaymentForm, SimpleSupplierForm
 from .models import PurchaseOrder, Supplier
@@ -292,30 +294,70 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
     template_name = 'purchases/orders/create.html'
     form_class = PurchaseOrderForm
 
+    def get_or_create_product_variant(self, form):
+        variant = form.cleaned_data.get('product_variant')
+        if variant:
+            return variant
+
+        category = form.cleaned_data.get('new_category')
+        category_name = (form.cleaned_data.get('new_category_name') or '').strip()
+        if not category and category_name:
+            category, _ = Category.objects.get_or_create(name=category_name, defaults={'is_active': True})
+
+        color = form.cleaned_data.get('new_color')
+        color_name = (form.cleaned_data.get('new_color_name') or '').strip()
+        if not color and color_name:
+            color, _ = Color.objects.get_or_create(name=color_name)
+
+        size = form.cleaned_data.get('new_size')
+        size_name = (form.cleaned_data.get('new_size_name') or '').strip()
+        if not size and size_name:
+            size, _ = Size.objects.get_or_create(name=size_name, defaults={'sort_order': 0})
+
+        sku = (form.cleaned_data.get('new_product_sku') or '').strip()
+        product = Product.objects.create(
+            name=(form.cleaned_data.get('new_product_name') or '').strip(),
+            sku=sku,
+            category=category,
+            supplier=form.cleaned_data.get('supplier'),
+        )
+        return ProductVariant.objects.create(
+            product=product,
+            color=color,
+            size=size,
+            variant_sku=f'{sku}-{color.pk}-{size.pk}',
+            cost_price=form.cleaned_data.get('unit_cost') or 0,
+            sale_price=form.cleaned_data.get('retail_price') or 0,
+            retail_price=form.cleaned_data.get('retail_price') or 0,
+            wholesale_price=form.cleaned_data.get('wholesale_price') or 0,
+        )
+
     def form_valid(self, form):
         try:
-            po = create_purchase_order(
-                supplier=form.cleaned_data['supplier'],
-                status=form.cleaned_data['status'],
-                order_date=form.cleaned_data.get('order_date'),
-                expected_date=form.cleaned_data.get('expected_date'),
-                notes=form.cleaned_data.get('notes') or '',
-                items=[{
-                    'product_variant': form.cleaned_data['product_variant'],
-                    'quantity': form.cleaned_data['quantity'],
-                    'unit_cost': form.cleaned_data['unit_cost'],
-                }],
-                user=self.request.user,
-            )
-            if form.cleaned_data.get('warehouse'):
-                item = po.items.first()
-                receive_purchase_order_items(
-                    purchase_order=po,
-                    warehouse=form.cleaned_data['warehouse'],
-                    received_items={item.pk: item.quantity},
+            with transaction.atomic():
+                product_variant = self.get_or_create_product_variant(form)
+                po = create_purchase_order(
+                    supplier=form.cleaned_data['supplier'],
+                    status=form.cleaned_data['status'],
+                    order_date=form.cleaned_data.get('order_date'),
+                    expected_date=form.cleaned_data.get('expected_date'),
+                    notes=form.cleaned_data.get('notes') or '',
+                    items=[{
+                        'product_variant': product_variant,
+                        'quantity': form.cleaned_data['quantity'],
+                        'unit_cost': form.cleaned_data['unit_cost'],
+                    }],
                     user=self.request.user,
-                    note=form.cleaned_data.get('notes') or '',
                 )
+                if form.cleaned_data.get('warehouse'):
+                    item = po.items.first()
+                    receive_purchase_order_items(
+                        purchase_order=po,
+                        warehouse=form.cleaned_data['warehouse'],
+                        received_items={item.pk: item.quantity},
+                        user=self.request.user,
+                        note=form.cleaned_data.get('notes') or '',
+                    )
             messages.success(self.request, 'تم إنشاء أمر الشراء')
             return redirect('purchases:order_detail', pk=po.pk)
         except ValidationError as exc:

@@ -8,13 +8,13 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView
 
-from accounts.permissions import ManagerRequiredMixin, can_view_costs, SalesRequiredMixin
+from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, can_view_costs, SalesRequiredMixin
 from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 
 from .forms import CashAccountForm, CustomerCollectionForm, ExpenseForm, SalesRepStatementForm, TransferForm, SupplierPaymentForm
 from .models import CashAccount, PaymentTransaction
-from .services import add_expense, collect_order_payment, delete_transaction, record_customer_allowed_discount, record_customer_payment, record_supplier_payment, transfer_between_accounts
+from .services import add_expense, collect_order_payment, delete_transaction, record_customer_allowed_discount, record_customer_payment, record_customer_refund_payment, record_supplier_payment, transfer_between_accounts
 
 
 def _validation_error_message(exc):
@@ -302,7 +302,8 @@ class ExpenseCreateView(ManagerRequiredMixin, FormView):
             return self.form_invalid(form)
 
 
-class CustomerCollectionView(ManagerRequiredMixin, FormView):
+class CustomerCollectionView(RoleRequiredMixin, FormView):
+    allowed_roles = ('manager', 'sales')
     template_name = 'finance/transactions/collection.html'
     form_class = CustomerCollectionForm
     success_url = reverse_lazy('finance:transactions')
@@ -334,6 +335,7 @@ class CustomerCollectionView(ManagerRequiredMixin, FormView):
                         customer=order.customer,
                         amount=allowed_discount,
                         user=self.request.user,
+                        cash_account=cash_account,
                         notes=form.cleaned_data.get('notes') or '',
                         transaction_date=form.cleaned_data.get('transaction_date'),
                     )
@@ -341,20 +343,32 @@ class CustomerCollectionView(ManagerRequiredMixin, FormView):
                     order.payment_status = order.PAYMENT_PAID if order.remaining_amount == 0 else order.PAYMENT_PARTIAL
                     order.save(update_fields=['remaining_amount', 'payment_status'])
             else:
-                record_customer_payment(
-                    order=None,
-                    customer=form.cleaned_data.get('customer'),
-                    amount=form.cleaned_data['amount'],
-                    user=self.request.user,
-                    cash_account=cash_account,
-                    notes=form.cleaned_data.get('notes') or '',
-                    transaction_date=form.cleaned_data.get('transaction_date'),
-                )
+                amount = form.cleaned_data['amount']
+                if amount < 0:
+                    record_customer_refund_payment(
+                        customer=form.cleaned_data.get('customer'),
+                        amount=abs(amount),
+                        user=self.request.user,
+                        cash_account=cash_account,
+                        notes=form.cleaned_data.get('notes') or '',
+                        transaction_date=form.cleaned_data.get('transaction_date'),
+                    )
+                else:
+                    record_customer_payment(
+                        order=None,
+                        customer=form.cleaned_data.get('customer'),
+                        amount=amount,
+                        user=self.request.user,
+                        cash_account=cash_account,
+                        notes=form.cleaned_data.get('notes') or '',
+                        transaction_date=form.cleaned_data.get('transaction_date'),
+                    )
                 if allowed_discount:
                     record_customer_allowed_discount(
                         customer=form.cleaned_data.get('customer'),
                         amount=allowed_discount,
                         user=self.request.user,
+                        cash_account=cash_account,
                         notes=form.cleaned_data.get('notes') or '',
                         transaction_date=form.cleaned_data.get('transaction_date'),
                     )

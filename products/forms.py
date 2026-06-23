@@ -37,6 +37,8 @@ class SizeForm(forms.ModelForm):
 
 
 class ProductForm(forms.ModelForm):
+    new_category_name = forms.CharField(required=False, label='تصنيف جديد')
+
     class Meta:
         model = Product
         fields = ('name', 'sku', 'category', 'supplier', 'material', 'pieces_per_dozen', 'image')
@@ -60,9 +62,22 @@ class ProductForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields['supplier'].queryset = Supplier.objects.filter(is_active=True).order_by('name')
         self.fields['supplier'].required = False
+        self.fields['category'].required = False
+
+    def clean(self):
+        cleaned = super().clean()
+        if not cleaned.get('category') and not (cleaned.get('new_category_name') or '').strip():
+            self.add_error('category', 'اختر التصنيف أو اكتب تصنيف جديد')
+        return cleaned
 
     def save(self, commit=True):
         product = super().save(commit=False)
+        new_category_name = (self.cleaned_data.get('new_category_name') or '').strip()
+        if not product.category_id and new_category_name:
+            product.category, _ = Category.objects.get_or_create(
+                name=new_category_name,
+                defaults={'is_active': True},
+            )
         product.retail_price = product.retail_price or 0
         product.wholesale_price = product.wholesale_price or 0
         if commit:
@@ -93,8 +108,10 @@ class ProductVariantForm(forms.ModelForm):
 
 
 class InitialProductVariantForm(forms.ModelForm):
-    color = forms.ModelChoiceField(queryset=Color.objects.all().order_by('name'), label='اللون')
-    size = forms.ModelChoiceField(queryset=Size.objects.all().order_by('sort_order', 'name'), label='المقاس')
+    color = forms.ModelChoiceField(queryset=Color.objects.all().order_by('name'), label='اللون', required=False)
+    new_color_name = forms.CharField(required=False, label='لون جديد')
+    size = forms.ModelChoiceField(queryset=Size.objects.all().order_by('sort_order', 'name'), label='المقاس', required=False)
+    new_size_name = forms.CharField(required=False, label='مقاس جديد')
     image = forms.ImageField(label='صورة اللون / المقاس', required=False)
     cost_price = forms.DecimalField(label='سعر الشراء', min_value=0)
     retail_price = forms.DecimalField(label='سعر القطاعي', min_value=0)
@@ -113,6 +130,14 @@ class InitialProductVariantForm(forms.ModelForm):
 
     def has_variant_data(self):
         return self.is_valid()
+
+    def clean(self):
+        cleaned = super().clean()
+        if not cleaned.get('color') and not (cleaned.get('new_color_name') or '').strip():
+            self.add_error('color', 'اختر اللون أو اكتب لون جديد')
+        if not cleaned.get('size') and not (cleaned.get('new_size_name') or '').strip():
+            self.add_error('size', 'اختر المقاس أو اكتب مقاس جديد')
+        return cleaned
 
 
 class InitialStockForm(forms.Form):

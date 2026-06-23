@@ -1,10 +1,11 @@
 {% extends 'base.html' %}
 {% block title %}تفاصيل الفاتورة{% endblock %}
 {% block content %}
-<div class="page-head"><h1>{{ order.order_number }}</h1><span class="badge status-{{ order.status }}">{{ order.get_status_display }}</span></div>
+<div class="page-head"><h1>{{ order.order_number }}</h1><span class="badge">{{ order.invoice_kind_display }}</span></div>
 <section class="card detail-grid">
     <div><span>العميل</span><strong>{{ order.customer|default:'-' }}</strong></div>
-    <div><span>النوع</span><strong>{{ order.get_order_type_display }}</strong></div>
+    <div><span>النوع</span><strong>{{ order.invoice_kind_display }}</strong></div>
+    <div><span>التاريخ والوقت</span><strong>{{ order.created_at|date:'Y-m-d H:i' }}</strong></div>
     <div><span>المخزن</span><strong>{{ order.warehouse|default:'متعدد حسب الأصناف' }}</strong></div>
     <div><span>الدفع</span><strong>{{ order.get_payment_method_display }}</strong></div>
     {% if order.payment_method == 'wallet_transfer' %}
@@ -26,17 +27,6 @@
     </table>
 </div>
 <div class="button-row">
-    {% if request.user.is_manager or request.user.role == 'warehouse' %}
-        <form method="post" action="{% url 'orders:status_update' order.pk %}" class="inline-form">
-            {% csrf_token %}
-            <select name="status" aria-label="تحديث حالة الطلب">
-                <option value="preparing" {% if order.status == 'preparing' %}selected{% endif %}>قيد التجهيز</option>
-                <option value="ready" {% if order.status == 'ready' %}selected{% endif %}>جاهز</option>
-                <option value="completed" {% if order.status == 'completed' %}selected{% endif %}>مكتمل</option>
-            </select>
-            <button class="btn btn-primary" type="submit">تحديث الحالة</button>
-        </form>
-    {% endif %}
     {% if order.status == 'draft' %}<form method="post" action="{% url 'orders:confirm' order.pk %}">{% csrf_token %}<button class="btn btn-accent">تأكيد وخصم المخزون</button></form>{% endif %}
     <form method="post" action="{% url 'orders:cancel' order.pk %}" data-confirm="إلغاء الطلب؟">{% csrf_token %}<button class="btn btn-danger">إلغاء</button></form>
     {% if order.invoice %}

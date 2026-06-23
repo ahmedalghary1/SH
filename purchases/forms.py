@@ -2,7 +2,7 @@ from django import forms
 
 from finance.models import CashAccount
 from inventory.models import Warehouse
-from products.models import ProductVariant
+from products.models import Category, Color, Product, ProductVariant, Size
 
 from .models import PurchaseOrder, Supplier
 
@@ -70,11 +70,40 @@ class PurchaseOrderForm(forms.Form):
     product_variant = forms.ModelChoiceField(
         queryset=ProductVariant.objects.filter(is_active=True).select_related('product', 'color', 'size'),
         label='الصنف',
+        required=False,
     )
+    new_product_name = forms.CharField(required=False, label='منتج جديد')
+    new_product_sku = forms.CharField(required=False, label='كود المنتج الجديد')
+    new_category = forms.ModelChoiceField(queryset=Category.objects.filter(is_active=True), required=False, label='تصنيف المنتج الجديد')
+    new_category_name = forms.CharField(required=False, label='تصنيف جديد')
+    new_color = forms.ModelChoiceField(queryset=Color.objects.all().order_by('name'), required=False, label='لون المنتج الجديد')
+    new_color_name = forms.CharField(required=False, label='لون جديد')
+    new_size = forms.ModelChoiceField(queryset=Size.objects.all().order_by('sort_order', 'name'), required=False, label='مقاس المنتج الجديد')
+    new_size_name = forms.CharField(required=False, label='مقاس جديد')
+    retail_price = forms.DecimalField(min_value=0, required=False, label='سعر قطاعي')
+    wholesale_price = forms.DecimalField(min_value=0, required=False, label='سعر جملة')
     warehouse = forms.ModelChoiceField(queryset=Warehouse.objects.filter(is_active=True), label='مخزن الإضافة', required=False)
     quantity = forms.IntegerField(min_value=1, label='الكمية')
     unit_cost = forms.DecimalField(min_value=0, label='تكلفة الوحدة')
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get('product_variant'):
+            return cleaned
+        if not (cleaned.get('new_product_name') or '').strip():
+            self.add_error('product_variant', 'اختر الصنف أو اكتب منتج جديد')
+        if not (cleaned.get('new_product_sku') or '').strip():
+            self.add_error('new_product_sku', 'اكتب كود المنتج الجديد')
+        elif Product.objects.filter(sku=(cleaned.get('new_product_sku') or '').strip()).exists():
+            self.add_error('new_product_sku', 'كود المنتج موجود بالفعل')
+        if not cleaned.get('new_category') and not (cleaned.get('new_category_name') or '').strip():
+            self.add_error('new_category', 'اختر التصنيف أو اكتب تصنيف جديد')
+        if not cleaned.get('new_color') and not (cleaned.get('new_color_name') or '').strip():
+            self.add_error('new_color', 'اختر اللون أو اكتب لون جديد')
+        if not cleaned.get('new_size') and not (cleaned.get('new_size_name') or '').strip():
+            self.add_error('new_size', 'اختر المقاس أو اكتب مقاس جديد')
+        return cleaned
 
 
 class PurchaseReceiveForm(forms.Form):

@@ -27,7 +27,7 @@
         </div>
         <div class="table-wrap">
             <table>
-                <thead><tr><th>الكود</th><th>اللون</th><th>المقاس</th><th>السعر</th><th>الحالة</th></tr></thead>
+                <thead><tr><th>الكود</th><th>اللون</th><th>المقاس</th><th>سعر قطاعي</th><th>سعر جملة</th><th>الحالة</th></tr></thead>
                 <tbody>
                 {% for variant in variants %}
                     <tr>
@@ -36,12 +36,15 @@
                         <td>{{ variant.size|default:'-' }}</td>
                         <td class="price-cell">
                             <input type="hidden" name="variant_id" value="{{ variant.pk }}">
-                            <input type="number" min="0" step="0.01" name="variant_{{ variant.pk }}_sale_price" value="{{ variant.sale_price|unlocalize }}">
+                            <input type="number" min="0" step="0.01" name="variant_{{ variant.pk }}_retail_price" value="{{ variant.retail_price|default:variant.sale_price|unlocalize }}">
+                        </td>
+                        <td class="price-cell">
+                            <input type="number" min="0" step="0.01" name="variant_{{ variant.pk }}_wholesale_price" value="{{ variant.wholesale_price|default:variant.sale_price|unlocalize }}">
                         </td>
                         <td><span class="badge {% if variant.is_active %}success{% else %}danger{% endif %}">{% if variant.is_active %}نشط{% else %}متوقف{% endif %}</span></td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="5">لا توجد ألوان أو مقاسات لهذا المنتج بعد.</td></tr>
+                    <tr><td colspan="6">لا توجد ألوان أو مقاسات لهذا المنتج بعد.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>

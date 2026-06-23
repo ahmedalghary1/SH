@@ -120,6 +120,16 @@ class Order(models.Model):
         return self.order_number
 
     @property
+    def invoice_kind_display(self):
+        if self.document_type == self.DOCUMENT_QUOTE:
+            return 'عرض سعر'
+        if self.payment_method == self.METHOD_CREDIT:
+            return 'آجل'
+        if self.order_type == self.TYPE_B2B:
+            return 'جملة'
+        return 'قطاعي'
+
+    @property
     def order_total_cost(self):
         return self.total_cost
 

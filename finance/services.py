@@ -106,13 +106,27 @@ def record_customer_payment(*, order, customer, amount, user, cash_account=None,
     )
 
 
-def record_customer_allowed_discount(*, customer, amount, user, order=None, notes='', transaction_date=None):
+def record_customer_refund_payment(*, customer, amount, user, cash_account=None, notes='', transaction_date=None):
+    amount = _as_decimal(amount)
+    return record_transaction(
+        transaction_type=PaymentTransaction.TYPE_REFUND,
+        direction=PaymentTransaction.DIRECTION_OUT,
+        amount=amount,
+        cash_account=cash_account,
+        related_customer=customer,
+        notes=notes,
+        created_by=user,
+        transaction_date=transaction_date,
+    )
+
+
+def record_customer_allowed_discount(*, customer, amount, user, order=None, cash_account=None, notes='', transaction_date=None):
     amount = _as_decimal(amount)
     return PaymentTransaction.objects.create(
         transaction_type=PaymentTransaction.TYPE_CUSTOMER_ALLOWED_DISCOUNT,
         direction=PaymentTransaction.DIRECTION_OUT,
         amount=amount,
-        cash_account=CashAccount.get_cash_drawer(),
+        cash_account=cash_account or CashAccount.get_cash_drawer(),
         related_order=order,
         related_customer=customer,
         notes=notes,
@@ -167,11 +181,12 @@ def record_order_sale_payment(*, order, user, cash_account=None, notes=''):
             order.save(update_fields=['paid_amount', 'remaining_amount', 'payment_status'])
         return None
 
+    account = cash_account or CashAccount.get_for_user(user)
     tx = record_transaction(
         transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
         direction=PaymentTransaction.DIRECTION_IN,
         amount=amount_to_record,
-        cash_account=cash_account,
+        cash_account=account,
         related_order=order,
         related_customer=order.customer,
         notes=notes or f'قيمة بيع تلقائية للطلب {order.order_number}',

@@ -195,6 +195,15 @@ class ProductCreateView(ManagerRequiredMixin, View):
                 if variant_form.has_variant_data() or stock_form.has_stock_data():
                     variant = variant_form.save(commit=False)
                     variant.product = product
+                    if not variant.color_id:
+                        color_name = (variant_form.cleaned_data.get('new_color_name') or '').strip()
+                        variant.color, _ = Color.objects.get_or_create(name=color_name)
+                    if not variant.size_id:
+                        size_name = (variant_form.cleaned_data.get('new_size_name') or '').strip()
+                        variant.size, _ = Size.objects.get_or_create(
+                            name=size_name,
+                            defaults={'sort_order': 0},
+                        )
                     if not variant.variant_sku:
                         variant.variant_sku = generate_variant_sku(product, variant.color_id, variant.size_id)
                     variant.sale_price = variant.retail_price
@@ -279,18 +288,29 @@ class ProductUpdateView(ManagerRequiredMixin, View):
         variant_ids = request.POST.getlist('variant_id')
         for variant_id in variant_ids:
             variant = ProductVariant.objects.select_for_update().get(pk=variant_id, product=product)
-            raw_price = request.POST.get(f'variant_{variant_id}_sale_price', '').strip()
-            if raw_price == '':
-                raise ValidationError('أدخل سعر البيع لكل لون/مقاس')
+            raw_retail_price = request.POST.get(f'variant_{variant_id}_retail_price', '').strip()
+            raw_wholesale_price = request.POST.get(f'variant_{variant_id}_wholesale_price', '').strip()
+            if raw_retail_price == '' or raw_wholesale_price == '':
+                raise ValidationError('أدخل سعر القطاعي والجملة لكل لون/مقاس')
             try:
-                sale_price = Decimal(raw_price)
+                retail_price = Decimal(raw_retail_price)
+                wholesale_price = Decimal(raw_wholesale_price)
             except (InvalidOperation, ValueError):
-                raise ValidationError('سعر البيع غير صحيح')
-            if sale_price < 0:
-                raise ValidationError('سعر البيع لا يمكن أن يكون سالبا')
-            if variant.sale_price != sale_price:
-                variant.sale_price = sale_price
-                variant.save(update_fields=['sale_price'])
+                raise ValidationError('سعر القطاعي أو الجملة غير صحيح')
+            if retail_price < 0 or wholesale_price < 0:
+                raise ValidationError('سعر القطاعي أو الجملة لا يمكن أن يكون سالبا')
+            changed_fields = []
+            if variant.retail_price != retail_price:
+                variant.retail_price = retail_price
+                changed_fields.append('retail_price')
+            if variant.wholesale_price != wholesale_price:
+                variant.wholesale_price = wholesale_price
+                changed_fields.append('wholesale_price')
+            if variant.sale_price != retail_price:
+                variant.sale_price = retail_price
+                changed_fields.append('sale_price')
+            if changed_fields:
+                variant.save(update_fields=changed_fields)
 
     def update_stock_rows(self, request, product):
         stock_ids = request.POST.getlist('stock_id')
@@ -662,7 +682,8 @@ def ajax_get_product_variants(request, product_id):
 def ajax_get_variant_price(request, variant_id):
     order_type = request.GET.get('order_type', 'b2c')
     variant = get_object_or_404(ProductVariant.objects.select_related('product'), pk=variant_id, is_active=True)
-    price = variant.sale_price
+    price = variant.wholesale_price if order_type == Order.TYPE_B2B else variant.retail_price
+    price = price or variant.sale_price
     return JsonResponse({'success': True, 'message': 'تم جلب السعر', 'data': {'price': str(price)}})
 
 

@@ -85,9 +85,8 @@ class OrderListView(RoleRequiredMixin, ExportListMixin, ListView):
     export_filename = 'orders'
     export_columns = (
         ('رقم الفاتورة', 'order_number'),
-        ('النوع', 'get_order_type_display'),
+        ('النوع', 'invoice_kind_display'),
         ('العميل', 'customer'),
-        ('الحالة', 'get_status_display'),
         ('طريقة الدفع', 'get_payment_method_display'),
         ('الإجمالي', 'total'),
         ('الخصم', 'discount'),
@@ -104,11 +103,8 @@ class OrderListView(RoleRequiredMixin, ExportListMixin, ListView):
         if self.request.user.role == 'sales' and not self.request.user.is_superuser:
             qs = qs.filter(created_by=self.request.user)
         q = self.request.GET.get('q')
-        status = self.request.GET.get('status')
         if q:
             qs = qs.filter(arabic_search_q(('order_number', 'customer__name', 'customer__phone'), q))
-        if status:
-            qs = qs.filter(status=status)
         return qs
 
 
