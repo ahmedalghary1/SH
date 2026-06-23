@@ -25,6 +25,6 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name='paymenttransaction',
-            constraint=models.CheckConstraint(condition=models.Q(('amount__gt', 0)), name='finance_paymenttransaction_amount_gt_0'),
+            constraint=models.CheckConstraint(check=models.Q(('amount__gt', 0)), name='finance_paymenttransaction_amount_gt_0'),
         ),
     ]

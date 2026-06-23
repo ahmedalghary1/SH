@@ -13,18 +13,18 @@ class Migration(migrations.Migration):
     operations = [
         migrations.AddConstraint(
             model_name='purchaseorderitem',
-            constraint=models.CheckConstraint(condition=models.Q(('quantity__gt', 0)), name='purchases_purchaseorderitem_quantity_gt_0'),
+            constraint=models.CheckConstraint(check=models.Q(('quantity__gt', 0)), name='purchases_purchaseorderitem_quantity_gt_0'),
         ),
         migrations.AddConstraint(
             model_name='purchaseorderitem',
-            constraint=models.CheckConstraint(condition=models.Q(('received_quantity__gte', 0)), name='purchases_purchaseorderitem_received_quantity_gte_0'),
+            constraint=models.CheckConstraint(check=models.Q(('received_quantity__gte', 0)), name='purchases_purchaseorderitem_received_quantity_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='purchaseorderitem',
-            constraint=models.CheckConstraint(condition=models.Q(('unit_cost__gte', 0)), name='purchases_purchaseorderitem_unit_cost_gte_0'),
+            constraint=models.CheckConstraint(check=models.Q(('unit_cost__gte', 0)), name='purchases_purchaseorderitem_unit_cost_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='purchaseorderitem',
-            constraint=models.CheckConstraint(condition=models.Q(('total_cost__gte', 0)), name='purchases_purchaseorderitem_total_cost_gte_0'),
+            constraint=models.CheckConstraint(check=models.Q(('total_cost__gte', 0)), name='purchases_purchaseorderitem_total_cost_gte_0'),
         ),
     ]

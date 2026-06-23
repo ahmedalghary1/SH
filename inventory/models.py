@@ -44,8 +44,8 @@ class Stock(models.Model):
         ]
         constraints = [
             models.UniqueConstraint(fields=['warehouse', 'variant'], name='stock_warehouse_variant_unique'),
-            models.CheckConstraint(condition=models.Q(quantity__gte=0), name='stock_quantity_non_negative'),
-            models.CheckConstraint(condition=models.Q(min_quantity__gte=0), name='stock_min_quantity_non_negative'),
+            models.CheckConstraint(check=models.Q(quantity__gte=0), name='stock_quantity_non_negative'),
+            models.CheckConstraint(check=models.Q(min_quantity__gte=0), name='stock_min_quantity_non_negative'),
         ]
 
     def __str__(self):
@@ -132,7 +132,7 @@ class StockMovement(models.Model):
             models.Index(fields=['created_at']),
         ]
         constraints = [
-            models.CheckConstraint(condition=models.Q(quantity__gt=0), name='stock_movement_quantity_positive'),
+            models.CheckConstraint(check=models.Q(quantity__gt=0), name='stock_movement_quantity_positive'),
         ]
 
     def __str__(self):
