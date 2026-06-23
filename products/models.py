@@ -1,6 +1,8 @@
 from django.core.validators import MinValueValidator
 from django.db import models
 
+from config.django_compat import check_constraint
+
 
 class Category(models.Model):
     name = models.CharField(max_length=100, db_index=True)
@@ -79,12 +81,12 @@ class ProductVariant(models.Model):
             models.Index(fields=['is_active']),
         ]
         constraints = [
-            models.CheckConstraint(
-                condition=models.Q(cost_price__gte=0),
+            check_constraint(
+                check=models.Q(cost_price__gte=0),
                 name='products_productvariant_cost_price_gte_0'
             ),
-            models.CheckConstraint(
-                condition=models.Q(sale_price__gte=0),
+            check_constraint(
+                check=models.Q(sale_price__gte=0),
                 name='products_productvariant_sale_price_gte_0'
             ),
         ]

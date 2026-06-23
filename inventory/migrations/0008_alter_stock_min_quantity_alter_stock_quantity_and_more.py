@@ -3,6 +3,7 @@
 import django.core.validators
 from django.conf import settings
 from django.db import migrations, models
+from config.django_compat import check_constraint
 
 
 class Migration(migrations.Migration):
@@ -43,14 +44,14 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name='stock',
-            constraint=models.CheckConstraint(check=models.Q(('quantity__gte', 0)), name='stock_quantity_non_negative'),
+            constraint=check_constraint(check=models.Q(('quantity__gte', 0)), name='stock_quantity_non_negative'),
         ),
         migrations.AddConstraint(
             model_name='stock',
-            constraint=models.CheckConstraint(check=models.Q(('min_quantity__gte', 0)), name='stock_min_quantity_non_negative'),
+            constraint=check_constraint(check=models.Q(('min_quantity__gte', 0)), name='stock_min_quantity_non_negative'),
         ),
         migrations.AddConstraint(
             model_name='stockmovement',
-            constraint=models.CheckConstraint(check=models.Q(('quantity__gt', 0)), name='stock_movement_quantity_positive'),
+            constraint=check_constraint(check=models.Q(('quantity__gt', 0)), name='stock_movement_quantity_positive'),
         ),
     ]

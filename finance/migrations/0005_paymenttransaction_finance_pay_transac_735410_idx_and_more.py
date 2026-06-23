@@ -2,6 +2,7 @@
 
 from django.conf import settings
 from django.db import migrations, models
+from config.django_compat import check_constraint
 
 
 class Migration(migrations.Migration):
@@ -25,6 +26,6 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name='paymenttransaction',
-            constraint=models.CheckConstraint(check=models.Q(('amount__gt', 0)), name='finance_paymenttransaction_amount_gt_0'),
+            constraint=check_constraint(check=models.Q(('amount__gt', 0)), name='finance_paymenttransaction_amount_gt_0'),
         ),
     ]

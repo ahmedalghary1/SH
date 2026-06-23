@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
+from config.django_compat import check_constraint
 from django.utils import timezone
 
 from customers.models import Customer
@@ -141,7 +142,7 @@ class PaymentTransaction(models.Model):
             models.Index(fields=['created_at']),
         ]
         constraints = [
-            models.CheckConstraint(check=models.Q(amount__gt=0), name='finance_paymenttransaction_amount_gt_0'),
+            check_constraint(check=models.Q(amount__gt=0), name='finance_paymenttransaction_amount_gt_0'),
         ]
 
     def __str__(self):

@@ -2,6 +2,7 @@
 
 from django.conf import settings
 from django.db import migrations, models
+from config.django_compat import check_constraint
 
 
 class Migration(migrations.Migration):
@@ -21,74 +22,74 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name='order',
-            constraint=models.CheckConstraint(check=models.Q(('discount_amount__gte', 0)), name='orders_order_discount_amount_gte_0'),
+            constraint=check_constraint(check=models.Q(('discount_amount__gte', 0)), name='orders_order_discount_amount_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='order',
-            constraint=models.CheckConstraint(check=models.Q(('discount_percentage__gte', 0), ('discount_percentage__lte', 100)), name='orders_order_discount_percentage_0_100'),
+            constraint=check_constraint(check=models.Q(('discount_percentage__gte', 0), ('discount_percentage__lte', 100)), name='orders_order_discount_percentage_0_100'),
         ),
         migrations.AddConstraint(
             model_name='order',
-            constraint=models.CheckConstraint(check=models.Q(('subtotal__gte', 0)), name='orders_order_subtotal_gte_0'),
+            constraint=check_constraint(check=models.Q(('subtotal__gte', 0)), name='orders_order_subtotal_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='order',
-            constraint=models.CheckConstraint(check=models.Q(('discount__gte', 0)), name='orders_order_discount_gte_0'),
+            constraint=check_constraint(check=models.Q(('discount__gte', 0)), name='orders_order_discount_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='order',
-            constraint=models.CheckConstraint(check=models.Q(('total__gte', 0)), name='orders_order_total_gte_0'),
+            constraint=check_constraint(check=models.Q(('total__gte', 0)), name='orders_order_total_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='order',
-            constraint=models.CheckConstraint(check=models.Q(('total_cost__gte', 0)), name='orders_order_total_cost_gte_0'),
+            constraint=check_constraint(check=models.Q(('total_cost__gte', 0)), name='orders_order_total_cost_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='order',
-            constraint=models.CheckConstraint(check=models.Q(('paid_amount__gte', 0)), name='orders_order_paid_amount_gte_0'),
+            constraint=check_constraint(check=models.Q(('paid_amount__gte', 0)), name='orders_order_paid_amount_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='order',
-            constraint=models.CheckConstraint(check=models.Q(('remaining_amount__gte', 0)), name='orders_order_remaining_amount_gte_0'),
+            constraint=check_constraint(check=models.Q(('remaining_amount__gte', 0)), name='orders_order_remaining_amount_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='orderitem',
-            constraint=models.CheckConstraint(check=models.Q(('quantity__gt', 0)), name='orders_orderitem_quantity_gt_0'),
+            constraint=check_constraint(check=models.Q(('quantity__gt', 0)), name='orders_orderitem_quantity_gt_0'),
         ),
         migrations.AddConstraint(
             model_name='orderitem',
-            constraint=models.CheckConstraint(check=models.Q(('discount_amount__gte', 0)), name='orders_orderitem_discount_amount_gte_0'),
+            constraint=check_constraint(check=models.Q(('discount_amount__gte', 0)), name='orders_orderitem_discount_amount_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='orderitem',
-            constraint=models.CheckConstraint(check=models.Q(('discount_percentage__gte', 0), ('discount_percentage__lte', 100)), name='orders_orderitem_discount_percentage_0_100'),
+            constraint=check_constraint(check=models.Q(('discount_percentage__gte', 0), ('discount_percentage__lte', 100)), name='orders_orderitem_discount_percentage_0_100'),
         ),
         migrations.AddConstraint(
             model_name='orderitem',
-            constraint=models.CheckConstraint(check=models.Q(('final_unit_price__gte', 0)), name='orders_orderitem_final_unit_price_gte_0'),
+            constraint=check_constraint(check=models.Q(('final_unit_price__gte', 0)), name='orders_orderitem_final_unit_price_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='orderitem',
-            constraint=models.CheckConstraint(check=models.Q(('unit_price__gte', 0)), name='orders_orderitem_unit_price_gte_0'),
+            constraint=check_constraint(check=models.Q(('unit_price__gte', 0)), name='orders_orderitem_unit_price_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='orderitem',
-            constraint=models.CheckConstraint(check=models.Q(('original_unit_price__gte', 0)), name='orders_orderitem_original_unit_price_gte_0'),
+            constraint=check_constraint(check=models.Q(('original_unit_price__gte', 0)), name='orders_orderitem_original_unit_price_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='orderitem',
-            constraint=models.CheckConstraint(check=models.Q(('unit_cost__gte', 0)), name='orders_orderitem_unit_cost_gte_0'),
+            constraint=check_constraint(check=models.Q(('unit_cost__gte', 0)), name='orders_orderitem_unit_cost_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='orderitem',
-            constraint=models.CheckConstraint(check=models.Q(('discount__gte', 0)), name='orders_orderitem_discount_gte_0'),
+            constraint=check_constraint(check=models.Q(('discount__gte', 0)), name='orders_orderitem_discount_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='orderitem',
-            constraint=models.CheckConstraint(check=models.Q(('total__gte', 0)), name='orders_orderitem_total_gte_0'),
+            constraint=check_constraint(check=models.Q(('total__gte', 0)), name='orders_orderitem_total_gte_0'),
         ),
         migrations.AddConstraint(
             model_name='orderitem',
-            constraint=models.CheckConstraint(check=models.Q(('cost_total__gte', 0)), name='orders_orderitem_cost_total_gte_0'),
+            constraint=check_constraint(check=models.Q(('cost_total__gte', 0)), name='orders_orderitem_cost_total_gte_0'),
         ),
     ]

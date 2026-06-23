@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
+from config.django_compat import check_constraint
 
 from products.models import ProductVariant
 
@@ -44,8 +45,8 @@ class Stock(models.Model):
         ]
         constraints = [
             models.UniqueConstraint(fields=['warehouse', 'variant'], name='stock_warehouse_variant_unique'),
-            models.CheckConstraint(check=models.Q(quantity__gte=0), name='stock_quantity_non_negative'),
-            models.CheckConstraint(check=models.Q(min_quantity__gte=0), name='stock_min_quantity_non_negative'),
+            check_constraint(check=models.Q(quantity__gte=0), name='stock_quantity_non_negative'),
+            check_constraint(check=models.Q(min_quantity__gte=0), name='stock_min_quantity_non_negative'),
         ]
 
     def __str__(self):
@@ -132,7 +133,7 @@ class StockMovement(models.Model):
             models.Index(fields=['created_at']),
         ]
         constraints = [
-            models.CheckConstraint(check=models.Q(quantity__gt=0), name='stock_movement_quantity_positive'),
+            check_constraint(check=models.Q(quantity__gt=0), name='stock_movement_quantity_positive'),
         ]
 
     def __str__(self):
