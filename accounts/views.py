@@ -18,6 +18,12 @@ from .models import User
 from .permissions import ManagerRequiredMixin
 
 
+def ensure_sales_rep_cash_account(user):
+    if user.role == User.ROLE_SALES:
+        from finance.models import CashAccount
+        CashAccount.get_for_user(user)
+
+
 @method_decorator(ensure_csrf_cookie, name='dispatch')
 @method_decorator(never_cache, name='dispatch')
 class AppLoginView(LoginView):
@@ -76,8 +82,10 @@ class UserCreateView(ManagerRequiredMixin, CreateView):
     success_url = reverse_lazy('accounts:user_list')
 
     def form_valid(self, form):
+        response = super().form_valid(form)
+        ensure_sales_rep_cash_account(self.object)
         messages.success(self.request, 'تم إنشاء الموظف بنجاح')
-        return super().form_valid(form)
+        return response
 
 
 class UserUpdateView(ManagerRequiredMixin, UpdateView):
@@ -87,8 +95,10 @@ class UserUpdateView(ManagerRequiredMixin, UpdateView):
     success_url = reverse_lazy('accounts:user_list')
 
     def form_valid(self, form):
+        response = super().form_valid(form)
+        ensure_sales_rep_cash_account(self.object)
         messages.success(self.request, 'تم تحديث بيانات الموظف')
-        return super().form_valid(form)
+        return response
 
 
 class UserDeactivateView(ManagerRequiredMixin, View):

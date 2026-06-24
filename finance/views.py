@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView
 
+from accounts.models import User
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, can_view_costs, SalesRequiredMixin
 from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
@@ -28,10 +29,18 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         today = timezone.localdate()
         default_account = CashAccount.get_default()
+        cash_drawer = CashAccount.get_cash_drawer()
+        for sales_user in User.objects.filter(role=User.ROLE_SALES, is_active=True):
+            CashAccount.get_for_user(sales_user)
+        sales_rep_accounts = CashAccount.objects.filter(
+            account_type=CashAccount.TYPE_SALES_REP_CASH,
+            is_active=True,
+        ).select_related('assigned_user').order_by('assigned_user__username', 'name')
+        account_ids = [default_account.pk, cash_drawer.pk]
         
         # الحصول على المعاملات اليومية
         transactions = PaymentTransaction.objects.filter(
-            cash_account=default_account,
+            cash_account_id__in=account_ids,
             transaction_date=today
         ).select_related('created_by').order_by('-created_at')
         
@@ -71,6 +80,9 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
             'expenses': expenses,
             'cash_refunds': cash_refunds,
             'current_balance': current_balance,
+            'main_account': default_account,
+            'cash_drawer': cash_drawer,
+            'sales_rep_accounts': sales_rep_accounts,
             'transactions': transactions[:50],
         })
         return context
@@ -379,10 +391,16 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
             return self.form_invalid(form)
 
 
-class TransferView(ManagerRequiredMixin, FormView):
+class TransferView(RoleRequiredMixin, FormView):
+    allowed_roles = ('manager', 'sales', 'warehouse')
     template_name = 'finance/transactions/transfer.html'
     form_class = TransferForm
     success_url = reverse_lazy('finance:transactions')
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
 
     def form_valid(self, form):
         try:

@@ -74,6 +74,24 @@ class TransferForm(forms.Form):
     transaction_date = forms.DateField(label='تاريخ التحويل', initial=timezone.localdate, widget=forms.DateInput(attrs={'type': 'date'}))
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
 
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        main_account = CashAccount.get_default()
+        CashAccount.get_cash_drawer()
+        self.fields['to_account'].queryset = CashAccount.objects.filter(pk=main_account.pk)
+        self.fields['to_account'].initial = main_account
+        self.fields['to_account'].widget = forms.HiddenInput()
+        if user and getattr(user, 'is_manager', False):
+            self.fields['from_account'].queryset = CashAccount.objects.filter(is_active=True).exclude(pk=main_account.pk)
+        elif user and getattr(user, 'role', None) == 'sales':
+            rep_account = CashAccount.get_for_user(user)
+            self.fields['from_account'].queryset = CashAccount.objects.filter(pk=rep_account.pk)
+            self.fields['from_account'].initial = rep_account
+        else:
+            drawer = CashAccount.get_cash_drawer()
+            self.fields['from_account'].queryset = CashAccount.objects.filter(pk=drawer.pk)
+            self.fields['from_account'].initial = drawer
+
 
 class SalesRepStatementForm(forms.Form):
     sales_rep = forms.ModelChoiceField(queryset=User.objects.filter(role=User.ROLE_SALES, is_active=True), label='المندوب')

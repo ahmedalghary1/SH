@@ -9,6 +9,24 @@
 <div class="simple-cash-page">
     <div class="page-head">
         <h1>الخزنة</h1>
+        <a href="{% url 'finance:transfer' %}" class="btn btn-primary">تحويل للخزنة الرئيسية</a>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <span>الخزنة الرئيسية</span>
+            <strong>{{ main_account.balance }}</strong>
+        </div>
+        <div class="stat-card">
+            <span>درج النقدية</span>
+            <strong>{{ cash_drawer.balance }}</strong>
+        </div>
+        {% for account in sales_rep_accounts %}
+            <div class="stat-card">
+                <span>{{ account.assigned_user|default:account.name }}</span>
+                <strong>{{ account.balance }}</strong>
+            </div>
+        {% endfor %}
     </div>
 
     <!-- كروت ملخص الخزنة -->

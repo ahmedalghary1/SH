@@ -1,6 +1,40 @@
 {% extends 'base.html' %}
-{% block title %}تحويل بين الخزن{% endblock %}
+{% block title %}تحويل للخزنة الرئيسية{% endblock %}
 {% block content %}
-<div class="page-head"><h1>تحويل بين الخزن</h1></div>
-{% include 'partials/model_form.html' with button_text='تنفيذ التحويل' %}
+<div class="page-head"><h1>تحويل للخزنة الرئيسية</h1></div>
+
+<form method="post" class="card form-grid">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    {{ form.to_account }}
+
+    <label>
+        <span>{{ form.from_account.label }}</span>
+        {{ form.from_account }}
+        {% if form.from_account.errors %}<small class="error">{{ form.from_account.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <label>
+        <span>{{ form.amount.label }}</span>
+        {{ form.amount }}
+        {% if form.amount.errors %}<small class="error">{{ form.amount.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <label>
+        <span>{{ form.transaction_date.label }}</span>
+        {{ form.transaction_date }}
+        {% if form.transaction_date.errors %}<small class="error">{{ form.transaction_date.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <label class="span-all">
+        <span>{{ form.notes.label }}</span>
+        {{ form.notes }}
+        {% if form.notes.errors %}<small class="error">{{ form.notes.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <div class="form-actions">
+        <button class="btn btn-primary" type="submit">تنفيذ التحويل</button>
+        <button class="btn btn-light" type="button" onclick="history.back()">رجوع</button>
+    </div>
+</form>
 {% endblock %}
