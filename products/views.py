@@ -8,7 +8,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils.dateparse import parse_date
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, can_view_costs, role_required
@@ -209,7 +209,16 @@ class ProductCreateView(ManagerRequiredMixin, View):
                     variant.sale_price = variant.retail_price
                     variant.save()
                 if stock_form.has_stock_data() and variant:
-                    warehouse = stock_form.cleaned_data['warehouse']
+                    warehouse = stock_form.cleaned_data.get('warehouse')
+                    if not warehouse:
+                        warehouse_name = (stock_form.cleaned_data.get('new_warehouse_name') or '').strip()
+                        warehouse, _ = Warehouse.objects.get_or_create(
+                            name=warehouse_name,
+                            defaults={
+                                'warehouse_type': Warehouse.TYPE_MAIN,
+                                'is_active': True,
+                            },
+                        )
                     quantity = stock_form.cleaned_data.get('quantity') or 0
                     if quantity > 0:
                         stock_in(
@@ -233,6 +242,7 @@ class ProductCreateView(ManagerRequiredMixin, View):
             'variant_form': variant_form,
             'stock_form': stock_form,
             'product_names': Product.objects.filter(is_active=True).order_by('name').values_list('name', flat=True).distinct()[:200],
+            'can_view_costs': can_view_costs(request.user),
         })
 
 
@@ -700,6 +710,92 @@ def api_categories(request):
         for category in categories
     ]
     return JsonResponse({'success': True, 'message': 'تم جلب الأقسام', 'data': data})
+
+
+@require_POST
+@role_required('manager')
+def ajax_quick_create_category(request):
+    name = request.POST.get('name', '').strip()
+    if not name:
+        return JsonResponse({'success': False, 'message': 'اكتب اسم التصنيف'}, status=400)
+    category, _ = Category.objects.get_or_create(name=name, defaults={'is_active': True})
+    if not category.is_active:
+        category.is_active = True
+        category.save(update_fields=['is_active'])
+    return JsonResponse({
+        'success': True,
+        'message': 'تم إضافة التصنيف',
+        'data': {'id': category.id, 'name': category.name},
+    })
+
+
+@require_POST
+@role_required('manager')
+def ajax_quick_create_color(request):
+    name = request.POST.get('name', '').strip()
+    hex_code = request.POST.get('hex_code', '').strip()
+    if not name:
+        return JsonResponse({'success': False, 'message': 'اكتب اسم اللون'}, status=400)
+    color, created = Color.objects.get_or_create(name=name, defaults={'hex_code': hex_code or None})
+    if not created and hex_code and color.hex_code != hex_code:
+        color.hex_code = hex_code
+        color.save(update_fields=['hex_code'])
+    return JsonResponse({
+        'success': True,
+        'message': 'تم إضافة اللون',
+        'data': {'id': color.id, 'name': color.name, 'hex_code': color.hex_code or ''},
+    })
+
+
+@require_POST
+@role_required('manager')
+def ajax_quick_create_size(request):
+    name = request.POST.get('name', '').strip()
+    sort_order = request.POST.get('sort_order', '').strip()
+    if not name:
+        return JsonResponse({'success': False, 'message': 'اكتب اسم المقاس'}, status=400)
+    try:
+        sort_order_value = int(sort_order or 0)
+    except ValueError:
+        return JsonResponse({'success': False, 'message': 'ترتيب العرض غير صحيح'}, status=400)
+    size, created = Size.objects.get_or_create(name=name, defaults={'sort_order': sort_order_value})
+    if not created and sort_order and size.sort_order != sort_order_value:
+        size.sort_order = sort_order_value
+        size.save(update_fields=['sort_order'])
+    return JsonResponse({
+        'success': True,
+        'message': 'تم إضافة المقاس',
+        'data': {'id': size.id, 'name': size.name},
+    })
+
+
+@require_POST
+@role_required('manager')
+def ajax_quick_create_warehouse(request):
+    name = request.POST.get('name', '').strip()
+    warehouse_type = request.POST.get('warehouse_type', Warehouse.TYPE_MAIN).strip() or Warehouse.TYPE_MAIN
+    if not name:
+        return JsonResponse({'success': False, 'message': 'اكتب اسم المخزن'}, status=400)
+    if warehouse_type not in {Warehouse.TYPE_MAIN, Warehouse.TYPE_STORE}:
+        warehouse_type = Warehouse.TYPE_MAIN
+    warehouse, created = Warehouse.objects.get_or_create(
+        name=name,
+        defaults={'warehouse_type': warehouse_type, 'is_active': True},
+    )
+    changed_fields = []
+    if not warehouse.is_active:
+        warehouse.is_active = True
+        changed_fields.append('is_active')
+    if not created and warehouse.warehouse_type != warehouse_type:
+        warehouse.warehouse_type = warehouse_type
+        changed_fields.append('warehouse_type')
+    if changed_fields:
+        warehouse.save(update_fields=changed_fields)
+    return JsonResponse({
+        'success': True,
+        'message': 'تم إضافة المخزن',
+        'data': {'id': warehouse.id, 'name': warehouse.name},
+    })
 
 
 @require_GET

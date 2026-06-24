@@ -59,7 +59,9 @@ class SimpleSupplierForm(forms.ModelForm):
 
 
 class PurchaseOrderForm(forms.Form):
-    supplier = forms.ModelChoiceField(queryset=Supplier.objects.filter(is_active=True), label='المورد')
+    supplier = forms.ModelChoiceField(queryset=Supplier.objects.filter(is_active=True), label='المورد', required=False)
+    new_supplier_name = forms.CharField(required=False, label='مورد جديد')
+    new_supplier_phone = forms.CharField(required=False, label='هاتف المورد')
     status = forms.ChoiceField(
         choices=((PurchaseOrder.STATUS_DRAFT, 'مسودة'), (PurchaseOrder.STATUS_ORDERED, 'تم الطلب')),
         initial=PurchaseOrder.STATUS_ORDERED,
@@ -69,7 +71,7 @@ class PurchaseOrderForm(forms.Form):
     expected_date = forms.DateField(required=False, label='تاريخ متوقع للاستلام', widget=forms.DateInput(attrs={'type': 'date'}))
     product_variant = forms.ModelChoiceField(
         queryset=ProductVariant.objects.filter(is_active=True).select_related('product', 'color', 'size'),
-        label='الصنف',
+        label='المنتج',
         required=False,
     )
     new_product_name = forms.CharField(required=False, label='منتج جديد')
@@ -83,12 +85,22 @@ class PurchaseOrderForm(forms.Form):
     retail_price = forms.DecimalField(min_value=0, required=False, label='سعر قطاعي')
     wholesale_price = forms.DecimalField(min_value=0, required=False, label='سعر جملة')
     warehouse = forms.ModelChoiceField(queryset=Warehouse.objects.filter(is_active=True), label='مخزن الإضافة', required=False)
+    cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة')
     quantity = forms.IntegerField(min_value=1, label='الكمية')
-    unit_cost = forms.DecimalField(min_value=0, label='تكلفة الوحدة')
+    unit_cost = forms.DecimalField(min_value=0, label='سعر الشراء')
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['status'].initial = PurchaseOrder.STATUS_ORDERED
+        self.fields['cash_account'].initial = CashAccount.get_cash_drawer()
 
     def clean(self):
         cleaned = super().clean()
+        if not cleaned.get('supplier') and not (cleaned.get('new_supplier_name') or '').strip():
+            self.add_error('supplier', 'اختر المورد أو أضف مورد جديد')
+        if not cleaned.get('warehouse'):
+            self.add_error('warehouse', 'اختر المخزن')
         if cleaned.get('product_variant'):
             return cleaned
         if not (cleaned.get('new_product_name') or '').strip():

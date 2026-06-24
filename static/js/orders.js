@@ -23,6 +23,7 @@
     const customerSearch = document.getElementById("customer-search");
     const customerResults = document.getElementById("customer-results");
     const paymentMethod = document.getElementById("id_payment_method");
+    const invoiceKind = document.getElementById("invoice-kind");
     const walletFields = document.querySelectorAll(".wallet-field");
     const walletInputs = [document.getElementById("id_wallet_from_number"), document.getElementById("id_wallet_to_number")];
     const invoiceItemSearch = document.getElementById("invoice-item-search");
@@ -89,6 +90,31 @@
 
     function isSample() {
         return documentType?.value === "sample";
+    }
+
+    function currentInvoiceKind() {
+        if (paymentMethod?.value === "credit") {
+            return orderType?.value === "b2b" ? "wholesale_credit" : "retail_credit";
+        }
+        return orderType?.value === "b2b" ? "wholesale" : "retail";
+    }
+
+    function syncInvoiceKindFields() {
+        if (!invoiceKind) return;
+        if (invoiceKind.value === "wholesale" || invoiceKind.value === "wholesale_credit") {
+            if (orderType) orderType.value = "b2b";
+        } else if (orderType) {
+            orderType.value = "b2c";
+        }
+        if (paymentMethod) {
+            paymentMethod.value = invoiceKind.value.endsWith("_credit") ? "credit" : "cash";
+        }
+    }
+
+    function syncInvoiceKindFromFields() {
+        if (!invoiceKind) return;
+        invoiceKind.value = currentInvoiceKind();
+        syncInvoiceKindFields();
     }
 
     function lineDiscount(item) {
@@ -329,14 +355,10 @@
         selectedProductLabel = button.textContent;
         closeProductResults();
         resetProductMeta();
-        console.log('Product selected:', selectedProduct);
-        console.log('Fetching variants from:', `/orders/ajax/products/${selectedProduct.id}/variants/`);
         try {
             const data = await fetchJson(`/orders/ajax/products/${selectedProduct.id}/variants/`);
-            console.log('Variants response:', data);
             variantSelect.innerHTML = '<option value="">اختر اللون والمقاس</option>';
             if (data.success && data.data && data.data.length > 0) {
-                console.log('Processing', data.data.length, 'variants');
                 data.data.forEach((variant) => {
                     const option = document.createElement("option");
                     option.value = variant.id;
@@ -345,11 +367,8 @@
                     option.dataset.size = variant.size;
                     option.dataset.piecesPerDozen = variant.pieces_per_dozen || 12;
                     variantSelect.appendChild(option);
-                    console.log('Added variant:', variant.color, variant.size, variant.sku);
                 });
-                console.log('Total options in variantSelect:', variantSelect.options.length);
             } else {
-                console.log('No variants found or invalid response');
                 variantSelect.innerHTML = '<option value="">لا توجد متغيرات لهذا المنتج</option>';
             }
         } catch (error) {
@@ -428,6 +447,12 @@
     }
 
     variantSelect.addEventListener("change", refreshVariantMeta);
+    invoiceKind?.addEventListener("change", () => {
+        syncInvoiceKindFields();
+        refreshVariantMeta();
+        updateSummary();
+        toggleWalletFields();
+    });
     itemWarehouse.addEventListener("change", () => {
         updateSelectedWarehouse();
         updateLineTotal();
@@ -494,6 +519,7 @@
     });
 
     form.addEventListener("submit", (event) => {
+        syncInvoiceKindFields();
         if (!items.length) {
             event.preventDefault();
             window.alert("أضف منتجا واحدا على الأقل");
@@ -533,6 +559,7 @@
         refreshVariantMeta();
     });
 
+    syncInvoiceKindFromFields();
     renderItems();
     updateDocumentMode();
     updateLineTotal();

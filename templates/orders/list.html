@@ -7,10 +7,7 @@
         <svg class="ui-icon"><use href="#icon-plus"></use></svg>
         إضافة فاتورة
     </a>
-    <a class="btn btn-light" href="{% url 'orders:retail_list' %}">فواتير قطاعي</a>
-    <a class="btn btn-light" href="{% url 'orders:wholesale_list' %}">فواتير جملة</a>
     <a class="btn btn-light" href="{% url 'orders:quote_list' %}">عروض الأسعار</a>
-    <a class="btn btn-light" href="{% url 'orders:create' %}?type=wholesale">فاتورة جملة</a>
     <a class="btn btn-light" href="{% url 'orders:create' %}?document=quote">عرض سعر</a>
 </div>
 {% include 'partials/export_buttons.html' %}

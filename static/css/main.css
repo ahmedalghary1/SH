@@ -795,6 +795,47 @@ textarea::placeholder {
     opacity: .62;
 }
 
+.quick-add-control {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--touch-target);
+    gap: .5rem;
+    align-items: start;
+    min-width: 0;
+}
+
+.quick-add-control .combo-field,
+.quick-add-control select {
+    min-width: 0;
+}
+
+.quick-add-btn {
+    display: grid;
+    place-items: center;
+    inline-size: var(--touch-target);
+    block-size: var(--touch-target);
+    border: .0625rem solid rgba(37, 99, 235, .24);
+    border-radius: 999rem;
+    background: linear-gradient(135deg, var(--accent-color), #60a5fa);
+    color: #fff;
+    font-size: 1.45rem;
+    font-weight: 800;
+    line-height: 1;
+    box-shadow: 0 .5rem 1.1rem rgba(59, 130, 246, .22);
+    transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.quick-add-btn:hover,
+.quick-add-btn:focus-visible {
+    background: linear-gradient(135deg, var(--accent-strong), #3b82f6);
+    box-shadow: 0 .7rem 1.4rem rgba(59, 130, 246, .3);
+    transform: translateY(-.0625rem);
+}
+
+.quick-add-btn:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+}
+
 textarea {
     min-height: clamp(6rem, 15vh, 10rem);
     resize: vertical;

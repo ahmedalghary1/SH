@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
-{% block title %}أوامر الشراء{% endblock %}
+{% block title %}شراء بضاعة{% endblock %}
 {% block content %}
 <div class="page-head">
-    <h1>أوامر الشراء</h1>
-    <a class="btn btn-primary" href="{% url 'purchases:order_create' %}">إنشاء أمر شراء</a>
+    <h1>شراء بضاعة</h1>
+    <a class="btn btn-primary" href="{% url 'purchases:order_create' %}">شراء مباشر</a>
 </div>
 {% include 'partials/export_buttons.html' %}
 <div class="table-wrap card">
@@ -17,7 +17,7 @@
                 <td><a class="btn btn-light" href="{% url 'purchases:order_detail' po.pk %}">التفاصيل</a></td>
             </tr>
         {% empty %}
-            <tr><td colspan="7">لا توجد أوامر شراء</td></tr>
+            <tr><td colspan="7">لا توجد عمليات شراء</td></tr>
         {% endfor %}
         </tbody>
     </table>

@@ -124,7 +124,9 @@ class Order(models.Model):
         if self.document_type == self.DOCUMENT_QUOTE:
             return 'عرض سعر'
         if self.payment_method == self.METHOD_CREDIT:
-            return 'آجل'
+            if self.order_type == self.TYPE_B2B:
+                return 'آجل جملة'
+            return 'آجل قطاعي'
         if self.order_type == self.TYPE_B2B:
             return 'جملة'
         return 'قطاعي'

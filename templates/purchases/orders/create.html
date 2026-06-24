@@ -1,6 +1,145 @@
 {% extends 'base.html' %}
-{% block title %}إنشاء أمر شراء{% endblock %}
+{% block title %}شراء بضاعة{% endblock %}
 {% block content %}
-<div class="page-head"><h1>إنشاء أمر شراء</h1></div>
-{% include 'partials/model_form.html' with button_text='إنشاء الأمر' %}
+<div class="page-head"><h1>شراء بضاعة</h1></div>
+
+<form method="post" class="card form-grid purchase-direct-form" data-purchase-direct-form>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+
+    <label class="quick-add-field">
+        <span>{{ form.product_variant.label }}</span>
+        <div class="quick-add-control">
+            {{ form.product_variant }}
+            <button class="quick-add-btn" type="button" data-open-modal="quick-product-modal" aria-label="إضافة منتج" title="إضافة منتج">+</button>
+        </div>
+        {% if form.product_variant.errors %}<small class="error">{{ form.product_variant.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <label class="quick-add-field">
+        <span>{{ form.supplier.label }}</span>
+        <div class="quick-add-control">
+            {{ form.supplier }}
+            <button class="quick-add-btn" type="button" data-open-modal="quick-supplier-modal" aria-label="إضافة مورد" title="إضافة مورد">+</button>
+        </div>
+        {% if form.supplier.errors %}<small class="error">{{ form.supplier.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <label>
+        <span>{{ form.quantity.label }}</span>
+        {{ form.quantity }}
+        {% if form.quantity.errors %}<small class="error">{{ form.quantity.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <label>
+        <span>{{ form.unit_cost.label }}</span>
+        {{ form.unit_cost }}
+        {% if form.unit_cost.errors %}<small class="error">{{ form.unit_cost.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <label>
+        <span>{{ form.warehouse.label }}</span>
+        {{ form.warehouse }}
+        {% if form.warehouse.errors %}<small class="error">{{ form.warehouse.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <label>
+        <span>{{ form.cash_account.label }}</span>
+        {{ form.cash_account }}
+        {% if form.cash_account.errors %}<small class="error">{{ form.cash_account.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <div class="form-actions">
+        <button class="btn btn-primary" type="submit">تسجيل الشراء</button>
+        <button class="btn btn-light" type="button" onclick="history.back()">رجوع</button>
+    </div>
+
+    <div class="modal quick-add-modal" id="quick-product-modal" {% if not form.new_product_name.errors and not form.new_product_sku.errors and not form.new_category.errors and not form.new_category_name.errors and not form.new_color.errors and not form.new_color_name.errors and not form.new_size.errors and not form.new_size_name.errors and not form.retail_price.errors and not form.wholesale_price.errors %}hidden{% endif %}>
+        <div class="modal-box">
+            <div class="modal-head">
+                <h2>إضافة منتج</h2>
+                <button class="icon-btn" type="button" data-close-modal aria-label="إغلاق">×</button>
+            </div>
+            <div class="form-grid">
+                <label>
+                    <span>{{ form.new_product_name.label }}</span>
+                    {{ form.new_product_name }}
+                    {% if form.new_product_name.errors %}<small class="error">{{ form.new_product_name.errors|join:', ' }}</small>{% endif %}
+                </label>
+                <label>
+                    <span>{{ form.new_product_sku.label }}</span>
+                    {{ form.new_product_sku }}
+                    {% if form.new_product_sku.errors %}<small class="error">{{ form.new_product_sku.errors|join:', ' }}</small>{% endif %}
+                </label>
+                <label>
+                    <span>{{ form.new_category.label }}</span>
+                    {{ form.new_category }}
+                    {% if form.new_category.errors %}<small class="error">{{ form.new_category.errors|join:', ' }}</small>{% endif %}
+                </label>
+                <label>
+                    <span>{{ form.new_category_name.label }}</span>
+                    {{ form.new_category_name }}
+                    {% if form.new_category_name.errors %}<small class="error">{{ form.new_category_name.errors|join:', ' }}</small>{% endif %}
+                </label>
+                <label>
+                    <span>{{ form.new_color.label }}</span>
+                    {{ form.new_color }}
+                    {% if form.new_color.errors %}<small class="error">{{ form.new_color.errors|join:', ' }}</small>{% endif %}
+                </label>
+                <label>
+                    <span>{{ form.new_color_name.label }}</span>
+                    {{ form.new_color_name }}
+                    {% if form.new_color_name.errors %}<small class="error">{{ form.new_color_name.errors|join:', ' }}</small>{% endif %}
+                </label>
+                <label>
+                    <span>{{ form.new_size.label }}</span>
+                    {{ form.new_size }}
+                    {% if form.new_size.errors %}<small class="error">{{ form.new_size.errors|join:', ' }}</small>{% endif %}
+                </label>
+                <label>
+                    <span>{{ form.new_size_name.label }}</span>
+                    {{ form.new_size_name }}
+                    {% if form.new_size_name.errors %}<small class="error">{{ form.new_size_name.errors|join:', ' }}</small>{% endif %}
+                </label>
+                <label>
+                    <span>{{ form.retail_price.label }}</span>
+                    {{ form.retail_price }}
+                    {% if form.retail_price.errors %}<small class="error">{{ form.retail_price.errors|join:', ' }}</small>{% endif %}
+                </label>
+                <label>
+                    <span>{{ form.wholesale_price.label }}</span>
+                    {{ form.wholesale_price }}
+                    {% if form.wholesale_price.errors %}<small class="error">{{ form.wholesale_price.errors|join:', ' }}</small>{% endif %}
+                </label>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-primary" type="button" data-close-modal>اختيار المنتج</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal quick-add-modal" id="quick-supplier-modal" {% if not form.new_supplier_name.errors and not form.new_supplier_phone.errors %}hidden{% endif %}>
+        <div class="modal-box">
+            <div class="modal-head">
+                <h2>إضافة مورد</h2>
+                <button class="icon-btn" type="button" data-close-modal aria-label="إغلاق">×</button>
+            </div>
+            <div class="form-grid">
+                <label>
+                    <span>{{ form.new_supplier_name.label }}</span>
+                    {{ form.new_supplier_name }}
+                    {% if form.new_supplier_name.errors %}<small class="error">{{ form.new_supplier_name.errors|join:', ' }}</small>{% endif %}
+                </label>
+                <label>
+                    <span>{{ form.new_supplier_phone.label }}</span>
+                    {{ form.new_supplier_phone }}
+                    {% if form.new_supplier_phone.errors %}<small class="error">{{ form.new_supplier_phone.errors|join:', ' }}</small>{% endif %}
+                </label>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-primary" type="button" data-close-modal>اختيار المورد</button>
+            </div>
+        </div>
+    </div>
+</form>
 {% endblock %}

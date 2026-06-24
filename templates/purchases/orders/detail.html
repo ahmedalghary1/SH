@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}تفاصيل أمر شراء{% endblock %}
+{% block title %}تفاصيل شراء بضاعة{% endblock %}
 {% block content %}
 <div class="page-head">
     <h1>{{ purchase_order.purchase_number }}</h1>
@@ -39,7 +39,7 @@
 {% if request.user.is_manager and purchase_order.status != 'cancelled' %}
 <form method="post" action="{% url 'purchases:order_cancel' purchase_order.pk %}" class="card">
     {% csrf_token %}
-    <button class="btn btn-light" type="submit">إلغاء أمر الشراء</button>
+    <button class="btn btn-light" type="submit">إلغاء عملية الشراء</button>
 </form>
 {% endif %}
 {% endblock %}

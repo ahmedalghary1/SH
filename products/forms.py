@@ -145,7 +145,9 @@ class InitialStockForm(forms.Form):
         queryset=Warehouse.objects.filter(is_active=True),
         label='المخزن',
         widget=forms.Select(attrs={'data-filterable-select': 'true'}),
+        required=False,
     )
+    new_warehouse_name = forms.CharField(required=False, label='مخزن جديد')
     quantity = forms.IntegerField(
         min_value=1,
         label='الكمية',
@@ -155,10 +157,13 @@ class InitialStockForm(forms.Form):
     def clean(self):
         cleaned = super().clean()
         warehouse = cleaned.get('warehouse')
+        new_warehouse_name = (cleaned.get('new_warehouse_name') or '').strip()
         quantity = cleaned.get('quantity') or 0
-        if quantity > 0 and not warehouse:
+        if quantity > 0 and not warehouse and not new_warehouse_name:
             self.add_error('warehouse', 'اختر المخزن')
         return cleaned
 
     def has_stock_data(self):
-        return self.is_valid() and bool(self.cleaned_data.get('warehouse'))
+        return self.is_valid() and bool(
+            self.cleaned_data.get('warehouse') or (self.cleaned_data.get('new_warehouse_name') or '').strip()
+        )

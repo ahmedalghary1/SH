@@ -32,17 +32,21 @@ class ExpenseForm(forms.Form):
 
 
 class CustomerCollectionForm(forms.Form):
-    cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة', required=False)
+    cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة')
     allowed_discount = forms.DecimalField(min_value=0, required=False, initial=0, label='خصم مسموح به')
-    customer = forms.ModelChoiceField(queryset=Customer.objects.filter(is_active=True), label='العميل', required=False)
+    customer = forms.ModelChoiceField(queryset=Customer.objects.filter(is_active=True), label='العميل')
     order = forms.ModelChoiceField(queryset=Order.objects.exclude(remaining_amount=0), label='الطلب', required=False)
-    amount = forms.DecimalField(label='المبلغ')
+    amount = forms.DecimalField(min_value=0.01, label='السعر')
     transaction_date = forms.DateField(label='تاريخ التحصيل', initial=timezone.localdate, widget=forms.DateInput(attrs={'type': 'date'}))
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['cash_account'].initial = CashAccount.get_cash_drawer()
+        self.fields['allowed_discount'].widget = forms.HiddenInput()
+        self.fields['order'].widget = forms.HiddenInput()
+        self.fields['transaction_date'].widget = forms.HiddenInput()
+        self.fields['notes'].widget = forms.HiddenInput()
 
     def clean(self):
         cleaned = super().clean()
@@ -50,10 +54,8 @@ class CustomerCollectionForm(forms.Form):
         customer = cleaned.get('customer')
         amount = cleaned.get('amount')
         allowed_discount = cleaned.get('allowed_discount') or 0
-        if not order and not customer:
-            raise forms.ValidationError('اختر طلبًا أو عميلًا لتسجيل التحصيل')
-        if amount == 0:
-            self.add_error('amount', 'المبلغ لا يمكن أن يساوي صفر')
+        if not customer:
+            self.add_error('customer', 'اختر العميل')
         if order and amount and amount <= 0:
             self.add_error('amount', 'تحصيل الفاتورة يجب أن يكون مبلغًا موجبًا')
         if order and amount and allowed_discount and amount + allowed_discount <= 0:

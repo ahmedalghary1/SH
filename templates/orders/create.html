@@ -12,6 +12,7 @@
     {{ form.document_type }}
     {{ form.warehouse }}
     {{ form.order_type }}
+    {{ form.payment_method }}
     {{ form.wallet_from_number }}
     {{ form.wallet_to_number }}
 
@@ -86,6 +87,15 @@
                 <!-- معلومات العميل والدفع -->
                 <div class="invoice-info">
                     <label>
+                        <span>حالة الفاتورة</span>
+                        <select id="invoice-kind">
+                            <option value="retail">قطاعي</option>
+                            <option value="wholesale">جملة</option>
+                            <option value="retail_credit">آجل قطاعي</option>
+                            <option value="wholesale_credit">آجل جملة</option>
+                        </select>
+                    </label>
+                    <label>
                         <span>العميل</span>
                         {{ form.customer }}
                     </label>
@@ -93,10 +103,6 @@
                         <svg class="ui-icon"><use href="#icon-users"></use></svg>
                         عميل جديد
                     </button>
-                    <label>
-                        <span>طريقة الدفع</span>
-                        {{ form.payment_method }}
-                    </label>
                 </div>
 
                 <!-- جدول الأصناف -->

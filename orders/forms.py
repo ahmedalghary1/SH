@@ -58,6 +58,7 @@ class OrderForm(forms.ModelForm):
             (Order.METHOD_WALLET, 'تحويل عبر محفظة'),
             (Order.METHOD_CREDIT, 'آجل'),
         )
+        self.fields['payment_method'].widget = forms.HiddenInput()
         self.fields['payment_method'].initial = Order.METHOD_CASH
 
     def clean(self):

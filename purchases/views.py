@@ -268,10 +268,10 @@ class PurchaseOrderListView(ManagerRequiredMixin, ExportListMixin, ListView):
     template_name = 'purchases/orders/list.html'
     context_object_name = 'purchase_orders'
     paginate_by = 20
-    export_title = 'قائمة أوامر الشراء'
-    export_filename = 'purchase-orders'
+    export_title = 'قائمة شراء البضاعة'
+    export_filename = 'direct-purchases'
     export_columns = (
-        ('رقم أمر الشراء', 'purchase_number'),
+        ('رقم الشراء', 'purchase_number'),
         ('المورد', 'supplier'),
         ('الحالة', 'get_status_display'),
         ('تاريخ الطلب', 'order_date'),
@@ -294,7 +294,18 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
     template_name = 'purchases/orders/create.html'
     form_class = PurchaseOrderForm
 
-    def get_or_create_product_variant(self, form):
+    def get_or_create_supplier(self, form):
+        supplier = form.cleaned_data.get('supplier')
+        if supplier:
+            return supplier
+        supplier = Supplier.objects.create(
+            name=(form.cleaned_data.get('new_supplier_name') or '').strip(),
+            phone=(form.cleaned_data.get('new_supplier_phone') or '').strip() or None,
+            is_active=True,
+        )
+        return supplier
+
+    def get_or_create_product_variant(self, form, supplier):
         variant = form.cleaned_data.get('product_variant')
         if variant:
             return variant
@@ -319,7 +330,7 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
             name=(form.cleaned_data.get('new_product_name') or '').strip(),
             sku=sku,
             category=category,
-            supplier=form.cleaned_data.get('supplier'),
+            supplier=supplier,
         )
         return ProductVariant.objects.create(
             product=product,
@@ -335,10 +346,11 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
     def form_valid(self, form):
         try:
             with transaction.atomic():
-                product_variant = self.get_or_create_product_variant(form)
+                supplier = self.get_or_create_supplier(form)
+                product_variant = self.get_or_create_product_variant(form, supplier)
                 po = create_purchase_order(
-                    supplier=form.cleaned_data['supplier'],
-                    status=form.cleaned_data['status'],
+                    supplier=supplier,
+                    status=PurchaseOrder.STATUS_ORDERED,
                     order_date=form.cleaned_data.get('order_date'),
                     expected_date=form.cleaned_data.get('expected_date'),
                     notes=form.cleaned_data.get('notes') or '',
@@ -349,16 +361,23 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
                     }],
                     user=self.request.user,
                 )
-                if form.cleaned_data.get('warehouse'):
-                    item = po.items.first()
-                    receive_purchase_order_items(
+                item = po.items.first()
+                receive_purchase_order_items(
+                    purchase_order=po,
+                    warehouse=form.cleaned_data['warehouse'],
+                    received_items={item.pk: item.quantity},
+                    user=self.request.user,
+                    note=form.cleaned_data.get('notes') or '',
+                )
+                if po.total_amount > 0:
+                    pay_supplier(
                         purchase_order=po,
-                        warehouse=form.cleaned_data['warehouse'],
-                        received_items={item.pk: item.quantity},
+                        cash_account=form.cleaned_data['cash_account'],
+                        amount=po.total_amount,
                         user=self.request.user,
-                        note=form.cleaned_data.get('notes') or '',
+                        notes=form.cleaned_data.get('notes') or f'شراء مباشر {po.purchase_number}',
                     )
-            messages.success(self.request, 'تم إنشاء أمر الشراء')
+            messages.success(self.request, 'تم تسجيل شراء البضاعة وإضافتها للمخزن')
             return redirect('purchases:order_detail', pk=po.pk)
         except ValidationError as exc:
             form.add_error(None, exc.message)

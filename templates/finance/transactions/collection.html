@@ -1,6 +1,38 @@
 {% extends 'base.html' %}
-{% block title %}إضافة تحصيل{% endblock %}
+{% block title %}إضافة قبض من عميل{% endblock %}
 {% block content %}
-<div class="page-head"><h1>إضافة تحصيل</h1></div>
-{% include 'partials/model_form.html' with button_text='تسجيل التحصيل' %}
+<div class="page-head"><h1>إضافة قبض من عميل</h1></div>
+
+<form method="post" class="card form-grid">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+
+    {{ form.order }}
+    {{ form.allowed_discount }}
+    {{ form.transaction_date }}
+    {{ form.notes }}
+
+    <label>
+        <span>{{ form.customer.label }}</span>
+        {{ form.customer }}
+        {% if form.customer.errors %}<small class="error">{{ form.customer.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <label>
+        <span>{{ form.amount.label }}</span>
+        {{ form.amount }}
+        {% if form.amount.errors %}<small class="error">{{ form.amount.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <label>
+        <span>{{ form.cash_account.label }}</span>
+        {{ form.cash_account }}
+        {% if form.cash_account.errors %}<small class="error">{{ form.cash_account.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <div class="form-actions">
+        <button class="btn btn-primary" type="submit">تسجيل القبض</button>
+        <button class="btn btn-light" type="button" onclick="history.back()">رجوع</button>
+    </div>
+</form>
 {% endblock %}

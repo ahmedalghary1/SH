@@ -1,4 +1,4 @@
-# Python
+# Python bytecode and caches
 __pycache__/
 *.py[cod]
 *$py.class
@@ -6,7 +6,12 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+.tox/
+.nox/
+
+# Test coverage
 .coverage
+.coverage.*
 coverage.xml
 htmlcov/
 
@@ -16,7 +21,7 @@ venv/
 env/
 ENV/
 
-# Django / local runtime
+# Django local runtime
 db.sqlite3
 *.sqlite3
 *.sqlite3-*
@@ -35,22 +40,36 @@ backups/
 *.pem
 *.key
 *.crt
+*.p12
 
-# Node / desktop build leftovers
+# Node and frontend caches
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-dist/
+.npm/
+.pnpm-store/
+
+# Build and packaged app outputs
 build/
+dist/
 out/
+backend-dist/
+*.spec
+*.manifest
+*.exe
+*.dll
 
 # Generated public assets/uploads
 public/static/
 public/shop_media/
 
-# Editors / OS
+# Local tools and agent state
+.agents/
+.codex/
+
+# Editors and OS files
 .idea/
 .vscode/
 *.swp
@@ -58,7 +77,3 @@ public/shop_media/
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# Local tooling
-.agents/
-.codex/

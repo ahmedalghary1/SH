@@ -1,8 +1,9 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}إضافة منتج{% endblock %}
 {% block content %}
 <div class="page-head"><h1>إضافة منتج</h1></div>
-<form method="post" enctype="multipart/form-data" class="card form-grid product-create-form">
+<form method="post" enctype="multipart/form-data" class="card form-grid product-create-form" data-product-create-form>
     {% csrf_token %}
     {% if product_form.non_field_errors %}<div class="form-errors">{{ product_form.non_field_errors }}</div>{% endif %}
     {% if variant_form.non_field_errors %}<div class="form-errors">{{ variant_form.non_field_errors }}</div>{% endif %}
@@ -29,16 +30,13 @@
         {% if product_form.pieces_per_dozen.errors %}<small class="error">{{ product_form.pieces_per_dozen.errors|join:', ' }}</small>{% endif %}
     </label>
 
-    <label>
+    <label class="quick-add-field">
         <span>{{ product_form.category.label }}</span>
-        {{ product_form.category }}
+        <div class="quick-add-control">
+            {{ product_form.category }}
+            <button class="quick-add-btn" type="button" data-open-modal="quick-category-modal" aria-label="إضافة تصنيف" title="إضافة تصنيف">+</button>
+        </div>
         {% if product_form.category.errors %}<small class="error">{{ product_form.category.errors|join:', ' }}</small>{% endif %}
-    </label>
-
-    <label>
-        <span>{{ product_form.new_category_name.label }}</span>
-        {{ product_form.new_category_name }}
-        {% if product_form.new_category_name.errors %}<small class="error">{{ product_form.new_category_name.errors|join:', ' }}</small>{% endif %}
     </label>
 
     <label>
@@ -79,33 +77,30 @@
         {% if product_form.image.errors %}<small class="error">{{ product_form.image.errors|join:', ' }}</small>{% endif %}
     </label>
 
-    <label>
+    <label class="quick-add-field">
         <span>{{ variant_form.color.label }}</span>
-        {{ variant_form.color }}
+        <div class="quick-add-control">
+            {{ variant_form.color }}
+            <button class="quick-add-btn" type="button" data-open-modal="quick-color-modal" aria-label="إضافة لون" title="إضافة لون">+</button>
+        </div>
         {% if variant_form.color.errors %}<small class="error">{{ variant_form.color.errors|join:', ' }}</small>{% endif %}
     </label>
 
-    <label>
-        <span>{{ variant_form.new_color_name.label }}</span>
-        {{ variant_form.new_color_name }}
-        {% if variant_form.new_color_name.errors %}<small class="error">{{ variant_form.new_color_name.errors|join:', ' }}</small>{% endif %}
-    </label>
-
-    <label>
+    <label class="quick-add-field">
         <span>{{ variant_form.size.label }}</span>
-        {{ variant_form.size }}
+        <div class="quick-add-control">
+            {{ variant_form.size }}
+            <button class="quick-add-btn" type="button" data-open-modal="quick-size-modal" aria-label="إضافة مقاس" title="إضافة مقاس">+</button>
+        </div>
         {% if variant_form.size.errors %}<small class="error">{{ variant_form.size.errors|join:', ' }}</small>{% endif %}
     </label>
 
-    <label>
-        <span>{{ variant_form.new_size_name.label }}</span>
-        {{ variant_form.new_size_name }}
-        {% if variant_form.new_size_name.errors %}<small class="error">{{ variant_form.new_size_name.errors|join:', ' }}</small>{% endif %}
-    </label>
-
-    <label>
+    <label class="quick-add-field">
         <span>{{ stock_form.warehouse.label }}</span>
-        {{ stock_form.warehouse }}
+        <div class="quick-add-control">
+            {{ stock_form.warehouse }}
+            <button class="quick-add-btn" type="button" data-open-modal="quick-warehouse-modal" aria-label="إضافة مخزن" title="إضافة مخزن">+</button>
+        </div>
         {% if stock_form.warehouse.errors %}<small class="error">{{ stock_form.warehouse.errors|join:', ' }}</small>{% endif %}
     </label>
 
@@ -119,5 +114,79 @@
         <button class="btn btn-primary" type="submit"><svg class="ui-icon"><use href="#icon-box"></use></svg>حفظ</button>
         <button class="btn btn-light" type="button" onclick="history.back()">رجوع</button>
     </div>
+
+    <div class="modal quick-add-modal" id="quick-category-modal" hidden>
+        <div class="modal-box">
+            <div class="modal-head">
+                <h2>إضافة تصنيف</h2>
+                <button class="icon-btn" type="button" data-close-modal aria-label="إغلاق">×</button>
+            </div>
+            <div class="form-grid">
+                <label class="span-all"><span>{{ product_form.new_category_name.label }}</span>{{ product_form.new_category_name }}</label>
+            </div>
+            {% if product_form.new_category_name.errors %}<small class="error">{{ product_form.new_category_name.errors|join:', ' }}</small>{% endif %}
+            <div class="form-actions">
+                <button class="btn btn-primary" type="button" data-quick-save data-kind="category">حفظ التصنيف</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal quick-add-modal" id="quick-color-modal" hidden>
+        <div class="modal-box">
+            <div class="modal-head">
+                <h2>إضافة لون</h2>
+                <button class="icon-btn" type="button" data-close-modal aria-label="إغلاق">×</button>
+            </div>
+            <div class="form-grid">
+                <label><span>{{ variant_form.new_color_name.label }}</span>{{ variant_form.new_color_name }}</label>
+                <label><span>كود اللون</span><input id="quick-color-hex" type="color" value="#2563eb" data-native-select="true"></label>
+            </div>
+            {% if variant_form.new_color_name.errors %}<small class="error">{{ variant_form.new_color_name.errors|join:', ' }}</small>{% endif %}
+            <div class="form-actions">
+                <button class="btn btn-primary" type="button" data-quick-save data-kind="color">حفظ اللون</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal quick-add-modal" id="quick-size-modal" hidden>
+        <div class="modal-box">
+            <div class="modal-head">
+                <h2>إضافة مقاس</h2>
+                <button class="icon-btn" type="button" data-close-modal aria-label="إغلاق">×</button>
+            </div>
+            <div class="form-grid">
+                <label><span>{{ variant_form.new_size_name.label }}</span>{{ variant_form.new_size_name }}</label>
+                <label><span>ترتيب العرض</span><input id="quick-size-sort-order" type="number" min="0" step="1" value="0"></label>
+            </div>
+            {% if variant_form.new_size_name.errors %}<small class="error">{{ variant_form.new_size_name.errors|join:', ' }}</small>{% endif %}
+            <div class="form-actions">
+                <button class="btn btn-primary" type="button" data-quick-save data-kind="size">حفظ المقاس</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal quick-add-modal" id="quick-warehouse-modal" hidden>
+        <div class="modal-box">
+            <div class="modal-head">
+                <h2>إضافة مخزن</h2>
+                <button class="icon-btn" type="button" data-close-modal aria-label="إغلاق">×</button>
+            </div>
+            <div class="form-grid">
+                <label><span>{{ stock_form.new_warehouse_name.label }}</span>{{ stock_form.new_warehouse_name }}</label>
+                <label>
+                    <span>نوع المخزن</span>
+                    <select id="quick-warehouse-type" data-native-select="true">
+                        <option value="main">مخزن رئيسي</option>
+                        <option value="store">مخزن فرعي</option>
+                    </select>
+                </label>
+            </div>
+            {% if stock_form.new_warehouse_name.errors %}<small class="error">{{ stock_form.new_warehouse_name.errors|join:', ' }}</small>{% endif %}
+            <div class="form-actions">
+                <button class="btn btn-primary" type="button" data-quick-save data-kind="warehouse">حفظ المخزن</button>
+            </div>
+        </div>
+    </div>
 </form>
 {% endblock %}
+{% block extra_js %}<script src="{% static 'js/product_create.js' %}"></script>{% endblock %}
