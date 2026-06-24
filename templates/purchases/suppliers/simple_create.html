@@ -59,26 +59,6 @@
                 {% endif %}
             </div>
 
-            <!-- خيارات متقدمة -->
-            {% if request.user.is_manager %}
-            <div class="advanced-options">
-                <button class="advanced-toggle" type="button" data-advanced-toggle aria-expanded="false">
-                    <svg class="ui-icon"><use href="#icon-settings"></use></svg>
-                    خيارات متقدمة
-                    <svg class="ui-icon chevron"><use href="#icon-chevron-down"></use></svg>
-                </button>
-                <div class="advanced-panel" data-advanced-panel aria-hidden="true">
-                    <div class="form-group">
-                        <label for="{{ form.opening_balance.id_for_label }}">الرصيد الافتتاحي</label>
-                        {{ form.opening_balance }}
-                        {% if form.opening_balance.errors %}
-                            <div class="error-message">{{ form.opening_balance.errors }}</div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-
             <div class="form-actions">
                 <button type="submit" class="btn btn-primary btn-large">حفظ</button>
                 <a href="{% url 'purchases:simple_supplier_list' %}" class="btn btn-light btn-large">إلغاء</a>

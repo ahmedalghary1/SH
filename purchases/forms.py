@@ -10,7 +10,7 @@ from .models import PurchaseOrder, Supplier
 class SupplierForm(forms.ModelForm):
     class Meta:
         model = Supplier
-        fields = ('name', 'phone', 'email', 'address', 'company_name', 'notes', 'opening_balance')
+        fields = ('name', 'phone', 'email', 'address', 'company_name', 'notes')
         labels = {
             'name': 'اسم المورد',
             'phone': 'الهاتف',
@@ -18,24 +18,17 @@ class SupplierForm(forms.ModelForm):
             'address': 'العنوان',
             'company_name': 'اسم الشركة',
             'notes': 'ملاحظات',
-            'opening_balance': 'الرصيد الافتتاحي',
         }
         widgets = {
             'name': forms.TextInput(attrs={'placeholder': 'اسم المورد'}),
             'phone': forms.TextInput(attrs={'placeholder': 'رقم الهاتف'}),
             'address': forms.Textarea(attrs={'placeholder': 'عنوان المورد', 'rows': 3}),
             'notes': forms.Textarea(attrs={'placeholder': 'ملاحظات', 'rows': 3}),
-            'opening_balance': forms.NumberInput(attrs={'placeholder': '0.00', 'step': '0.01'}),
         }
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = user
-        
-        # Hide financial fields for non-manager users
-        if user and not user.is_manager and not user.is_superuser:
-            if 'opening_balance' in self.fields:
-                del self.fields['opening_balance']
 
 
 class SimpleSupplierForm(forms.ModelForm):

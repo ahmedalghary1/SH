@@ -89,11 +89,18 @@ def record_transaction(
     return tx
 
 
+@transaction.atomic
 def record_customer_payment(*, order, customer, amount, user, cash_account=None, notes='', transaction_date=None):
+    from customers.models import Customer
+
     amount = _as_decimal(amount)
     if order and amount > order.remaining_amount + order.paid_amount:
         raise ValidationError('مبلغ التحصيل أكبر من قيمة الطلب')
-    return record_transaction(
+    if not order and customer:
+        customer = Customer.objects.select_for_update().get(pk=customer.pk)
+        if amount > (customer.opening_balance or 0):
+            raise ValidationError('مبلغ القبض أكبر من رصيد العميل الافتتاحي')
+    tx = record_transaction(
         transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
         direction=PaymentTransaction.DIRECTION_IN,
         amount=amount,
@@ -104,6 +111,10 @@ def record_customer_payment(*, order, customer, amount, user, cash_account=None,
         created_by=user,
         transaction_date=transaction_date,
     )
+    if not order and customer:
+        customer.opening_balance = F('opening_balance') - amount
+        customer.save(update_fields=['opening_balance'])
+    return tx
 
 
 def record_customer_refund_payment(*, customer, amount, user, cash_account=None, notes='', transaction_date=None):
@@ -305,6 +316,15 @@ def delete_transaction(*, payment_transaction, user=None):
         raise ValidationError('اتجاه الحركة المالية غير صحيح')
     account.save(update_fields=['balance'])
     account.refresh_from_db(fields=['balance'])
+    if (
+        tx.transaction_type == PaymentTransaction.TYPE_CUSTOMER_PAYMENT
+        and tx.direction == PaymentTransaction.DIRECTION_IN
+        and tx.related_customer_id
+        and not tx.related_order_id
+    ):
+        from customers.models import Customer
+
+        Customer.objects.filter(pk=tx.related_customer_id).update(opening_balance=F('opening_balance') + tx.amount)
     tx_repr = str(tx)
     tx_pk = tx.pk
     tx_amount = tx.amount

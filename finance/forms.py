@@ -62,6 +62,8 @@ class CustomerCollectionForm(forms.Form):
             self.add_error('amount', 'إجمالي التحصيل والخصم يجب أن يكون موجبًا')
         if order and amount and amount + allowed_discount > order.remaining_amount:
             self.add_error('amount', 'مبلغ التحصيل أكبر من المتبقي على الطلب')
+        if not order and customer and amount and amount > (customer.opening_balance or 0):
+            self.add_error('amount', 'مبلغ القبض أكبر من رصيد العميل الافتتاحي')
         if order and not customer:
             cleaned['customer'] = order.customer
         return cleaned

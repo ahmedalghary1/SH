@@ -55,7 +55,8 @@ class SimpleSupplierCreateView(ManagerRequiredMixin, CreateView):
     success_url = reverse_lazy('purchases:simple_supplier_list')
 
     def form_valid(self, form):
-        form.instance.current_balance = form.cleaned_data.get('opening_balance') or 0
+        form.instance.opening_balance = 0
+        form.instance.current_balance = 0
         messages.success(self.request, 'تم إضافة المورد')
         return super().form_valid(form)
 
@@ -188,7 +189,8 @@ class SupplierCreateView(ManagerRequiredMixin, CreateView):
     success_url = reverse_lazy('purchases:suppliers')
 
     def form_valid(self, form):
-        form.instance.current_balance = form.cleaned_data.get('opening_balance') or 0
+        form.instance.opening_balance = 0
+        form.instance.current_balance = 0
         messages.success(self.request, 'تم إنشاء المورد')
         return super().form_valid(form)
 

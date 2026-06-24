@@ -23,7 +23,13 @@ from .services import (
 class FinanceServiceTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='manager', password='pass', role=User.ROLE_MANAGER)
-        self.customer = Customer.objects.create(name='Test Customer', customer_type='b2c', phone='01000000001', created_by=self.user)
+        self.customer = Customer.objects.create(
+            name='Test Customer',
+            customer_type='b2c',
+            phone='01000000001',
+            opening_balance=Decimal('200.00'),
+            created_by=self.user,
+        )
         self.warehouse = Warehouse.objects.create(name='Main', warehouse_type=Warehouse.TYPE_MAIN)
         self.cash = CashAccount.objects.create(name='Main Cash', balance=Decimal('1000.00'))
         self.bank = CashAccount.objects.create(name='Bank', account_type=CashAccount.TYPE_BANK, balance=Decimal('0.00'))
@@ -126,12 +132,16 @@ class FinanceServiceTests(TestCase):
         )
         self.cash.refresh_from_db()
         self.assertEqual(self.cash.balance, Decimal('1200.00'))
+        self.customer.refresh_from_db()
+        self.assertEqual(self.customer.opening_balance, Decimal('0.00'))
 
         response = self.client.post(reverse('finance:transaction_delete', kwargs={'pk': tx.pk}))
 
         self.assertRedirects(response, reverse('finance:transactions'))
         self.cash.refresh_from_db()
         self.assertEqual(self.cash.balance, Decimal('1000.00'))
+        self.customer.refresh_from_db()
+        self.assertEqual(self.customer.opening_balance, Decimal('200.00'))
         self.assertFalse(PaymentTransaction.objects.filter(pk=tx.pk).exists())
 
     def test_transaction_delete_reverses_cash_balance_for_outgoing_transaction(self):

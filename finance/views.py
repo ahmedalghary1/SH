@@ -36,7 +36,11 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
             account_type=CashAccount.TYPE_SALES_REP_CASH,
             is_active=True,
         ).select_related('assigned_user').order_by('assigned_user__username', 'name')
-        account_ids = [default_account.pk, cash_drawer.pk]
+        all_cash_accounts = CashAccount.objects.filter(is_active=True).select_related('assigned_user').order_by(
+            'account_type',
+            'name',
+        )
+        account_ids = list(all_cash_accounts.values_list('pk', flat=True))
         
         # الحصول على المعاملات اليومية
         transactions = PaymentTransaction.objects.filter(
@@ -83,6 +87,7 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
             'main_account': default_account,
             'cash_drawer': cash_drawer,
             'sales_rep_accounts': sales_rep_accounts,
+            'all_cash_accounts': all_cash_accounts,
             'transactions': transactions[:50],
         })
         return context

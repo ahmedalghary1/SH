@@ -94,12 +94,6 @@
         {% endif %}
 
         {% if request.user.is_manager or request.user.is_sales or request.user.is_warehouse %}
-            <a class="nav-link nav-single" href="{% url 'finance:transfer' %}">
-                <svg class="ui-icon color-green"><use href="#icon-money"></use></svg>
-                <span class="nav-text">تحويل للخزنة الرئيسية</span>
-                <span class="nav-arrow">‹</span>
-            </a>
-
             <a class="nav-link nav-single" href="{% url 'reports:index' %}">
                 <svg class="ui-icon color-blue"><use href="#icon-chart"></use></svg>
                 <span class="nav-text">التقارير</span>
