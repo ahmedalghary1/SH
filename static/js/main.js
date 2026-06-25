@@ -18,6 +18,18 @@ document.addEventListener("submit", (event) => {
     const message = form.getAttribute("data-confirm");
     if (message && !window.confirm(message)) {
         event.preventDefault();
+        return;
+    }
+    const missingCombo = Array.from(
+        form.querySelectorAll(".combo-source[data-original-required='true']:not(:disabled)")
+    ).find((select) => !select.value);
+    if (missingCombo) {
+        const combo = missingCombo.closest(".combo-field");
+        const input = combo?.querySelector(".combo-input");
+        event.preventDefault();
+        input?.setCustomValidity("اختر قيمة من القائمة");
+        input?.focus({ preventScroll: true });
+        input?.reportValidity();
     }
 });
 
@@ -82,6 +94,8 @@ function enhanceSelect(select) {
     if (select.hidden || select.disabled && select.options.length <= 1) return;
 
     select.dataset.comboReady = "true";
+    select.dataset.originalRequired = String(select.required);
+    select.required = false;
     const combo = document.createElement("div");
     combo.className = "combo-field";
     const input = document.createElement("input");
@@ -89,7 +103,7 @@ function enhanceSelect(select) {
     input.className = "combo-input";
     input.autocomplete = "off";
     input.disabled = select.disabled;
-    input.required = select.required;
+    input.required = select.dataset.originalRequired === "true";
     input.setAttribute("role", "combobox");
     input.setAttribute("aria-expanded", "false");
     input.setAttribute("aria-haspopup", "listbox");
@@ -132,7 +146,7 @@ function enhanceSelect(select) {
         input.title = selected && selected.value ? label : "";
         input.placeholder = selected && !selected.value ? label : "";
         input.disabled = select.disabled;
-        input.required = select.required;
+        input.required = select.dataset.originalRequired === "true" && !select.disabled;
         toggle.disabled = select.disabled;
         combo.classList.toggle("is-disabled", select.disabled);
     }
@@ -176,6 +190,7 @@ function enhanceSelect(select) {
 
     input.addEventListener("focus", () => openCombo(""));
     input.addEventListener("input", () => {
+        input.setCustomValidity("");
         const typed = getComboText(input.value);
         const typedLower = normalizeSearchText(typed);
         const exact = optionData().find((option) => !option.disabled && normalizeSearchText(option.label) === typedLower);
@@ -203,6 +218,7 @@ function enhanceSelect(select) {
     list.addEventListener("click", (event) => {
         const option = event.target.closest(".combo-option");
         if (!option || option.disabled) return;
+        input.setCustomValidity("");
         setSelectValue(option.dataset.value);
         closeCombo(combo);
     });
