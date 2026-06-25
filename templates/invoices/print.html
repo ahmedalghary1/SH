@@ -20,5 +20,5 @@
 {% endblock %}
 {% block content %}
 <div class="page-head no-print"><h1>طباعة فاتورة {{ invoice.invoice_number }}</h1><button class="btn btn-accent" onclick="window.print()">طباعة</button></div>
-{% include 'invoices/_invoice_box.html' %}
+{% include 'invoices/_receipt_invoice.html' %}
 {% endblock %}

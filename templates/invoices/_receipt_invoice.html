@@ -1,0 +1,73 @@
+<section class="invoice-box receipt-invoice" dir="rtl">
+    <header class="receipt-head">
+        {% if company_settings.logo %}
+            <img class="receipt-logo" src="{{ company_settings.logo.url }}" alt="{{ company_settings.company_name }}">
+        {% endif %}
+        <h1>{{ company_settings.company_name|default:'شركة الملابس' }}</h1>
+        {% if company_settings.phone %}<p>{{ company_settings.phone }}</p>{% endif %}
+        {% if company_settings.address %}<p>{{ company_settings.address }}</p>{% endif %}
+        {% if company_settings.tax_number %}<p>ض. {{ company_settings.tax_number }}</p>{% endif %}
+    </header>
+
+    <div class="receipt-separator"></div>
+
+    <dl class="receipt-meta">
+        <div><dt>فاتورة</dt><dd>{{ invoice.invoice_number }}</dd></div>
+        <div><dt>التاريخ</dt><dd>{{ invoice.issued_at|date:'Y-m-d H:i' }}</dd></div>
+        <div><dt>العميل</dt><dd>{{ invoice.order.customer|default:'عميل نقدي' }}</dd></div>
+        <div><dt>الدفع</dt><dd>{{ invoice.order.get_payment_method_display }}</dd></div>
+        <div><dt>الموظف</dt><dd>{{ invoice.order.created_by|default:'-' }}</dd></div>
+    </dl>
+
+    <div class="receipt-separator"></div>
+
+    <div class="receipt-items">
+        <div class="receipt-items-head">
+            <span>الصنف</span>
+            <span>كمية</span>
+            <span>سعر</span>
+            <span>إجمالي</span>
+        </div>
+        {% for item in invoice.order.items.all %}
+            <article class="receipt-item">
+                <h2>{{ item.variant.product.name }}</h2>
+                <p>{{ item.variant.color|default:'-' }} / {{ item.variant.size|default:'-' }}</p>
+                <div class="receipt-item-numbers">
+                    <span>{{ item.quantity }}</span>
+                    <span>{{ item.unit_price }}</span>
+                    <strong>{{ item.total }}</strong>
+                </div>
+                {% if item.discount %}
+                    <p class="receipt-item-discount">خصم {{ item.discount }}</p>
+                {% endif %}
+            </article>
+        {% endfor %}
+    </div>
+
+    <div class="receipt-separator"></div>
+
+    <dl class="receipt-totals">
+        <div><dt>قبل الخصم</dt><dd>{{ invoice.order.subtotal }}</dd></div>
+        <div><dt>الخصم</dt><dd>{{ invoice.order.discount }}</dd></div>
+        <div class="receipt-grand-total"><dt>الإجمالي</dt><dd>{{ invoice.order.total }}</dd></div>
+        <div><dt>المدفوع</dt><dd>{{ invoice.order.paid_amount }}</dd></div>
+        <div><dt>المتبقي</dt><dd>{{ invoice.order.remaining_amount }}</dd></div>
+        <div><dt>الحالة</dt><dd>{{ invoice.order.get_payment_status_display }}</dd></div>
+    </dl>
+
+    {% if invoice.order.payment_method == 'wallet_transfer' %}
+        <div class="receipt-wallet">
+            <p>محفظة العميل: {{ invoice.order.wallet_from_number|default:'-' }}</p>
+            <p>محفظة الشركة: {{ invoice.order.wallet_to_number|default:'-' }}</p>
+        </div>
+    {% endif %}
+
+    <footer class="receipt-footer">
+        {% if company_settings.invoice_notes %}
+            <p>{{ company_settings.invoice_notes }}</p>
+        {% else %}
+            <p>شكرا لزيارتكم</p>
+        {% endif %}
+        <p>الاستبدال والاسترجاع حسب سياسة المحل</p>
+    </footer>
+</section>

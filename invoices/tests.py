@@ -158,12 +158,14 @@ class InvoicePDFExportTests(TestCase):
         self.assertEqual(cash.balance, Decimal('200.00'))
         self.assertEqual(tx.transaction_date, date(2026, 6, 1))
 
-    def test_invoice_pages_use_unified_thermal_receipt_template(self):
+    def test_invoice_detail_uses_table_and_print_uses_thermal_receipt(self):
         self.client.force_login(self.user)
 
         detail_response = self.client.get(reverse('invoices:detail', kwargs={'pk': self.invoice.pk}), secure=True)
         print_response = self.client.get(reverse('invoices:print', kwargs={'pk': self.invoice.pk}), secure=True)
 
-        self.assertContains(detail_response, 'receipt-invoice')
+        self.assertContains(detail_response, 'screen-invoice')
+        self.assertContains(detail_response, 'invoice-items-table')
+        self.assertNotContains(detail_response, 'receipt-invoice')
         self.assertContains(print_response, 'receipt-invoice')
         self.assertContains(print_response, 'size: 40mm auto')

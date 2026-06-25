@@ -1481,14 +1481,14 @@ tbody tr:hover {
     width: 40mm;
     max-width: 40mm;
     margin-inline: auto;
-    padding: 2mm;
+    padding: 2.4mm;
     border: 0;
     color: #111;
     background: #fff;
     box-shadow: 0 .5rem 1.5rem rgba(15, 23, 42, .08);
-    font-family: "Cairo", Arial, sans-serif;
-    font-size: 8px;
-    line-height: 1.35;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 8.5px;
+    line-height: 1.45;
 }
 
 .receipt-invoice * {
@@ -1498,7 +1498,7 @@ tbody tr:hover {
 .receipt-head {
     display: grid;
     justify-items: center;
-    gap: .7mm;
+    gap: .6mm;
     text-align: center;
 }
 
@@ -1510,7 +1510,7 @@ tbody tr:hover {
 
 .receipt-head h1 {
     margin: 0;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.25;
     font-weight: 900;
 }
@@ -1522,14 +1522,14 @@ tbody tr:hover {
 }
 
 .receipt-separator {
-    margin-block: 1.5mm;
-    border-top: 1px dashed #111;
+    margin-block: 1.7mm;
+    border-top: 1px dashed #777;
 }
 
 .receipt-meta,
 .receipt-totals {
     display: grid;
-    gap: .7mm;
+    gap: .8mm;
     margin: 0;
 }
 
@@ -1544,6 +1544,7 @@ tbody tr:hover {
 .receipt-meta dt,
 .receipt-totals dt {
     color: #444;
+    font-size: 7.6px;
     font-weight: 700;
 }
 
@@ -1553,65 +1554,78 @@ tbody tr:hover {
     margin: 0;
     overflow-wrap: anywhere;
     text-align: left;
+    font-size: 7.8px;
     font-weight: 800;
 }
 
 .receipt-items {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-    font-size: 7.5px;
+    display: grid;
+    gap: 1mm;
 }
 
-.receipt-items th,
-.receipt-items td {
-    padding: 1mm .4mm;
-    border: 0;
-    border-bottom: 1px dashed #999;
-    vertical-align: top;
+.receipt-items-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 7mm 9mm 10mm;
+    align-items: center;
+    gap: .8mm;
+    padding: .8mm 0;
+    border-block: 1px solid #111;
+    font-size: 7.2px;
+    font-weight: 900;
     text-align: center;
 }
 
-.receipt-items th {
-    color: #111;
-    background: transparent;
-    font-weight: 900;
-}
-
-.receipt-items th:first-child,
-.receipt-items td:first-child {
-    width: 43%;
+.receipt-items-head span:first-child {
     text-align: right;
 }
 
-.receipt-items th:nth-child(2),
-.receipt-items td:nth-child(2) {
-    width: 13%;
+.receipt-item {
+    display: grid;
+    gap: .55mm;
+    padding-bottom: 1mm;
+    border-bottom: 1px dashed #aaa;
 }
 
-.receipt-items th:nth-child(3),
-.receipt-items td:nth-child(3),
-.receipt-items th:nth-child(4),
-.receipt-items td:nth-child(4) {
-    width: 22%;
+.receipt-item h2 {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-size: 8.4px;
+    line-height: 1.35;
+    font-weight: 900;
 }
 
-.receipt-items strong,
-.receipt-items span {
-    display: block;
+.receipt-item p {
+    margin: 0;
+    color: #555;
+    font-size: 7.2px;
+}
+
+.receipt-item-numbers {
+    display: grid;
+    grid-template-columns: 7mm 9mm 10mm;
+    justify-content: end;
+    gap: .8mm;
+    direction: ltr;
+    text-align: center;
+    font-size: 7.6px;
+}
+
+.receipt-item-numbers span,
+.receipt-item-numbers strong {
+    min-width: 0;
     overflow-wrap: anywhere;
 }
 
-.receipt-items span {
-    color: #444;
-    font-size: 7px;
+.receipt-item-discount {
+    text-align: left;
 }
 
 .receipt-grand-total {
-    padding-block: 1mm;
-    border-top: 1px solid #111;
-    border-bottom: 1px solid #111;
-    font-size: 10px;
+    margin-block: .4mm;
+    padding: 1mm;
+    border: 1px solid #111;
+    border-radius: 1mm;
+    font-size: 10.5px;
 }
 
 .receipt-grand-total dt,
@@ -1623,9 +1637,9 @@ tbody tr:hover {
 .receipt-wallet {
     display: grid;
     gap: .5mm;
-    margin-top: 1.5mm;
-    padding-top: 1.5mm;
-    border-top: 1px dashed #111;
+    margin-top: 1.7mm;
+    padding: 1mm;
+    border: 1px dashed #999;
 }
 
 .receipt-footer {
@@ -1633,7 +1647,7 @@ tbody tr:hover {
     gap: .8mm;
     margin-top: 2mm;
     padding-top: 1.5mm;
-    border-top: 1px dashed #111;
+    border-top: 1px dashed #777;
     text-align: center;
     font-weight: 700;
 }
@@ -2247,25 +2261,17 @@ tbody tr:hover {
         width: 40mm !important;
         max-width: 40mm !important;
         margin: 0 !important;
-        padding: 1.5mm !important;
+        padding: 1.8mm !important;
         border: 0 !important;
         box-shadow: none !important;
-        font-size: 8px !important;
+        font-size: 8.5px !important;
         page-break-inside: avoid;
     }
 
-    .receipt-invoice table,
-    .receipt-invoice thead,
-    .receipt-invoice tbody,
-    .receipt-invoice tr,
-    .receipt-invoice th,
-    .receipt-invoice td {
+    .receipt-item,
+    .receipt-totals,
+    .receipt-footer {
         page-break-inside: avoid;
-    }
-
-    .receipt-items th {
-        background: transparent !important;
-        color: #000 !important;
     }
 }
 
