@@ -7,28 +7,30 @@
         {% if company_settings.phone %}<p>{{ company_settings.phone }}</p>{% endif %}
         {% if company_settings.address %}<p>{{ company_settings.address }}</p>{% endif %}
         {% if company_settings.tax_number %}<p>ض. {{ company_settings.tax_number }}</p>{% endif %}
-        <strong class="receipt-title">فاتورة بيع</strong>
     </header>
 
-    <div class="receipt-separator"></div>
+    <section class="receipt-notes">
+        <h2>ملاحظات هامة</h2>
+        {% if company_settings.invoice_notes %}
+            <p>{{ company_settings.invoice_notes }}</p>
+        {% else %}
+            <p>برجاء مراجعة الفاتورة قبل مغادرة المحل.</p>
+        {% endif %}
+    </section>
 
-    <dl class="receipt-meta">
-        <div><dt>فاتورة</dt><dd>{{ invoice.invoice_number }}</dd></div>
-        <div><dt>التاريخ</dt><dd>{{ invoice.issued_at|date:'Y-m-d H:i' }}</dd></div>
+    <dl class="receipt-meta receipt-meta-stacked">
+        <div><dt>رقم الفاتورة</dt><dd>{{ invoice.invoice_number }}</dd></div>
+        <div><dt>تاريخ الفاتورة</dt><dd>{{ invoice.issued_at|date:'Y/m/d H:i' }}</dd></div>
         <div><dt>العميل</dt><dd>{{ invoice.order.customer|default:'عميل نقدي' }}</dd></div>
-        <div><dt>الدفع</dt><dd>{{ invoice.order.get_payment_method_display }}</dd></div>
-        <div><dt>الموظف</dt><dd>{{ invoice.order.created_by|default:'-' }}</dd></div>
     </dl>
-
-    <div class="receipt-separator"></div>
 
     <table class="receipt-items-table">
         <thead>
             <tr>
                 <th>الصنف</th>
-                <th>ك</th>
+                <th>كمية</th>
                 <th>سعر</th>
-                <th>إجمالي</th>
+                <th>المجموع</th>
             </tr>
         </thead>
         <tbody>
@@ -47,15 +49,12 @@
         </tbody>
     </table>
 
-    <div class="receipt-separator"></div>
-
-    <dl class="receipt-totals">
-        <div><dt>قبل الخصم</dt><dd>{{ invoice.order.subtotal }}</dd></div>
+    <dl class="receipt-totals receipt-summary-lines">
+        <div><dt>المجموع</dt><dd>{{ invoice.order.subtotal }}</dd></div>
         <div><dt>الخصم</dt><dd>{{ invoice.order.discount }}</dd></div>
         <div class="receipt-grand-total"><dt>الإجمالي</dt><dd>{{ invoice.order.total }}</dd></div>
-        <div><dt>المدفوع</dt><dd>{{ invoice.order.paid_amount }}</dd></div>
+        <div><dt>مدفوع</dt><dd>{{ invoice.order.paid_amount }}</dd></div>
         <div><dt>المتبقي</dt><dd>{{ invoice.order.remaining_amount }}</dd></div>
-        <div><dt>الحالة</dt><dd>{{ invoice.order.get_payment_status_display }}</dd></div>
     </dl>
 
     {% if invoice.order.payment_method == 'wallet_transfer' %}
@@ -66,11 +65,7 @@
     {% endif %}
 
     <footer class="receipt-footer">
-        {% if company_settings.invoice_notes %}
-            <p>{{ company_settings.invoice_notes }}</p>
-        {% else %}
-            <p>شكرا لزيارتكم</p>
-        {% endif %}
-        <p>الاستبدال والاسترجاع حسب سياسة المحل</p>
+        <p>{{ invoice.order.get_payment_method_display }} - {{ invoice.order.get_payment_status_display }}</p>
+        <p>شكرا لزيارتكم</p>
     </footer>
 </section>
