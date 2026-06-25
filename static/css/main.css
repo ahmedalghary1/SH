@@ -1477,6 +1477,167 @@ tbody tr:hover {
     color: var(--muted-text);
 }
 
+.receipt-invoice {
+    width: 40mm;
+    max-width: 40mm;
+    margin-inline: auto;
+    padding: 2mm;
+    border: 0;
+    color: #111;
+    background: #fff;
+    box-shadow: 0 .5rem 1.5rem rgba(15, 23, 42, .08);
+    font-family: "Cairo", Arial, sans-serif;
+    font-size: 8px;
+    line-height: 1.35;
+}
+
+.receipt-invoice * {
+    box-sizing: border-box;
+}
+
+.receipt-head {
+    display: grid;
+    justify-items: center;
+    gap: .7mm;
+    text-align: center;
+}
+
+.receipt-logo {
+    width: 12mm;
+    height: 12mm;
+    object-fit: contain;
+}
+
+.receipt-head h1 {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.25;
+    font-weight: 900;
+}
+
+.receipt-head p,
+.receipt-footer p,
+.receipt-wallet p {
+    margin: 0;
+}
+
+.receipt-separator {
+    margin-block: 1.5mm;
+    border-top: 1px dashed #111;
+}
+
+.receipt-meta,
+.receipt-totals {
+    display: grid;
+    gap: .7mm;
+    margin: 0;
+}
+
+.receipt-meta div,
+.receipt-totals div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1.5mm;
+}
+
+.receipt-meta dt,
+.receipt-totals dt {
+    color: #444;
+    font-weight: 700;
+}
+
+.receipt-meta dd,
+.receipt-totals dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+    text-align: left;
+    font-weight: 800;
+}
+
+.receipt-items {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 7.5px;
+}
+
+.receipt-items th,
+.receipt-items td {
+    padding: 1mm .4mm;
+    border: 0;
+    border-bottom: 1px dashed #999;
+    vertical-align: top;
+    text-align: center;
+}
+
+.receipt-items th {
+    color: #111;
+    background: transparent;
+    font-weight: 900;
+}
+
+.receipt-items th:first-child,
+.receipt-items td:first-child {
+    width: 43%;
+    text-align: right;
+}
+
+.receipt-items th:nth-child(2),
+.receipt-items td:nth-child(2) {
+    width: 13%;
+}
+
+.receipt-items th:nth-child(3),
+.receipt-items td:nth-child(3),
+.receipt-items th:nth-child(4),
+.receipt-items td:nth-child(4) {
+    width: 22%;
+}
+
+.receipt-items strong,
+.receipt-items span {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.receipt-items span {
+    color: #444;
+    font-size: 7px;
+}
+
+.receipt-grand-total {
+    padding-block: 1mm;
+    border-top: 1px solid #111;
+    border-bottom: 1px solid #111;
+    font-size: 10px;
+}
+
+.receipt-grand-total dt,
+.receipt-grand-total dd {
+    color: #000;
+    font-weight: 900;
+}
+
+.receipt-wallet {
+    display: grid;
+    gap: .5mm;
+    margin-top: 1.5mm;
+    padding-top: 1.5mm;
+    border-top: 1px dashed #111;
+}
+
+.receipt-footer {
+    display: grid;
+    gap: .8mm;
+    margin-top: 2mm;
+    padding-top: 1.5mm;
+    border-top: 1px dashed #111;
+    text-align: center;
+    font-weight: 700;
+}
+
 .compact-head {
     margin-bottom: .875rem;
 }
@@ -2061,6 +2222,50 @@ tbody tr:hover {
     @page {
         size: A4;
         margin: 10mm;
+    }
+}
+
+@media print {
+    body:has(.receipt-invoice) {
+        background: #fff !important;
+        color: #000 !important;
+    }
+
+    body:has(.receipt-invoice) .app-shell,
+    body:has(.receipt-invoice) .main-area,
+    body:has(.receipt-invoice) .page-content {
+        width: 40mm !important;
+        min-width: 40mm !important;
+        max-width: 40mm !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: block !important;
+        background: #fff !important;
+    }
+
+    .receipt-invoice {
+        width: 40mm !important;
+        max-width: 40mm !important;
+        margin: 0 !important;
+        padding: 1.5mm !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        font-size: 8px !important;
+        page-break-inside: avoid;
+    }
+
+    .receipt-invoice table,
+    .receipt-invoice thead,
+    .receipt-invoice tbody,
+    .receipt-invoice tr,
+    .receipt-invoice th,
+    .receipt-invoice td {
+        page-break-inside: avoid;
+    }
+
+    .receipt-items th {
+        background: transparent !important;
+        color: #000 !important;
     }
 }
 
