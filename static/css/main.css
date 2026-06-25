@@ -1673,73 +1673,74 @@ tbody tr:hover {
     font-weight: 900;
 }
 
-.receipt-head p,
-.receipt-footer p,
-.receipt-wallet p {
-    margin: 0;
-}
-
-.receipt-notes {
-    margin: 3mm 0 2.5mm;
-    text-align: right;
-}
-
-.receipt-notes h2 {
-    margin: 0 0 1.5mm;
-    font-size: 8.2px;
+.receipt-logo-text {
+    display: grid;
+    place-items: center;
+    width: 10mm;
+    height: 10mm;
+    border: 1px solid #111;
+    border-radius: 50%;
+    font-size: 10px;
     font-weight: 900;
 }
 
-.receipt-notes p {
-    margin: 0;
-    color: #333;
-    font-size: 6.8px;
-    line-height: 1.35;
-}
-
-.receipt-separator {
-    margin-block: 1.2mm;
-    border-top: 1px dashed #777;
-}
-
-.receipt-meta,
-.receipt-totals {
-    display: grid;
-    gap: .65mm;
+.receipt-head p,
+.receipt-footer p {
     margin: 0;
 }
 
-.receipt-meta-stacked {
-    margin-bottom: 2mm;
-}
-
-.receipt-meta div,
-.receipt-totals div {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 1.5mm;
-}
-
-.receipt-meta-stacked div {
-    justify-content: center;
-    gap: 2mm;
-}
-
-.receipt-meta dt,
-.receipt-totals dt {
-    color: #444;
-    font-size: 7px;
+.receipt-tagline {
+    font-size: 8.4px;
     font-weight: 700;
 }
 
-.receipt-meta dd,
-.receipt-totals dd {
+.receipt-dash {
+    height: 0;
+    margin-block: 1.8mm;
+    border-top: 1px dashed #111;
+}
+
+.receipt-document-title {
+    margin: 0 0 2mm;
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.2;
+    font-weight: 900;
+}
+
+.receipt-info,
+.receipt-summary,
+.receipt-payment {
+    display: grid;
+    gap: .9mm;
+    margin: 0;
+}
+
+.receipt-info div,
+.receipt-summary div,
+.receipt-payment div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 2mm;
+}
+
+.receipt-info dt,
+.receipt-summary dt,
+.receipt-payment dt {
+    color: #111;
+    font-size: 7.2px;
+    font-weight: 900;
+}
+
+.receipt-info dd,
+.receipt-summary dd,
+.receipt-payment dd {
     min-width: 0;
     margin: 0;
     overflow-wrap: anywhere;
     text-align: left;
-    font-size: 7.1px;
+    font-size: 7.4px;
     font-weight: 800;
 }
 
@@ -1747,14 +1748,15 @@ tbody tr:hover {
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
-    margin-top: 1mm;
-    font-size: 6px;
+    margin-block: 0;
+    font-size: 6.1px;
 }
 
 .receipt-items-table th,
 .receipt-items-table td {
-    padding: .7mm .25mm;
-    border: 1px solid #222;
+    padding: .65mm .2mm;
+    border: 0;
+    border-bottom: 1px dashed #444;
     vertical-align: top;
     text-align: center;
     overflow-wrap: anywhere;
@@ -1763,19 +1765,21 @@ tbody tr:hover {
 .receipt-items-table th {
     color: #000;
     background: transparent;
+    border-top: 1px dashed #111;
+    border-bottom: 1px dashed #111;
     font-weight: 900;
     font-size: 6.3px;
 }
 
 .receipt-items-table th:first-child,
 .receipt-items-table td:first-child {
-    width: 43%;
+    width: 44%;
     text-align: right;
 }
 
 .receipt-items-table th:nth-child(2),
 .receipt-items-table td:nth-child(2) {
-    width: 13%;
+    width: 12%;
 }
 
 .receipt-items-table th:nth-child(3),
@@ -1791,7 +1795,7 @@ tbody tr:hover {
 }
 
 .receipt-items-table strong {
-    font-size: 5.9px;
+    font-size: 6px;
     line-height: 1.2;
 }
 
@@ -1801,25 +1805,12 @@ tbody tr:hover {
     line-height: 1.15;
 }
 
-.receipt-summary-lines {
-    margin-top: 2mm;
-    gap: 0;
-}
-
-.receipt-summary-lines div {
-    padding: .75mm 0;
-    border-top: 1px solid #111;
-}
-
 .receipt-grand-total {
-    margin-block: 0;
-    padding: 1mm 0 !important;
-    border-top: 2px solid #111 !important;
+    margin-top: .8mm;
+    padding-block: 1mm;
+    border-top: 2px solid #111;
     border-bottom: 2px solid #111;
-    border-right: 0;
-    border-left: 0;
-    border-radius: 0;
-    font-size: 9px;
+    font-size: 10px;
 }
 
 .receipt-grand-total dt,
@@ -1828,22 +1819,17 @@ tbody tr:hover {
     font-weight: 900;
 }
 
-.receipt-wallet {
-    display: grid;
-    gap: .5mm;
-    margin-top: 1.7mm;
-    padding: 1mm;
-    border: 1px dashed #999;
-}
-
 .receipt-footer {
     display: grid;
-    gap: .8mm;
-    margin-top: 2mm;
-    padding-top: 1.5mm;
-    border-top: 1px dashed #777;
+    gap: 1.1mm;
+    margin-top: 1.5mm;
     text-align: center;
     font-weight: 700;
+}
+
+.receipt-thanks {
+    font-size: 8.6px;
+    font-weight: 900;
 }
 
 .compact-head {
