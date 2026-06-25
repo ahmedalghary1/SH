@@ -59,6 +59,7 @@ class PurchaseOrderForm(forms.Form):
         choices=((PurchaseOrder.STATUS_DRAFT, 'مسودة'), (PurchaseOrder.STATUS_ORDERED, 'تم الطلب')),
         initial=PurchaseOrder.STATUS_ORDERED,
         label='الحالة',
+        required=False,
     )
     order_date = forms.DateField(required=False, label='تاريخ الأمر', widget=forms.DateInput(attrs={'type': 'date'}))
     expected_date = forms.DateField(required=False, label='تاريخ متوقع للاستلام', widget=forms.DateInput(attrs={'type': 'date'}))

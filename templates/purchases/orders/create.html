@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}شراء بضاعة{% endblock %}
 {% block content %}
 <div class="page-head"><h1>شراء بضاعة</h1></div>
@@ -113,7 +114,7 @@
                 </label>
             </div>
             <div class="form-actions">
-                <button class="btn btn-primary" type="button" data-close-modal>اختيار المنتج</button>
+                <button class="btn btn-primary" type="button" data-complete-quick-product>إكمال المنتج</button>
             </div>
         </div>
     </div>
@@ -137,9 +138,10 @@
                 </label>
             </div>
             <div class="form-actions">
-                <button class="btn btn-primary" type="button" data-close-modal>اختيار المورد</button>
+                <button class="btn btn-primary" type="button" data-complete-quick-supplier>إكمال المورد</button>
             </div>
         </div>
     </div>
 </form>
 {% endblock %}
+{% block extra_js %}<script src="{% static 'js/purchase_create.js' %}"></script>{% endblock %}

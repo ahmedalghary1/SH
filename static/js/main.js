@@ -427,9 +427,6 @@ document.addEventListener("click", (event) => {
         closeModal(closeButton.closest(".modal"));
     }
 
-    if (event.target.classList?.contains("modal")) {
-        closeModal(event.target);
-    }
 });
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -483,7 +480,6 @@ document.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     closeAllCombos();
-    closeModal(document.querySelector(".modal:not([hidden])"));
     document.body.classList.remove("sidebar-open");
 });
 

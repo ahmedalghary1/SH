@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
 
 from accounts.models import User
 from finance.models import CashAccount, PaymentTransaction
@@ -142,3 +143,43 @@ class PurchaseServiceTests(TestCase):
             amount=Decimal('250.00'),
             notes__icontains='Cotton Fabric',
         ).exists())
+
+    def test_direct_purchase_view_creates_new_product_and_supplier_from_modal_fields(self):
+        self.client.force_login(self.manager)
+        cash = CashAccount.objects.create(name='Purchase Cash', balance=Decimal('1000.00'))
+        warehouse = Warehouse.objects.create(name='Direct Purchase Warehouse', warehouse_type=Warehouse.TYPE_MAIN)
+
+        response = self.client.post(reverse('purchases:order_create'), {
+            'supplier': '',
+            'new_supplier_name': 'New Modal Supplier',
+            'new_supplier_phone': '01012345678',
+            'product_variant': '',
+            'new_product_name': 'Modal Shirt',
+            'new_product_sku': 'MOD-SH-001',
+            'new_category': '',
+            'new_category_name': 'Modal Category',
+            'new_color': '',
+            'new_color_name': 'Modal Black',
+            'new_size': '',
+            'new_size_name': 'M',
+            'retail_price': '300.00',
+            'wholesale_price': '220.00',
+            'warehouse': warehouse.pk,
+            'cash_account': cash.pk,
+            'quantity': '2',
+            'unit_cost': '100.00',
+            'notes': 'modal purchase',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        supplier = Supplier.objects.get(name='New Modal Supplier')
+        product = Product.objects.get(sku='MOD-SH-001')
+        variant = ProductVariant.objects.get(product=product)
+        cash.refresh_from_db()
+
+        self.assertEqual(product.supplier, supplier)
+        self.assertEqual(product.category.name, 'Modal Category')
+        self.assertEqual(variant.color.name, 'Modal Black')
+        self.assertEqual(variant.size.name, 'M')
+        self.assertEqual(Stock.objects.get(warehouse=warehouse, variant=variant).quantity, 2)
+        self.assertEqual(cash.balance, Decimal('800.00'))
