@@ -1637,10 +1637,10 @@ tbody tr:hover {
 }
 
 .receipt-invoice {
-    width: 76mm;
-    max-width: 76mm;
+    width: 74mm;
+    max-width: 74mm;
     margin-inline: auto;
-    padding: 1.8mm;
+    padding: 2.2mm;
     border: 0;
     color: #111;
     background: #fff;
@@ -2452,10 +2452,10 @@ tbody tr:hover {
     }
 
     .receipt-invoice {
-        width: 76mm !important;
-        max-width: 76mm !important;
+        width: 74mm !important;
+        max-width: 74mm !important;
         margin: 0 !important;
-        padding: 1.8mm !important;
+        padding: 2.2mm !important;
         border: 0 !important;
         box-shadow: none !important;
         font-size: 8.5px !important;
