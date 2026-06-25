@@ -1637,8 +1637,8 @@ tbody tr:hover {
 }
 
 .receipt-invoice {
-    width: 40mm;
-    max-width: 40mm;
+    width: 76mm;
+    max-width: 76mm;
     margin-inline: auto;
     padding: 1.8mm;
     border: 0;
@@ -2442,9 +2442,9 @@ tbody tr:hover {
     body:has(.receipt-invoice) .app-shell,
     body:has(.receipt-invoice) .main-area,
     body:has(.receipt-invoice) .page-content {
-        width: 40mm !important;
-        min-width: 40mm !important;
-        max-width: 40mm !important;
+        width: 80mm !important;
+        min-width: 80mm !important;
+        max-width: 80mm !important;
         margin: 0 !important;
         padding: 0 !important;
         display: block !important;
@@ -2452,8 +2452,8 @@ tbody tr:hover {
     }
 
     .receipt-invoice {
-        width: 40mm !important;
-        max-width: 40mm !important;
+        width: 76mm !important;
+        max-width: 76mm !important;
         margin: 0 !important;
         padding: 1.8mm !important;
         border: 0 !important;
