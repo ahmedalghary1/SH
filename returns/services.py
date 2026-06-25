@@ -260,10 +260,24 @@ def _process_refund(*, sales_return, order, user, cash_account):
     refund_amount = sales_return.items.aggregate(v=Sum('refund_amount'))['v'] or Decimal('0')
     if refund_amount <= 0:
         return None
+    current_remaining = Decimal(str(order.remaining_amount or 0))
+    debt_reduction = min(refund_amount, current_remaining)
+    cash_refund = refund_amount - debt_reduction
+    if debt_reduction > 0:
+        order.remaining_amount = current_remaining - debt_reduction
+        if order.remaining_amount <= 0:
+            order.payment_status = Order.PAYMENT_PAID
+        elif order.paid_amount > 0:
+            order.payment_status = Order.PAYMENT_PARTIAL
+        else:
+            order.payment_status = Order.PAYMENT_UNPAID
+        order.save(update_fields=['remaining_amount', 'payment_status'])
+    if cash_refund <= 0:
+        return None
     return record_transaction(
         transaction_type=PaymentTransaction.TYPE_REFUND,
         direction=PaymentTransaction.DIRECTION_OUT,
-        amount=refund_amount,
+        amount=cash_refund,
         cash_account=cash_account,
         related_order=order,
         related_customer=sales_return.customer,

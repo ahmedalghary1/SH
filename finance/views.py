@@ -15,7 +15,7 @@ from config.exports import ExportListMixin
 
 from .forms import CashAccountForm, CustomerCollectionForm, ExpenseForm, SalesRepStatementForm, TransferForm, SupplierPaymentForm
 from .models import CashAccount, PaymentTransaction
-from .services import add_expense, collect_order_payment, delete_transaction, record_customer_allowed_discount, record_customer_payment, record_customer_refund_payment, record_supplier_payment, transfer_between_accounts
+from .services import add_expense, collect_customer_balance_payment, collect_order_payment, delete_transaction, record_customer_allowed_discount, record_customer_payment, record_customer_refund_payment, record_supplier_payment, transfer_between_accounts
 
 
 def _validation_error_message(exc):
@@ -371,8 +371,7 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
                         transaction_date=form.cleaned_data.get('transaction_date'),
                     )
                 else:
-                    record_customer_payment(
-                        order=None,
+                    collect_customer_balance_payment(
                         customer=form.cleaned_data.get('customer'),
                         amount=amount,
                         user=self.request.user,
@@ -430,6 +429,7 @@ class SupplierPaymentView(ManagerRequiredMixin, FormView):
                 supplier=supplier,
                 amount=amount,
                 user=self.request.user,
+                cash_account=form.cleaned_data.get('cash_account'),
                 notes=form.cleaned_data.get('notes') or f'دفع للمورد {supplier.name}',
                 transaction_date=form.cleaned_data.get('transaction_date'),
             )

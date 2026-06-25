@@ -100,6 +100,45 @@ class SalesReturnServiceTests(TestCase):
         self.assertTrue(StockMovement.objects.filter(movement_type=StockMovement.TYPE_SALES_RETURN, quantity=1).exists())
         self.assertTrue(PaymentTransaction.objects.filter(transaction_type=PaymentTransaction.TYPE_REFUND, amount=Decimal('300.00')).exists())
 
+    def test_credit_return_reduces_remaining_without_cash_refund(self):
+        self.order.payment_method = Order.METHOD_CREDIT
+        self.order.payment_status = Order.PAYMENT_UNPAID
+        self.order.paid_amount = Decimal('0.00')
+        self.order.remaining_amount = Decimal('900.00')
+        self.order.save(update_fields=['payment_method', 'payment_status', 'paid_amount', 'remaining_amount'])
+
+        self._completed_return(quantity=1)
+        self.order.refresh_from_db()
+        self.cash.refresh_from_db()
+
+        self.assertEqual(self.order.remaining_amount, Decimal('600.00'))
+        self.assertEqual(self.order.payment_status, Order.PAYMENT_UNPAID)
+        self.assertEqual(self.cash.balance, Decimal('2000.00'))
+        self.assertFalse(PaymentTransaction.objects.filter(
+            related_order=self.order,
+            transaction_type=PaymentTransaction.TYPE_REFUND,
+        ).exists())
+
+    def test_partially_paid_credit_return_refunds_only_amount_above_remaining_debt(self):
+        self.order.payment_method = Order.METHOD_CREDIT
+        self.order.payment_status = Order.PAYMENT_PARTIAL
+        self.order.paid_amount = Decimal('600.00')
+        self.order.remaining_amount = Decimal('300.00')
+        self.order.save(update_fields=['payment_method', 'payment_status', 'paid_amount', 'remaining_amount'])
+
+        self._completed_return(quantity=2)
+        self.order.refresh_from_db()
+        self.cash.refresh_from_db()
+
+        self.assertEqual(self.order.remaining_amount, Decimal('0.00'))
+        self.assertEqual(self.order.payment_status, Order.PAYMENT_PAID)
+        self.assertEqual(self.cash.balance, Decimal('1700.00'))
+        self.assertTrue(PaymentTransaction.objects.filter(
+            related_order=self.order,
+            transaction_type=PaymentTransaction.TYPE_REFUND,
+            amount=Decimal('300.00'),
+        ).exists())
+
     def test_return_rejects_quantity_greater_than_sold(self):
         sales_return = create_sales_return(
             order=self.order,

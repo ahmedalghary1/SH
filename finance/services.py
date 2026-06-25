@@ -20,8 +20,23 @@ def _as_decimal(amount):
 
 
 def _locked_account(account):
-    account = account or CashAccount.get_cash_drawer()
+    account = account or CashAccount.get_default()
     return CashAccount.objects.select_for_update().get(pk=account.pk)
+
+
+def _sync_order_payment_status(order):
+    from orders.models import Order
+
+    order.paid_amount = max(Decimal(str(order.paid_amount or 0)), Decimal('0'))
+    order.remaining_amount = max(Decimal(str(order.total or 0)) - order.paid_amount, Decimal('0'))
+    if order.remaining_amount <= 0:
+        order.payment_status = Order.PAYMENT_PAID
+    elif order.paid_amount <= 0:
+        order.payment_status = Order.PAYMENT_UNPAID
+    else:
+        order.payment_status = Order.PAYMENT_PARTIAL
+    order.save(update_fields=['paid_amount', 'remaining_amount', 'payment_status'])
+    return order
 
 
 @transaction.atomic
@@ -94,8 +109,8 @@ def record_customer_payment(*, order, customer, amount, user, cash_account=None,
     from customers.models import Customer
 
     amount = _as_decimal(amount)
-    if order and amount > order.remaining_amount + order.paid_amount:
-        raise ValidationError('مبلغ التحصيل أكبر من قيمة الطلب')
+    if order and amount > order.remaining_amount:
+        raise ValidationError('مبلغ التحصيل أكبر من المتبقي على الطلب')
     if not order and customer:
         customer = Customer.objects.select_for_update().get(pk=customer.pk)
         if amount > (customer.opening_balance or 0):
@@ -115,6 +130,58 @@ def record_customer_payment(*, order, customer, amount, user, cash_account=None,
         customer.opening_balance = F('opening_balance') - amount
         customer.save(update_fields=['opening_balance'])
     return tx
+
+
+@transaction.atomic
+def collect_customer_balance_payment(*, customer, amount, user, cash_account=None, notes='', transaction_date=None):
+    from customers.models import Customer
+    from orders.models import Order
+
+    amount = _as_decimal(amount)
+    customer = Customer.objects.select_for_update().get(pk=customer.pk)
+    remaining_to_allocate = amount
+    transactions = []
+
+    if customer.opening_balance and customer.opening_balance > 0:
+        opening_payment = min(remaining_to_allocate, Decimal(str(customer.opening_balance)))
+        if opening_payment > 0:
+            transactions.append(record_customer_payment(
+                order=None,
+                customer=customer,
+                amount=opening_payment,
+                user=user,
+                cash_account=cash_account,
+                notes=notes or 'تحصيل من رصيد افتتاحي',
+                transaction_date=transaction_date,
+            ))
+            remaining_to_allocate -= opening_payment
+            customer.refresh_from_db(fields=['opening_balance'])
+
+    open_orders = Order.objects.select_for_update().filter(
+        customer=customer,
+        remaining_amount__gt=0,
+    ).exclude(
+        status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED],
+    ).order_by('created_at', 'pk')
+    for order in open_orders:
+        if remaining_to_allocate <= 0:
+            break
+        order_payment = min(remaining_to_allocate, Decimal(str(order.remaining_amount or 0)))
+        if order_payment <= 0:
+            continue
+        transactions.append(collect_order_payment(
+            order=order,
+            amount=order_payment,
+            user=user,
+            cash_account=cash_account,
+            notes=notes or f'تحصيل من العميل {customer}',
+            transaction_date=transaction_date,
+        ))
+        remaining_to_allocate -= order_payment
+
+    if remaining_to_allocate > 0:
+        raise ValidationError('مبلغ التحصيل أكبر من مديونية العميل')
+    return transactions
 
 
 def record_customer_refund_payment(*, customer, amount, user, cash_account=None, notes='', transaction_date=None):
@@ -260,14 +327,7 @@ def collect_order_payment(*, order, amount, user, cash_account=None, notes='', t
     order.paid_amount = F('paid_amount') + amount
     order.save(update_fields=['paid_amount'])
     order.refresh_from_db(fields=['paid_amount'])
-    order.remaining_amount = max(order.total - order.paid_amount, Decimal('0'))
-    if order.paid_amount <= 0:
-        order.payment_status = Order.PAYMENT_UNPAID
-    elif order.paid_amount >= order.total:
-        order.payment_status = Order.PAYMENT_PAID
-    else:
-        order.payment_status = Order.PAYMENT_PARTIAL
-    order.save(update_fields=['remaining_amount', 'payment_status'])
+    _sync_order_payment_status(order)
     return tx
 
 
@@ -325,6 +385,16 @@ def delete_transaction(*, payment_transaction, user=None):
         from customers.models import Customer
 
         Customer.objects.filter(pk=tx.related_customer_id).update(opening_balance=F('opening_balance') + tx.amount)
+    if (
+        tx.transaction_type == PaymentTransaction.TYPE_CUSTOMER_PAYMENT
+        and tx.direction == PaymentTransaction.DIRECTION_IN
+        and tx.related_order_id
+    ):
+        from orders.models import Order
+
+        order = Order.objects.select_for_update().get(pk=tx.related_order_id)
+        order.paid_amount = max(Decimal(str(order.paid_amount or 0)) - tx.amount, Decimal('0'))
+        _sync_order_payment_status(order)
     tx_repr = str(tx)
     tx_pk = tx.pk
     tx_amount = tx.amount

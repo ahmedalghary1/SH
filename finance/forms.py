@@ -1,4 +1,5 @@
 from django import forms
+from django.db.models import Sum
 from django.utils import timezone
 
 from accounts.models import User
@@ -62,8 +63,13 @@ class CustomerCollectionForm(forms.Form):
             self.add_error('amount', 'إجمالي التحصيل والخصم يجب أن يكون موجبًا')
         if order and amount and amount + allowed_discount > order.remaining_amount:
             self.add_error('amount', 'مبلغ التحصيل أكبر من المتبقي على الطلب')
-        if not order and customer and amount and amount > (customer.opening_balance or 0):
-            self.add_error('amount', 'مبلغ القبض أكبر من رصيد العميل الافتتاحي')
+        if not order and customer and amount:
+            orders_debt = Order.objects.filter(customer=customer, remaining_amount__gt=0).exclude(
+                status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED],
+            ).aggregate(v=Sum('remaining_amount'))['v'] or 0
+            total_debt = (customer.opening_balance or 0) + orders_debt
+            if amount > total_debt:
+                self.add_error('amount', 'مبلغ القبض أكبر من مديونية العميل')
         if order and not customer:
             cleaned['customer'] = order.customer
         return cleaned
@@ -101,6 +107,7 @@ class SalesRepStatementForm(forms.Form):
 
 class SupplierPaymentForm(forms.Form):
     supplier = forms.ModelChoiceField(queryset=Supplier.objects.filter(is_active=True), label='المورد')
+    cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة')
     amount = forms.DecimalField(min_value=0.01, label='المبلغ')
     transaction_date = forms.DateField(label='تاريخ الدفع', initial=timezone.localdate, widget=forms.DateInput(attrs={'type': 'date'}))
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')

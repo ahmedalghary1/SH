@@ -14,6 +14,7 @@ from .models import CashAccount, PaymentTransaction
 from .services import (
     add_expense,
     collect_order_payment,
+    collect_customer_balance_payment,
     record_customer_payment,
     record_order_sale_payment,
     transfer_between_accounts,
@@ -38,6 +39,7 @@ class FinanceServiceTests(TestCase):
             order_type=Order.TYPE_B2C,
             customer=self.customer,
             warehouse=self.warehouse,
+            status=Order.STATUS_CONFIRMED,
             total=Decimal('500.00'),
             paid_amount=Decimal('100.00'),
             remaining_amount=Decimal('400.00'),
@@ -66,6 +68,36 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(self.order.paid_amount, Decimal('300.00'))
         self.assertEqual(self.order.remaining_amount, Decimal('200.00'))
         self.assertEqual(self.cash.balance, Decimal('1200.00'))
+
+    def test_collect_customer_balance_payment_allocates_to_opening_balance_then_orders(self):
+        second_order = Order.objects.create(
+            order_number='ORD-FIN-002',
+            order_type=Order.TYPE_B2C,
+            customer=self.customer,
+            warehouse=self.warehouse,
+            status=Order.STATUS_CONFIRMED,
+            total=Decimal('300.00'),
+            paid_amount=Decimal('0.00'),
+            remaining_amount=Decimal('300.00'),
+            created_by=self.user,
+        )
+
+        collect_customer_balance_payment(
+            customer=self.customer,
+            amount=Decimal('500.00'),
+            cash_account=self.cash,
+            user=self.user,
+        )
+        self.customer.refresh_from_db()
+        self.order.refresh_from_db()
+        second_order.refresh_from_db()
+        self.cash.refresh_from_db()
+
+        self.assertEqual(self.customer.opening_balance, Decimal('0.00'))
+        self.assertEqual(self.order.paid_amount, Decimal('400.00'))
+        self.assertEqual(self.order.remaining_amount, Decimal('100.00'))
+        self.assertEqual(second_order.remaining_amount, Decimal('300.00'))
+        self.assertEqual(self.cash.balance, Decimal('1500.00'))
 
     def test_record_order_sale_payment_accepts_nullable_customer(self):
         order = Order.objects.create(
@@ -143,6 +175,27 @@ class FinanceServiceTests(TestCase):
         self.customer.refresh_from_db()
         self.assertEqual(self.customer.opening_balance, Decimal('200.00'))
         self.assertFalse(PaymentTransaction.objects.filter(pk=tx.pk).exists())
+
+    def test_transaction_delete_reopens_related_order_balance(self):
+        self.client.force_login(self.user)
+        tx = collect_order_payment(
+            order=self.order,
+            amount=Decimal('200.00'),
+            cash_account=self.cash,
+            user=self.user,
+        )
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.remaining_amount, Decimal('200.00'))
+
+        response = self.client.post(reverse('finance:transaction_delete', kwargs={'pk': tx.pk}))
+
+        self.assertRedirects(response, reverse('finance:transactions'))
+        self.order.refresh_from_db()
+        self.cash.refresh_from_db()
+        self.assertEqual(self.order.paid_amount, Decimal('100.00'))
+        self.assertEqual(self.order.remaining_amount, Decimal('400.00'))
+        self.assertEqual(self.order.payment_status, Order.PAYMENT_PARTIAL)
+        self.assertEqual(self.cash.balance, Decimal('1000.00'))
 
     def test_transaction_delete_reverses_cash_balance_for_outgoing_transaction(self):
         self.client.force_login(self.user)

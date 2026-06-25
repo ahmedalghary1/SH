@@ -69,7 +69,7 @@ class CashAccount(models.Model):
                 defaults={'name': f'خزنة {user.get_full_name() or user.username}', 'is_active': True},
             )
             return account
-        return cls.get_cash_drawer()
+        return cls.get_default()
 
 
 class PaymentTransaction(models.Model):
