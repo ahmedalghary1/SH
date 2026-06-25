@@ -21,28 +21,30 @@
 
     <div class="receipt-separator"></div>
 
-    <div class="receipt-items">
-        <div class="receipt-items-head">
-            <span>الصنف</span>
-            <span>كمية</span>
-            <span>سعر</span>
-            <span>إجمالي</span>
-        </div>
-        {% for item in invoice.order.items.all %}
-            <article class="receipt-item">
-                <h2>{{ item.variant.product.name }}</h2>
-                <p>{{ item.variant.color|default:'-' }} / {{ item.variant.size|default:'-' }}</p>
-                <div class="receipt-item-numbers">
-                    <span>{{ item.quantity }}</span>
-                    <span>{{ item.unit_price }}</span>
-                    <strong>{{ item.total }}</strong>
-                </div>
-                {% if item.discount %}
-                    <p class="receipt-item-discount">خصم {{ item.discount }}</p>
-                {% endif %}
-            </article>
-        {% endfor %}
-    </div>
+    <table class="receipt-items-table">
+        <thead>
+            <tr>
+                <th>المنتج</th>
+                <th>ك</th>
+                <th>السعر</th>
+                <th>الإجمالي</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in invoice.order.items.all %}
+                <tr>
+                    <td>
+                        <strong>{{ item.variant.product.name }}</strong>
+                        <span>{{ item.variant.color|default:'-' }} / {{ item.variant.size|default:'-' }}</span>
+                        {% if item.discount %}<span>خصم {{ item.discount }}</span>{% endif %}
+                    </td>
+                    <td>{{ item.quantity }}</td>
+                    <td>{{ item.unit_price }}</td>
+                    <td>{{ item.total }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 
     <div class="receipt-separator"></div>
 

@@ -1626,73 +1626,60 @@ tbody tr:hover {
     font-weight: 800;
 }
 
-.receipt-items {
-    display: grid;
-    gap: 1mm;
-}
-
-.receipt-items-head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 7mm 9mm 10mm;
-    align-items: center;
-    gap: .8mm;
-    padding: .9mm .5mm;
-    border: 1px solid #111;
-    border-radius: .8mm;
+.receipt-items-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
     font-size: 7.2px;
-    font-weight: 900;
-    text-align: center;
 }
 
-.receipt-items-head span:first-child {
+.receipt-items-table th,
+.receipt-items-table td {
+    padding: .8mm .35mm;
+    border: 1px solid #111;
+    vertical-align: top;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.receipt-items-table th {
+    color: #000;
+    background: #f2f2f2;
+    font-weight: 900;
+}
+
+.receipt-items-table th:first-child,
+.receipt-items-table td:first-child {
+    width: 42%;
     text-align: right;
 }
 
-.receipt-item {
-    display: grid;
-    gap: .55mm;
-    padding: .9mm .2mm 1mm;
-    border-bottom: 1px dashed #999;
+.receipt-items-table th:nth-child(2),
+.receipt-items-table td:nth-child(2) {
+    width: 12%;
 }
 
-.receipt-item h2 {
-    margin: 0;
-    overflow-wrap: anywhere;
-    font-size: 8.4px;
-    line-height: 1.35;
-    font-weight: 900;
+.receipt-items-table th:nth-child(3),
+.receipt-items-table td:nth-child(3),
+.receipt-items-table th:nth-child(4),
+.receipt-items-table td:nth-child(4) {
+    width: 23%;
 }
 
-.receipt-item p {
-    margin: 0;
+.receipt-items-table strong,
+.receipt-items-table span {
+    display: block;
+}
+
+.receipt-items-table strong {
+    font-size: 7.4px;
+    line-height: 1.25;
+}
+
+.receipt-items-table span {
     color: #555;
-    font-size: 7.2px;
-}
-
-.receipt-item-numbers {
-    display: grid;
-    grid-template-columns: 7mm 9mm 10mm;
-    justify-content: end;
-    gap: .8mm;
-    direction: ltr;
-    text-align: center;
-    font-size: 7.6px;
-}
-
-.receipt-item-numbers span,
-.receipt-item-numbers strong {
-    padding-top: .4mm;
-    border-top: 1px dotted #c4c4c4;
-}
-
-.receipt-item-numbers span,
-.receipt-item-numbers strong {
-    min-width: 0;
-    overflow-wrap: anywhere;
-}
-
-.receipt-item-discount {
-    text-align: left;
+    font-size: 6.6px;
+    line-height: 1.25;
 }
 
 .receipt-grand-total {
