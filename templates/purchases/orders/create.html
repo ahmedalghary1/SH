@@ -55,7 +55,7 @@
         <button class="btn btn-light" type="button" onclick="history.back()">رجوع</button>
     </div>
 
-    <div class="modal quick-add-modal" id="quick-product-modal" {% if not form.new_product_name.errors and not form.new_product_sku.errors and not form.new_category.errors and not form.new_category_name.errors and not form.new_color.errors and not form.new_color_name.errors and not form.new_size.errors and not form.new_size_name.errors and not form.retail_price.errors and not form.wholesale_price.errors %}hidden{% endif %}>
+    <div class="modal quick-add-modal" id="quick-product-modal" {% if not form.new_product_name.errors and not form.new_product_sku.errors and not form.new_category.errors and not form.new_category_name.errors and not form.new_color.errors and not form.new_color_name.errors and not form.new_size.errors and not form.new_size_name.errors and not form.pieces_per_dozen.errors and not form.retail_price.errors and not form.wholesale_price.errors %}hidden{% endif %}>
         <div class="modal-box">
             <div class="modal-head">
                 <h2>إضافة منتج</h2>
@@ -71,6 +71,11 @@
                     <span>{{ form.new_product_sku.label }}</span>
                     {{ form.new_product_sku }}
                     {% if form.new_product_sku.errors %}<small class="error">{{ form.new_product_sku.errors|join:', ' }}</small>{% endif %}
+                </label>
+                <label>
+                    <span>{{ form.pieces_per_dozen.label }}</span>
+                    {{ form.pieces_per_dozen }}
+                    {% if form.pieces_per_dozen.errors %}<small class="error">{{ form.pieces_per_dozen.errors|join:', ' }}</small>{% endif %}
                 </label>
                 <label>
                     <span>{{ form.new_category.label }}</span>

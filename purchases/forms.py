@@ -76,6 +76,7 @@ class PurchaseOrderForm(forms.Form):
     new_color_name = forms.CharField(required=False, label='لون جديد')
     new_size = forms.ModelChoiceField(queryset=Size.objects.all().order_by('sort_order', 'name'), required=False, label='مقاس المنتج الجديد')
     new_size_name = forms.CharField(required=False, label='مقاس جديد')
+    pieces_per_dozen = forms.IntegerField(min_value=1, required=False, initial=12, label='عدد القطع في الدستة')
     retail_price = forms.DecimalField(min_value=0, required=False, label='سعر قطاعي')
     wholesale_price = forms.DecimalField(min_value=0, required=False, label='سعر جملة')
     warehouse = forms.ModelChoiceField(queryset=Warehouse.objects.filter(is_active=True), label='مخزن الإضافة', required=False)

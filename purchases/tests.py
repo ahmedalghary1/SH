@@ -7,7 +7,7 @@ from django.urls import reverse
 from accounts.models import User
 from finance.models import CashAccount, PaymentTransaction
 from inventory.models import Stock, StockMovement, Warehouse
-from products.models import Product, ProductVariant
+from products.models import Category, Color, Product, ProductVariant, Size
 
 from .models import PurchaseOrder, Supplier
 from .raw_material import record_raw_material_purchase
@@ -162,6 +162,7 @@ class PurchaseServiceTests(TestCase):
             'new_color_name': 'Modal Black',
             'new_size': '',
             'new_size_name': 'M',
+            'pieces_per_dozen': '10',
             'retail_price': '300.00',
             'wholesale_price': '220.00',
             'warehouse': warehouse.pk,
@@ -169,7 +170,7 @@ class PurchaseServiceTests(TestCase):
             'quantity': '2',
             'unit_cost': '100.00',
             'notes': 'modal purchase',
-        })
+        }, secure=True)
 
         self.assertEqual(response.status_code, 302)
         supplier = Supplier.objects.get(name='New Modal Supplier')
@@ -179,7 +180,53 @@ class PurchaseServiceTests(TestCase):
 
         self.assertEqual(product.supplier, supplier)
         self.assertEqual(product.category.name, 'Modal Category')
+        self.assertEqual(product.pieces_per_dozen, 10)
         self.assertEqual(variant.color.name, 'Modal Black')
         self.assertEqual(variant.size.name, 'M')
         self.assertEqual(Stock.objects.get(warehouse=warehouse, variant=variant).quantity, 2)
         self.assertEqual(cash.balance, Decimal('800.00'))
+
+    def test_purchase_quick_product_ajax_creates_variant_without_warehouse(self):
+        self.client.force_login(self.manager)
+        supplier = Supplier.objects.create(name='Quick Product Supplier')
+        category = Category.objects.create(name='Quick Category')
+        color = Color.objects.create(name='Quick Black')
+        size = Size.objects.create(name='Quick M')
+
+        response = self.client.post(reverse('purchases:ajax_quick_create_purchase_product'), {
+            'supplier': supplier.pk,
+            'new_product_name': 'Quick Purchase Shirt',
+            'new_product_sku': 'QP-SH-001',
+            'new_category': category.pk,
+            'new_color': color.pk,
+            'new_size': size.pk,
+            'pieces_per_dozen': '8',
+            'retail_price': '320.00',
+            'wholesale_price': '240.00',
+            'unit_cost': '110.00',
+        }, secure=True)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['success'])
+        variant = ProductVariant.objects.get(pk=payload['data']['id'])
+
+        self.assertEqual(variant.product.supplier, supplier)
+        self.assertEqual(variant.product.pieces_per_dozen, 8)
+        self.assertEqual(variant.cost_price, Decimal('110.00'))
+        self.assertEqual(variant.retail_price, Decimal('320.00'))
+        self.assertFalse(Stock.objects.filter(variant=variant).exists())
+
+    def test_purchase_quick_supplier_ajax_creates_and_returns_option_data(self):
+        self.client.force_login(self.manager)
+
+        response = self.client.post(reverse('purchases:ajax_quick_create_purchase_supplier'), {
+            'new_supplier_name': 'Quick Supplier',
+            'new_supplier_phone': '01000000000',
+        }, secure=True)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['success'])
+        supplier = Supplier.objects.get(pk=payload['data']['id'])
+        self.assertEqual(supplier.name, 'Quick Supplier')

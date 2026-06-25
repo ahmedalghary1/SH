@@ -1,12 +1,16 @@
+from decimal import Decimal, InvalidOperation
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Max, Q, Sum
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
+from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView, View
 
-from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin, can_view_costs
+from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin, can_view_costs, role_required
 from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 from config.search import arabic_search_q
@@ -17,6 +21,81 @@ from .forms import PurchaseOrderForm, PurchaseReceiveForm, PurchaseReturnForm, S
 from .models import PurchaseOrder, Supplier
 from .raw_material import RawMaterialPurchaseForm, record_raw_material_purchase
 from .services import cancel_purchase_order, create_purchase_order, create_purchase_return, pay_supplier, receive_purchase_order_items
+
+
+def _decimal_from_post(value, default=Decimal('0')):
+    if value in (None, ''):
+        return default
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError):
+        raise ValidationError('القيمة الرقمية غير صحيحة')
+
+
+def _int_from_post(value, default=12):
+    if value in (None, ''):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise ValidationError('عدد الدستة غير صحيح')
+    if parsed < 1:
+        raise ValidationError('عدد الدستة يجب أن يكون أكبر من صفر')
+    return parsed
+
+
+def _get_or_create_named_model(model, selected, new_name, *, defaults=None, missing_message):
+    if selected:
+        return selected
+    name = (new_name or '').strip()
+    if not name:
+        raise ValidationError(missing_message)
+    obj, _ = model.objects.get_or_create(name=name, defaults=defaults or {})
+    return obj
+
+
+def _create_purchase_product_variant(*, name, sku, category, category_name, color, color_name, size, size_name, pieces_per_dozen, retail_price, wholesale_price, unit_cost, supplier=None):
+    name = (name or '').strip()
+    sku = (sku or '').strip()
+    if not name:
+        raise ValidationError('اكتب اسم المنتج الجديد')
+    if not sku:
+        raise ValidationError('اكتب كود المنتج الجديد')
+    if Product.objects.filter(sku=sku).exists():
+        raise ValidationError('كود المنتج موجود بالفعل')
+
+    category = _get_or_create_named_model(
+        Category,
+        category,
+        category_name,
+        defaults={'is_active': True},
+        missing_message='اختر التصنيف أو اكتب تصنيف جديد',
+    )
+    if not category.is_active:
+        category.is_active = True
+        category.save(update_fields=['is_active'])
+    color = _get_or_create_named_model(Color, color, color_name, missing_message='اختر اللون أو اكتب لون جديد')
+    size = _get_or_create_named_model(Size, size, size_name, defaults={'sort_order': 0}, missing_message='اختر المقاس أو اكتب مقاس جديد')
+
+    product = Product.objects.create(
+        name=name,
+        sku=sku,
+        category=category,
+        supplier=supplier,
+        retail_price=retail_price,
+        wholesale_price=wholesale_price,
+        pieces_per_dozen=pieces_per_dozen,
+    )
+    return ProductVariant.objects.create(
+        product=product,
+        color=color,
+        size=size,
+        variant_sku=f'{sku}-{color.pk}-{size.pk}',
+        cost_price=unit_cost,
+        sale_price=retail_price,
+        retail_price=retail_price,
+        wholesale_price=wholesale_price,
+    )
 
 
 class SimpleSupplierListView(ManagerRequiredMixin, ListView):
@@ -312,37 +391,20 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
         if variant:
             return variant
 
-        category = form.cleaned_data.get('new_category')
-        category_name = (form.cleaned_data.get('new_category_name') or '').strip()
-        if not category and category_name:
-            category, _ = Category.objects.get_or_create(name=category_name, defaults={'is_active': True})
-
-        color = form.cleaned_data.get('new_color')
-        color_name = (form.cleaned_data.get('new_color_name') or '').strip()
-        if not color and color_name:
-            color, _ = Color.objects.get_or_create(name=color_name)
-
-        size = form.cleaned_data.get('new_size')
-        size_name = (form.cleaned_data.get('new_size_name') or '').strip()
-        if not size and size_name:
-            size, _ = Size.objects.get_or_create(name=size_name, defaults={'sort_order': 0})
-
-        sku = (form.cleaned_data.get('new_product_sku') or '').strip()
-        product = Product.objects.create(
-            name=(form.cleaned_data.get('new_product_name') or '').strip(),
-            sku=sku,
-            category=category,
-            supplier=supplier,
-        )
-        return ProductVariant.objects.create(
-            product=product,
-            color=color,
-            size=size,
-            variant_sku=f'{sku}-{color.pk}-{size.pk}',
-            cost_price=form.cleaned_data.get('unit_cost') or 0,
-            sale_price=form.cleaned_data.get('retail_price') or 0,
+        return _create_purchase_product_variant(
+            name=form.cleaned_data.get('new_product_name'),
+            sku=form.cleaned_data.get('new_product_sku'),
+            category=form.cleaned_data.get('new_category'),
+            category_name=form.cleaned_data.get('new_category_name'),
+            color=form.cleaned_data.get('new_color'),
+            color_name=form.cleaned_data.get('new_color_name'),
+            size=form.cleaned_data.get('new_size'),
+            size_name=form.cleaned_data.get('new_size_name'),
+            pieces_per_dozen=form.cleaned_data.get('pieces_per_dozen') or 12,
             retail_price=form.cleaned_data.get('retail_price') or 0,
             wholesale_price=form.cleaned_data.get('wholesale_price') or 0,
+            unit_cost=form.cleaned_data.get('unit_cost') or 0,
+            supplier=supplier,
         )
 
     def form_valid(self, form):
@@ -384,6 +446,72 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
         except ValidationError as exc:
             form.add_error(None, exc.message)
             return self.form_invalid(form)
+
+
+@require_POST
+@role_required('manager')
+def ajax_quick_create_purchase_supplier(request):
+    name = request.POST.get('new_supplier_name', '').strip() or request.POST.get('name', '').strip()
+    phone = request.POST.get('new_supplier_phone', '').strip() or request.POST.get('phone', '').strip()
+    if not name:
+        return JsonResponse({'success': False, 'message': 'اكتب اسم المورد'}, status=400)
+
+    supplier = Supplier.objects.create(name=name, phone=phone or None, is_active=True)
+    return JsonResponse({
+        'success': True,
+        'message': 'تم إضافة المورد',
+        'data': {'id': supplier.id, 'name': supplier.name, 'phone': supplier.phone or ''},
+    })
+
+
+@require_POST
+@role_required('manager')
+def ajax_quick_create_purchase_product(request):
+    def selected(model, key):
+        value = request.POST.get(key)
+        if not value:
+            return None
+        obj = model.objects.filter(pk=value).first()
+        if not obj:
+            raise ValidationError('الاختيار المحدد غير صحيح')
+        return obj
+
+    supplier = None
+    supplier_id = request.POST.get('supplier')
+    if supplier_id:
+        supplier = Supplier.objects.filter(pk=supplier_id, is_active=True).first()
+
+    try:
+        with transaction.atomic():
+            variant = _create_purchase_product_variant(
+                name=request.POST.get('new_product_name'),
+                sku=request.POST.get('new_product_sku'),
+                category=selected(Category, 'new_category'),
+                category_name=request.POST.get('new_category_name'),
+                color=selected(Color, 'new_color'),
+                color_name=request.POST.get('new_color_name'),
+                size=selected(Size, 'new_size'),
+                size_name=request.POST.get('new_size_name'),
+                pieces_per_dozen=_int_from_post(request.POST.get('pieces_per_dozen'), 12),
+                retail_price=_decimal_from_post(request.POST.get('retail_price')),
+                wholesale_price=_decimal_from_post(request.POST.get('wholesale_price')),
+                unit_cost=_decimal_from_post(request.POST.get('unit_cost')),
+                supplier=supplier,
+            )
+    except ValidationError as exc:
+        message = getattr(exc, 'message', None) or '; '.join(exc.messages)
+        return JsonResponse({'success': False, 'message': message}, status=400)
+
+    return JsonResponse({
+        'success': True,
+        'message': 'تم إضافة المنتج',
+        'data': {
+            'id': variant.id,
+            'name': str(variant),
+            'sku': variant.variant_sku,
+            'pieces_per_dozen': variant.product.pieces_per_dozen,
+        },
+    })
 
 
 class PurchaseOrderDetailView(RoleRequiredMixin, DetailView):
