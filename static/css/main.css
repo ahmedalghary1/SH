@@ -1477,11 +1477,78 @@ tbody tr:hover {
     color: var(--muted-text);
 }
 
+.screen-invoice {
+    width: min(100%, 72rem);
+    max-width: 72rem;
+    padding: clamp(1.25rem, 3vw, 2rem);
+    border: .0625rem solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: #fff;
+    box-shadow: var(--shadow-sm);
+}
+
+.screen-invoice .invoice-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1.25rem;
+}
+
+.screen-invoice .detail-grid {
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    margin-bottom: 1.25rem;
+}
+
+.screen-invoice .table-wrap {
+    margin-top: 1.25rem;
+    overflow-x: auto;
+    border: .0625rem solid var(--border-color);
+    border-radius: var(--radius-sm);
+    box-shadow: none;
+}
+
+.screen-invoice .invoice-items-table {
+    min-width: 46rem;
+    margin-top: 0;
+    border-collapse: collapse;
+    table-layout: auto;
+}
+
+.screen-invoice .invoice-items-table th,
+.screen-invoice .invoice-items-table td {
+    padding: .7rem .8rem;
+    border-bottom: .0625rem solid var(--border-color);
+    text-align: center;
+    vertical-align: middle;
+}
+
+.screen-invoice .invoice-items-table th:first-child,
+.screen-invoice .invoice-items-table td:first-child {
+    text-align: right;
+}
+
+.screen-invoice .invoice-items-table th {
+    color: #fff;
+    background: var(--primary-color);
+    font-weight: 800;
+}
+
+.screen-invoice .invoice-items-table tbody tr:nth-child(even) {
+    background: var(--surface-muted);
+}
+
+.screen-invoice .invoice-totals {
+    width: min(100%, 24rem);
+    margin-top: 1.25rem;
+    margin-right: auto;
+    border-radius: var(--radius-sm);
+}
+
 .receipt-invoice {
     width: 40mm;
     max-width: 40mm;
     margin-inline: auto;
-    padding: 2.4mm;
+    padding: 2mm;
     border: 0;
     color: #111;
     background: #fff;
@@ -1498,7 +1565,8 @@ tbody tr:hover {
 .receipt-head {
     display: grid;
     justify-items: center;
-    gap: .6mm;
+    gap: .45mm;
+    padding-bottom: .8mm;
     text-align: center;
 }
 
@@ -1510,7 +1578,7 @@ tbody tr:hover {
 
 .receipt-head h1 {
     margin: 0;
-    font-size: 12px;
+    font-size: 11.5px;
     line-height: 1.25;
     font-weight: 900;
 }
@@ -1522,8 +1590,8 @@ tbody tr:hover {
 }
 
 .receipt-separator {
-    margin-block: 1.7mm;
-    border-top: 1px dashed #777;
+    margin-block: 1.4mm;
+    border-top: 1px dashed #666;
 }
 
 .receipt-meta,
@@ -1568,8 +1636,9 @@ tbody tr:hover {
     grid-template-columns: minmax(0, 1fr) 7mm 9mm 10mm;
     align-items: center;
     gap: .8mm;
-    padding: .8mm 0;
-    border-block: 1px solid #111;
+    padding: .9mm .5mm;
+    border: 1px solid #111;
+    border-radius: .8mm;
     font-size: 7.2px;
     font-weight: 900;
     text-align: center;
@@ -1582,8 +1651,8 @@ tbody tr:hover {
 .receipt-item {
     display: grid;
     gap: .55mm;
-    padding-bottom: 1mm;
-    border-bottom: 1px dashed #aaa;
+    padding: .9mm .2mm 1mm;
+    border-bottom: 1px dashed #999;
 }
 
 .receipt-item h2 {
@@ -1608,6 +1677,12 @@ tbody tr:hover {
     direction: ltr;
     text-align: center;
     font-size: 7.6px;
+}
+
+.receipt-item-numbers span,
+.receipt-item-numbers strong {
+    padding-top: .4mm;
+    border-top: 1px dotted #c4c4c4;
 }
 
 .receipt-item-numbers span,
