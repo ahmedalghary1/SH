@@ -1630,12 +1630,12 @@ tbody tr:hover {
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
-    font-size: 7.2px;
+    font-size: 6.2px;
 }
 
 .receipt-items-table th,
 .receipt-items-table td {
-    padding: .8mm .35mm;
+    padding: .55mm .2mm;
     border: 1px solid #111;
     vertical-align: top;
     text-align: center;
@@ -1672,14 +1672,14 @@ tbody tr:hover {
 }
 
 .receipt-items-table strong {
-    font-size: 7.4px;
-    line-height: 1.25;
+    font-size: 6.2px;
+    line-height: 1.15;
 }
 
 .receipt-items-table span {
     color: #555;
-    font-size: 6.6px;
-    line-height: 1.25;
+    font-size: 5.8px;
+    line-height: 1.1;
 }
 
 .receipt-grand-total {
