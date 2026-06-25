@@ -1,6 +1,6 @@
 <section class="invoice-box screen-invoice" dir="rtl">
-    <div class="invoice-head">
-        <div class="invoice-brand">
+    <header class="screen-invoice-head">
+        <div class="screen-invoice-brand">
             {% if company_settings.logo %}
                 <img class="invoice-logo" src="{{ company_settings.logo.url }}" alt="{{ company_settings.company_name }}">
             {% else %}
@@ -12,14 +12,14 @@
                 {% if company_settings.address %}<p>{{ company_settings.address }}</p>{% endif %}
             </div>
         </div>
-        <div class="invoice-number-box">
+        <div class="screen-invoice-number">
             <span>فاتورة</span>
             <strong>{{ invoice.invoice_number }}</strong>
             <p>{{ invoice.issued_at|date:'Y-m-d H:i' }}</p>
         </div>
-    </div>
+    </header>
 
-    <div class="detail-grid">
+    <div class="screen-invoice-meta">
         <div><span>رقم الفاتورة</span><strong>{{ invoice.invoice_number }}</strong></div>
         <div><span>العميل</span><strong>{{ invoice.order.customer|default:'عميل نقدي' }}</strong></div>
         <div><span>طريقة الدفع</span><strong>{{ invoice.order.get_payment_method_display }}</strong></div>
@@ -34,7 +34,7 @@
         {% if company_settings.tax_number %}<div><span>الرقم الضريبي</span><strong>{{ company_settings.tax_number }}</strong></div>{% endif %}
     </div>
 
-    <div class="table-wrap">
+    <div class="screen-invoice-table">
         <table class="invoice-items-table">
             <thead>
                 <tr>
@@ -65,11 +65,13 @@
         </table>
     </div>
 
-    <div class="invoice-totals">
-        <p>الإجمالي قبل الخصم: <strong>{{ invoice.order.subtotal }}</strong></p>
-        <p>الخصم: <strong>{{ invoice.order.discount }}</strong></p>
-        <p>الإجمالي: <strong>{{ invoice.order.total }}</strong></p>
-    </div>
+    <footer class="screen-invoice-footer">
+        {% if company_settings.invoice_notes %}<p class="invoice-notes">{{ company_settings.invoice_notes }}</p>{% endif %}
 
-    {% if company_settings.invoice_notes %}<p class="invoice-notes">{{ company_settings.invoice_notes }}</p>{% endif %}
+        <div class="invoice-totals">
+            <p><span>الإجمالي قبل الخصم</span><strong>{{ invoice.order.subtotal }}</strong></p>
+            <p><span>الخصم</span><strong>{{ invoice.order.discount }}</strong></p>
+            <p><span>الإجمالي</span><strong>{{ invoice.order.total }}</strong></p>
+        </div>
+    </footer>
 </section>

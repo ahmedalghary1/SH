@@ -7,6 +7,7 @@
         {% if company_settings.phone %}<p>{{ company_settings.phone }}</p>{% endif %}
         {% if company_settings.address %}<p>{{ company_settings.address }}</p>{% endif %}
         {% if company_settings.tax_number %}<p>ض. {{ company_settings.tax_number }}</p>{% endif %}
+        <strong class="receipt-title">فاتورة بيع</strong>
     </header>
 
     <div class="receipt-separator"></div>
@@ -24,10 +25,10 @@
     <table class="receipt-items-table">
         <thead>
             <tr>
-                <th>المنتج</th>
+                <th>الصنف</th>
                 <th>ك</th>
-                <th>السعر</th>
-                <th>الإجمالي</th>
+                <th>سعر</th>
+                <th>إجمالي</th>
             </tr>
         </thead>
         <tbody>
