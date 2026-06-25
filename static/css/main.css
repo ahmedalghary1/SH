@@ -1380,8 +1380,8 @@ tbody tr:hover {
 
 .invoice-brand {
     display: flex;
-    align-items: flex-start;
-    gap: .875rem;
+    align-items: center;
+    gap: 1rem;
     min-width: 0;
 }
 
@@ -1396,6 +1396,8 @@ tbody tr:hover {
 }
 
 .invoice-logo {
+    width: 3rem;
+    height: 3rem;
     object-fit: contain;
 }
 
