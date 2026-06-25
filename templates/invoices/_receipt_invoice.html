@@ -2,9 +2,11 @@
 <section class="invoice-box receipt-invoice" dir="rtl">
     <header class="receipt-head">
         <img class="receipt-logo" src="{% static 'images/sh-family-Logo.png' %}" alt="{{ company_settings.company_name }}">
-        <h1>{{ company_settings.company_name|default:'شركة الملابس' }}</h1>
-        <p class="receipt-tagline">Fashion for You</p>
-        {% if company_settings.phone %}<p>{{ company_settings.phone }}</p>{% endif %}
+        <div class="receipt-brand">
+            <h1>{{ company_settings.company_name|default:'شركة الملابس' }}</h1>
+            <p class="receipt-tagline">Fashion for You</p>
+            {% if company_settings.phone %}<p>{{ company_settings.phone }}</p>{% endif %}
+        </div>
     </header>
 
     <div class="receipt-dash"></div>

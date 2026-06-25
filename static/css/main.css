@@ -1655,16 +1655,24 @@ tbody tr:hover {
 }
 
 .receipt-head {
-    display: grid;
-    justify-items: center;
-    gap: .35mm;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: .75rem;
     padding-bottom: 1mm;
-    text-align: center;
+    text-align: left;
+}
+
+.receipt-brand {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    align-items: flex-start;
 }
 
 .receipt-logo {
-    width: 8mm;
-    height: 8mm;
+    width: 12mm;
+    height: 12mm;
     object-fit: contain;
 }
 
