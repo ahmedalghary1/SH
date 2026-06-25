@@ -1,11 +1,7 @@
 <section class="invoice-box screen-invoice" dir="rtl">
     <header class="screen-invoice-head">
         <div class="screen-invoice-brand">
-            {% if company_settings.logo %}
-                <img class="invoice-logo" src="{{ company_settings.logo.url }}" alt="{{ company_settings.company_name }}">
-            {% else %}
-                <div class="brand-mark">م</div>
-            {% endif %}
+            <img class="invoice-logo" src="{% static 'images/sh-family-Logo.png' %}" alt="{{ company_settings.company_name }}">
             <div>
                 <h1>{{ company_settings.company_name|default:'شركة الملابس' }}</h1>
                 <p>{{ company_settings.phone|default:'بيانات التواصل' }}{% if company_settings.email %} - {{ company_settings.email }}{% endif %}</p>
