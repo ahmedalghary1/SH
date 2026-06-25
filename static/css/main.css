@@ -1804,6 +1804,10 @@ tbody tr:hover {
     display: block;
 }
 
+.receipt-items-table span {
+    margin-top: .1rem;
+}
+
 .receipt-items-table strong {
     font-size: 6px;
     line-height: 1.2;
