@@ -1,7 +1,8 @@
 from django import forms
+from django.db.models import Q
 
 from finance.models import CashAccount
-from inventory.models import Warehouse
+from inventory.models import Stock, Warehouse
 from products.models import Category, Color, Product, ProductVariant, Size
 
 from .models import PurchaseOrder, Supplier
@@ -154,3 +155,41 @@ class PurchaseReturnForm(forms.Form):
     quantity = forms.IntegerField(min_value=1, label='الكمية')
     unit_cost = forms.DecimalField(min_value=0, label='تكلفة الوحدة')
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        supplier_id = self.data.get('supplier') if self.is_bound else self.initial.get('supplier')
+        self.fields['supplier'].widget.attrs.update({'data-purchase-return-supplier': 'true'})
+        self.fields['product_variant'].widget.attrs.update({'data-purchase-return-variant': 'true'})
+        self.fields['warehouse'].widget.attrs.update({'data-purchase-return-warehouse': 'true'})
+        if supplier_id:
+            product_variant_id = self.data.get('product_variant') if self.is_bound else self.initial.get('product_variant')
+            variant_filter = Q(product__supplier_id=supplier_id)
+            if product_variant_id:
+                variant_filter |= Q(pk=product_variant_id)
+            self.fields['product_variant'].queryset = ProductVariant.objects.filter(
+                variant_filter,
+                is_active=True,
+            ).select_related('product', 'color', 'size').order_by('product__name', 'color__name', 'size__sort_order', 'size__name')
+        else:
+            self.fields['product_variant'].queryset = ProductVariant.objects.none()
+
+    def clean(self):
+        cleaned = super().clean()
+        supplier = cleaned.get('supplier')
+        product_variant = cleaned.get('product_variant')
+        warehouse = cleaned.get('warehouse')
+        quantity = cleaned.get('quantity')
+
+        if supplier and product_variant and product_variant.product.supplier_id != supplier.pk:
+            self.add_error('product_variant', 'اختر صنفا خاصا بالمورد المحدد')
+
+        if product_variant and warehouse:
+            stock = Stock.objects.filter(variant=product_variant, warehouse=warehouse).first()
+            available = stock.quantity if stock else 0
+            if available <= 0:
+                self.add_error('warehouse', 'هذا الصنف غير موجود في المخزن المحدد')
+            elif quantity and quantity > available:
+                self.add_error('quantity', f'الكمية المتاحة في المخزن {available}')
+
+        return cleaned

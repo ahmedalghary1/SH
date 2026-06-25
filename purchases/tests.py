@@ -230,3 +230,53 @@ class PurchaseServiceTests(TestCase):
         self.assertTrue(payload['success'])
         supplier = Supplier.objects.get(pk=payload['data']['id'])
         self.assertEqual(supplier.name, 'Quick Supplier')
+
+    def test_purchase_return_supplier_variants_ajax_filters_by_supplier_and_stock(self):
+        self.client.force_login(self.manager)
+        supplier = Supplier.objects.create(name='Return Supplier')
+        other_supplier = Supplier.objects.create(name='Other Return Supplier')
+        category = Category.objects.create(name='Return Category')
+        color = Color.objects.create(name='Return Black')
+        size = Size.objects.create(name='Return M')
+        warehouse = Warehouse.objects.create(name='Return Warehouse', warehouse_type=Warehouse.TYPE_MAIN)
+        product = Product.objects.create(name='Return Product', sku='RET-001', supplier=supplier, category=category)
+        variant = ProductVariant.objects.create(product=product, color=color, size=size, variant_sku='RET-001-BLK-M')
+        other_product = Product.objects.create(name='Other Return Product', sku='RET-002', supplier=other_supplier, category=category)
+        other_variant = ProductVariant.objects.create(product=other_product, color=color, size=size, variant_sku='RET-002-BLK-M')
+        Stock.objects.create(warehouse=warehouse, variant=variant, quantity=5)
+        Stock.objects.create(warehouse=warehouse, variant=other_variant, quantity=7)
+
+        response = self.client.get(
+            reverse('purchases:ajax_supplier_product_variants'),
+            {'supplier_id': supplier.pk},
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        variants = response.json()['data']['variants']
+        self.assertEqual([item['id'] for item in variants], [variant.pk])
+        self.assertEqual(variants[0]['available_quantity'], 5)
+
+    def test_purchase_return_rejects_variant_from_another_supplier(self):
+        self.client.force_login(self.manager)
+        supplier = Supplier.objects.create(name='Correct Supplier')
+        other_supplier = Supplier.objects.create(name='Wrong Supplier')
+        category = Category.objects.create(name='Return Validation Category')
+        color = Color.objects.create(name='Return Validation Black')
+        size = Size.objects.create(name='Return Validation M')
+        warehouse = Warehouse.objects.create(name='Return Validation Warehouse', warehouse_type=Warehouse.TYPE_MAIN)
+        product = Product.objects.create(name='Wrong Supplier Product', sku='RET-WRONG-001', supplier=other_supplier, category=category)
+        variant = ProductVariant.objects.create(product=product, color=color, size=size, variant_sku='RET-WRONG-001-BLK-M')
+        Stock.objects.create(warehouse=warehouse, variant=variant, quantity=5)
+
+        response = self.client.post(reverse('purchases:purchase_return'), {
+            'supplier': supplier.pk,
+            'product_variant': variant.pk,
+            'warehouse': warehouse.pk,
+            'quantity': '1',
+            'unit_cost': '10.00',
+            'notes': '',
+        }, secure=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'اختر صنفا خاصا بالمورد المحدد')

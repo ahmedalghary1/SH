@@ -1,6 +1,23 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}مرتجع شراء{% endblock %}
 {% block content %}
 <div class="page-head"><h1>مرتجع شراء</h1></div>
-{% include 'partials/model_form.html' with button_text='تسجيل المرتجع' %}
+
+<form method="post" enctype="multipart/form-data" class="card form-grid" data-purchase-return-form>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    {% for field in form %}
+        <label>
+            <span>{{ field.label }}</span>
+            {{ field }}
+            {% if field.errors %}<small class="error">{{ field.errors|join:', ' }}</small>{% endif %}
+        </label>
+    {% endfor %}
+    <div class="form-actions">
+        <button class="btn btn-primary" type="submit">تسجيل المرتجع</button>
+        <button class="btn btn-light" type="button" onclick="history.back()">رجوع</button>
+    </div>
+</form>
 {% endblock %}
+{% block extra_js %}<script src="{% static 'js/purchase_return.js' %}"></script>{% endblock %}

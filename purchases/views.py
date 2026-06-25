@@ -7,7 +7,7 @@ from django.db.models import Max, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView, View
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin, can_view_costs, role_required
@@ -15,6 +15,7 @@ from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
+from inventory.models import Stock
 from products.models import Category, Color, Product, ProductVariant, Size
 
 from .forms import PurchaseOrderForm, PurchaseReceiveForm, PurchaseReturnForm, SupplierForm, SupplierPaymentForm, SimpleSupplierForm
@@ -512,6 +513,36 @@ def ajax_quick_create_purchase_product(request):
             'pieces_per_dozen': variant.product.pieces_per_dozen,
         },
     })
+
+
+@require_GET
+@role_required('manager')
+def ajax_supplier_product_variants(request):
+    supplier_id = request.GET.get('supplier_id')
+    if not supplier_id:
+        return JsonResponse({'success': True, 'message': 'تم جلب الأصناف', 'data': {'variants': []}})
+
+    stocks = Stock.objects.filter(
+        quantity__gt=0,
+        warehouse__is_active=True,
+        variant__is_active=True,
+        variant__product__supplier_id=supplier_id,
+    ).select_related('variant__product', 'variant__color', 'variant__size')
+    totals = {}
+    variants = {}
+    for stock in stocks:
+        variants[stock.variant_id] = stock.variant
+        totals[stock.variant_id] = totals.get(stock.variant_id, 0) + stock.quantity
+
+    data = [
+        {
+            'id': variant.pk,
+            'name': str(variant),
+            'available_quantity': totals[variant.pk],
+        }
+        for variant in sorted(variants.values(), key=lambda item: (item.product.name, item.color.name if item.color else '', item.size.sort_order if item.size else 0, item.size.name if item.size else ''))
+    ]
+    return JsonResponse({'success': True, 'message': 'تم جلب الأصناف', 'data': {'variants': data}})
 
 
 class PurchaseOrderDetailView(RoleRequiredMixin, DetailView):

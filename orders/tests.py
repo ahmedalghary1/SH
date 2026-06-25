@@ -393,6 +393,44 @@ class OrderCreateViewTests(TestCase):
         self.assertEqual(order.total, Decimal('270.00'))
 
 
+class OrderListViewTests(TestCase):
+    def setUp(self):
+        self.manager = User.objects.create_user(username='list-manager', password='pass', role=User.ROLE_MANAGER)
+        self.sale_order = Order.objects.create(
+            order_number='ORD-LIST-SALE',
+            document_type=Order.DOCUMENT_SALE,
+            order_type=Order.TYPE_B2C,
+            created_by=self.manager,
+        )
+        self.quote_order = Order.objects.create(
+            order_number='ORD-LIST-QUOTE',
+            document_type=Order.DOCUMENT_QUOTE,
+            order_type=Order.TYPE_B2C,
+            created_by=self.manager,
+        )
+
+    def test_invoice_list_only_shows_sale_documents_and_hides_quote_buttons(self):
+        self.client.force_login(self.manager)
+
+        response = self.client.get(reverse('orders:list'), secure=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.sale_order.order_number)
+        self.assertNotContains(response, self.quote_order.order_number)
+        self.assertNotContains(response, 'عروض الأسعار')
+        self.assertNotContains(response, 'href="/orders/create/?document=quote"')
+
+    def test_quote_list_only_shows_quote_documents(self):
+        self.client.force_login(self.manager)
+
+        response = self.client.get(reverse('orders:quote_list'), secure=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.quote_order.order_number)
+        self.assertNotContains(response, self.sale_order.order_number)
+        self.assertContains(response, 'href="/orders/create/?document=quote"')
+
+
 class OrderDiscountPolicyTests(TestCase):
     def setUp(self):
         self.manager = User.objects.create_user(username='discount-manager', password='pass', role=User.ROLE_MANAGER)

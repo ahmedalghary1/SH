@@ -19,6 +19,7 @@ urlpatterns = [
     path('orders/create/', views.PurchaseOrderCreateView.as_view(), name='order_create'),
     path('orders/ajax/quick-create-product/', views.ajax_quick_create_purchase_product, name='ajax_quick_create_purchase_product'),
     path('orders/ajax/quick-create-supplier/', views.ajax_quick_create_purchase_supplier, name='ajax_quick_create_purchase_supplier'),
+    path('orders/ajax/supplier-product-variants/', views.ajax_supplier_product_variants, name='ajax_supplier_product_variants'),
     path('orders/return/', views.PurchaseReturnView.as_view(), name='purchase_return'),
     path('orders/<int:pk>/', views.PurchaseOrderDetailView.as_view(), name='order_detail'),
     path('orders/<int:pk>/receive/', views.PurchaseReceiveView.as_view(), name='order_receive'),

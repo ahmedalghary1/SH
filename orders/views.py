@@ -81,6 +81,7 @@ class OrderListView(RoleRequiredMixin, ExportListMixin, ListView):
     template_name = 'orders/list.html'
     context_object_name = 'orders'
     paginate_by = 20
+    document_type = Order.DOCUMENT_SALE
     export_title = 'قائمة الفواتير'
     export_filename = 'orders'
     export_columns = (
@@ -107,6 +108,13 @@ class OrderListView(RoleRequiredMixin, ExportListMixin, ListView):
             qs = qs.filter(arabic_search_q(('order_number', 'customer__name', 'customer__phone'), q))
         return qs
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['is_quote_list'] = self.document_type == Order.DOCUMENT_QUOTE
+        context['page_title'] = 'عروض السعر' if context['is_quote_list'] else 'الفواتير'
+        context['empty_message'] = 'لا توجد عروض سعر' if context['is_quote_list'] else 'لا توجد فواتير'
+        return context
+
 
 class RetailOrderListView(OrderListView):
     order_type = Order.TYPE_B2C
@@ -118,6 +126,8 @@ class WholesaleOrderListView(OrderListView):
 
 class QuoteListView(OrderListView):
     document_type = Order.DOCUMENT_QUOTE
+    export_title = 'قائمة عروض السعر'
+    export_filename = 'quotes'
 
 
 class OrderCreateView(SalesRequiredMixin, FormView):
