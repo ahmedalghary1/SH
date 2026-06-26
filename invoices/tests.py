@@ -10,6 +10,7 @@ from finance.models import CashAccount, PaymentTransaction
 from inventory.models import Warehouse
 from orders.models import Order, OrderItem
 from products.models import Product, ProductVariant
+from settings_app.models import CompanySettings
 
 from .models import Invoice
 from .services import generate_invoice
@@ -169,4 +170,44 @@ class InvoicePDFExportTests(TestCase):
         self.assertNotContains(detail_response, 'receipt-invoice')
         self.assertContains(print_response, 'receipt-invoice')
         self.assertContains(print_response, 'receipt-items-table')
-        self.assertContains(print_response, 'size: 40mm auto')
+        self.assertContains(print_response, 'size: 80mm auto')
+        self.assertNotContains(print_response, 'app-shell')
+        self.assertNotContains(print_response, 'css/main.css')
+
+    def test_invoice_print_uses_configured_thermal_paper_width(self):
+        self.client.force_login(self.user)
+        settings = CompanySettings.load()
+        settings.thermal_paper_width = CompanySettings.THERMAL_WIDTH_58
+        settings.save(update_fields=['thermal_paper_width'])
+
+        response = self.client.get(reverse('invoices:print', kwargs={'pk': self.invoice.pk}), secure=True)
+
+        self.assertContains(response, 'size: 58mm auto')
+        self.assertContains(response, '--receipt-width: 52mm')
+
+    def test_invoice_print_exposes_direct_print_settings(self):
+        self.client.force_login(self.user)
+        settings = CompanySettings.load()
+        settings.thermal_print_mode = CompanySettings.PRINT_MODE_ELECTRON
+        settings.thermal_printer_name = 'POS-80'
+        settings.save(update_fields=['thermal_print_mode', 'thermal_printer_name'])
+
+        response = self.client.get(reverse('invoices:print', kwargs={'pk': self.invoice.pk}), secure=True)
+
+        self.assertContains(response, 'const printMode = "electron"')
+        self.assertContains(response, 'const printerName = "POS-80"')
+        self.assertContains(response, 'window.shDesktopPrinter')
+        self.assertContains(response, 'qz.websocket')
+
+    def test_invoice_print_count_is_marked_by_post_not_page_open(self):
+        self.client.force_login(self.user)
+
+        self.client.get(reverse('invoices:print', kwargs={'pk': self.invoice.pk}), secure=True)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.printed_count, 0)
+
+        response = self.client.post(reverse('invoices:print_mark', kwargs={'pk': self.invoice.pk}), secure=True)
+        self.invoice.refresh_from_db()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.invoice.printed_count, 1)

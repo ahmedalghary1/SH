@@ -2,7 +2,8 @@ import csv
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.http import HttpResponse
+from django.db.models import F
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views.generic import DetailView, ListView, View
@@ -180,11 +181,25 @@ class InvoicePrintView(InvoiceContextMixin, SalesRequiredMixin, DetailView):
     template_name = 'invoices/print.html'
     context_object_name = 'invoice'
 
-    def get(self, request, *args, **kwargs):
-        response = super().get(request, *args, **kwargs)
-        self.object.printed_count += 1
-        self.object.save(update_fields=['printed_count'])
-        return response
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        company_settings = context['company_settings']
+        paper_width = company_settings.thermal_paper_width or CompanySettings.THERMAL_WIDTH_80
+        context['thermal_paper_width'] = int(paper_width)
+        context['thermal_receipt_width'] = 52 if paper_width == CompanySettings.THERMAL_WIDTH_58 else 74
+        context['thermal_print_mode'] = company_settings.thermal_print_mode or CompanySettings.PRINT_MODE_BROWSER
+        context['thermal_printer_name'] = company_settings.thermal_printer_name or ''
+        return context
+
+
+class InvoicePrintMarkView(SalesRequiredMixin, View):
+    def post(self, request, pk):
+        qs = Invoice.objects.select_related('order__created_by')
+        if request.user.role == 'sales' and not request.user.is_superuser:
+            qs = qs.filter(order__created_by=request.user)
+        invoice = get_object_or_404(qs, pk=pk)
+        Invoice.objects.filter(pk=invoice.pk).update(printed_count=F('printed_count') + 1)
+        return JsonResponse({'ok': True})
 
 
 class InvoicePaymentCreateView(InvoiceContextMixin, SalesRequiredMixin, View):

@@ -12,5 +12,6 @@ urlpatterns = [
     path('<int:pk>/payments/add/', views.InvoicePaymentCreateView.as_view(), name='payment_add'),
     path('<int:pk>/', views.InvoiceDetailView.as_view(), name='detail'),
     path('<int:pk>/print/', views.InvoicePrintView.as_view(), name='print'),
+    path('<int:pk>/print/mark/', views.InvoicePrintMarkView.as_view(), name='print_mark'),
     path('generate/<int:order_pk>/', views.GenerateInvoiceView.as_view(), name='generate'),
 ]

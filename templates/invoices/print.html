@@ -1,31 +1,451 @@
-{% extends 'base.html' %}
-{% block title %}طباعة فاتورة{% endblock %}
-{% block extra_css %}
-<style>
-@media print {
-    @page {
-        size: 80mm auto;
-        margin: 0;
-    }
+{% load static %}
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>طباعة فاتورة {{ invoice.invoice_number }}</title>
+    <style>
+        :root {
+            --paper-width: {{ thermal_paper_width }}mm;
+            --receipt-width: {{ thermal_receipt_width }}mm;
+            --ink: #000;
+            --muted-ink: #444;
+        }
 
-    html,
-    body {
-        width: 80mm;
-        min-width: 80mm;
-        margin: 0;
-        padding: 0;
-    }
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
 
-    .audit-history-widget,
-    .audit-history-card,
-    .audit-history-toggle,
-    [data-audit-history-panel] {
-        display: none !important;
-    }
-}
-</style>
-{% endblock %}
-{% block content %}
-<div class="page-head no-print"><h1>طباعة فاتورة {{ invoice.invoice_number }}</h1><button class="btn btn-accent" onclick="window.print()">طباعة</button></div>
-{% include 'invoices/_receipt_invoice.html' %}
-{% endblock %}
+        html,
+        body {
+            width: var(--paper-width);
+            min-width: var(--paper-width);
+            margin: 0;
+            padding: 0;
+            background: #fff;
+            color: var(--ink);
+            direction: rtl;
+            text-align: right;
+            font-family: Tahoma, Arial, sans-serif;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .print-shell {
+            width: var(--paper-width);
+            max-width: var(--paper-width);
+            padding: 0;
+        }
+
+        .print-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            width: min(100%, 420px);
+            margin: 12px auto;
+            padding: 0 8px;
+            font-family: Tahoma, Arial, sans-serif;
+        }
+
+        .print-action-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .print-actions h1 {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .print-status {
+            min-height: 18px;
+            color: #334155;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .print-button {
+            min-height: 36px;
+            padding: 0 14px;
+            border: 0;
+            border-radius: 6px;
+            background: #111827;
+            color: #fff;
+            cursor: pointer;
+            font-weight: 700;
+        }
+
+        .print-button.secondary {
+            background: #e5e7eb;
+            color: #111827;
+        }
+
+        .receipt-invoice {
+            width: var(--receipt-width);
+            max-width: var(--receipt-width);
+            margin-inline: auto;
+            padding: 2mm;
+            border: 0;
+            background: #fff;
+            color: var(--ink);
+            font-size: 8px;
+            line-height: 1.32;
+        }
+
+        .receipt-head {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 3mm;
+            padding-bottom: 1mm;
+            text-align: left;
+        }
+
+        .receipt-brand {
+            display: flex;
+            flex-direction: column;
+            gap: .8mm;
+            align-items: flex-start;
+            min-width: 0;
+        }
+
+        .receipt-logo {
+            width: 12mm;
+            height: 12mm;
+            object-fit: contain;
+            flex: 0 0 auto;
+        }
+
+        .receipt-head h1 {
+            margin: 0;
+            color: var(--ink);
+            font-size: 11px;
+            line-height: 1.2;
+            font-weight: 900;
+        }
+
+        .receipt-head p,
+        .receipt-footer p {
+            margin: 0;
+        }
+
+        .receipt-tagline {
+            font-size: 8px;
+            font-weight: 700;
+        }
+
+        .receipt-dash {
+            height: 0;
+            margin-block: 1.8mm;
+            border-top: 1px dashed var(--ink);
+        }
+
+        .receipt-document-title {
+            margin: 0 0 2mm;
+            color: var(--ink);
+            text-align: center;
+            font-size: 12px;
+            line-height: 1.2;
+            font-weight: 900;
+        }
+
+        .receipt-info,
+        .receipt-summary,
+        .receipt-payment {
+            display: grid;
+            gap: .9mm;
+            margin: 0;
+        }
+
+        .receipt-info div,
+        .receipt-summary div,
+        .receipt-payment div {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 2mm;
+        }
+
+        .receipt-info dt,
+        .receipt-summary dt,
+        .receipt-payment dt {
+            color: var(--ink);
+            font-size: 7.2px;
+            font-weight: 900;
+        }
+
+        .receipt-info dd,
+        .receipt-summary dd,
+        .receipt-payment dd {
+            min-width: 0;
+            margin: 0;
+            overflow-wrap: anywhere;
+            text-align: left;
+            font-size: 7.4px;
+            font-weight: 800;
+        }
+
+        .receipt-items-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            margin: 0;
+            font-size: 6.1px;
+        }
+
+        .receipt-items-table th,
+        .receipt-items-table td {
+            padding: .65mm .2mm;
+            border: 0;
+            border-bottom: 1px dashed var(--muted-ink);
+            vertical-align: top;
+            text-align: center;
+            overflow-wrap: anywhere;
+        }
+
+        .receipt-items-table th {
+            color: var(--ink);
+            background: transparent;
+            border-top: 1px dashed var(--ink);
+            border-bottom: 1px dashed var(--ink);
+            font-size: 6.3px;
+            font-weight: 900;
+        }
+
+        .receipt-items-table th:first-child,
+        .receipt-items-table td:first-child {
+            width: 44%;
+            text-align: right;
+        }
+
+        .receipt-items-table th:nth-child(2),
+        .receipt-items-table td:nth-child(2) {
+            width: 12%;
+        }
+
+        .receipt-items-table th:nth-child(3),
+        .receipt-items-table td:nth-child(3),
+        .receipt-items-table th:nth-child(4),
+        .receipt-items-table td:nth-child(4) {
+            width: 22%;
+        }
+
+        .receipt-items-table strong,
+        .receipt-items-table span {
+            display: block;
+        }
+
+        .receipt-items-table strong {
+            font-size: 6px;
+            line-height: 1.2;
+        }
+
+        .receipt-items-table span {
+            margin-top: .6mm;
+            color: var(--muted-ink);
+            font-size: 5.1px;
+            line-height: 1.15;
+        }
+
+        .receipt-grand-total {
+            margin-top: .8mm;
+            padding-block: 1mm;
+            border-top: 2px solid var(--ink);
+            border-bottom: 2px solid var(--ink);
+            font-size: 10px;
+        }
+
+        .receipt-grand-total dt,
+        .receipt-grand-total dd {
+            color: var(--ink);
+            font-weight: 900;
+        }
+
+        .receipt-footer {
+            display: grid;
+            gap: 1.1mm;
+            margin-top: 1.5mm;
+            text-align: center;
+            font-weight: 700;
+        }
+
+        .receipt-thanks {
+            font-size: 8.6px;
+            font-weight: 900;
+        }
+
+        @page {
+            size: {{ thermal_paper_width }}mm auto;
+            margin: 0;
+        }
+
+        @media print {
+            html,
+            body,
+            .print-shell {
+                width: var(--paper-width) !important;
+                min-width: var(--paper-width) !important;
+                max-width: var(--paper-width) !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+
+            body {
+                display: block;
+                min-height: 0;
+            }
+
+            .print-actions {
+                display: none !important;
+            }
+
+            .receipt-invoice {
+                width: var(--receipt-width) !important;
+                max-width: var(--receipt-width) !important;
+                margin: 0 auto !important;
+                padding: 2mm !important;
+                page-break-inside: avoid;
+            }
+
+            .receipt-items-table tr,
+            .receipt-footer {
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="print-shell">
+        <div class="print-actions">
+            <h1>فاتورة {{ invoice.invoice_number }}</h1>
+            <div>
+                <div class="print-action-group">
+                    <button class="print-button" type="button" data-print-button>طباعة</button>
+                    <button class="print-button secondary" type="button" data-browser-print-button>طباعة المتصفح</button>
+                </div>
+                <div class="print-status" data-print-status></div>
+            </div>
+        </div>
+
+        {% include 'invoices/_receipt_invoice.html' %}
+    </main>
+
+    <script>
+        (() => {
+            const printButton = document.querySelector("[data-print-button]");
+            const browserPrintButton = document.querySelector("[data-browser-print-button]");
+            const status = document.querySelector("[data-print-status]");
+            const markUrl = "{% url 'invoices:print_mark' invoice.pk %}";
+            const csrfToken = "{{ csrf_token }}";
+            const printMode = "{{ thermal_print_mode|escapejs }}";
+            const printerName = "{{ thermal_printer_name|escapejs }}";
+            const paperWidth = {{ thermal_paper_width }};
+            let printRequested = false;
+            let marked = false;
+
+            function setStatus(message) {
+                if (status) status.textContent = message || "";
+            }
+
+            function markPrinted() {
+                if (!printRequested || marked) return;
+                marked = true;
+                const payload = new FormData();
+                payload.append("csrfmiddlewaretoken", csrfToken);
+                if (navigator.sendBeacon) {
+                    navigator.sendBeacon(markUrl, payload);
+                    return;
+                }
+                fetch(markUrl, {
+                    method: "POST",
+                    body: payload,
+                    credentials: "same-origin",
+                    keepalive: true,
+                }).catch(() => {});
+            }
+
+            function browserPrint() {
+                printRequested = true;
+                window.print();
+            }
+
+            async function electronPrint() {
+                const bridge = window.shDesktopPrinter || window.electronPrinter || window.electronAPI;
+                const printHtml = bridge?.printHtml || bridge?.printInvoice || bridge?.printReceipt;
+                if (!printHtml) return false;
+                await printHtml.call(bridge, {
+                    html: document.documentElement.outerHTML,
+                    receiptHtml: document.querySelector(".receipt-invoice")?.outerHTML || "",
+                    printerName,
+                    paperWidth,
+                    invoiceNumber: "{{ invoice.invoice_number|escapejs }}",
+                });
+                printRequested = true;
+                markPrinted();
+                return true;
+            }
+
+            async function qzPrint() {
+                if (!window.qz?.websocket || !window.qz?.configs || !window.qz?.print) return false;
+                if (!qz.websocket.isActive()) {
+                    await qz.websocket.connect();
+                }
+                const config = qz.configs.create(printerName || null, {
+                    units: "mm",
+                    size: { width: paperWidth },
+                    margins: 0,
+                    density: 203,
+                });
+                const html = `<!doctype html>${document.documentElement.outerHTML}`;
+                await qz.print(config, [{
+                    type: "html",
+                    format: "plain",
+                    data: html,
+                }]);
+                printRequested = true;
+                markPrinted();
+                return true;
+            }
+
+            async function directPrint() {
+                printButton.disabled = true;
+                setStatus("جاري تجهيز الطباعة...");
+                try {
+                    if (printMode === "electron" && await electronPrint()) {
+                        setStatus("تم إرسال الفاتورة للطابعة.");
+                        return;
+                    }
+                    if (printMode === "qz" && await qzPrint()) {
+                        setStatus("تم إرسال الفاتورة إلى QZ Tray.");
+                        return;
+                    }
+                    setStatus("الطباعة المباشرة غير متاحة على هذا الجهاز، سيتم فتح طباعة المتصفح.");
+                    browserPrint();
+                } catch (error) {
+                    setStatus("تعذرت الطباعة المباشرة، سيتم فتح طباعة المتصفح.");
+                    browserPrint();
+                } finally {
+                    printButton.disabled = false;
+                }
+            }
+
+            printButton?.addEventListener("click", directPrint);
+            browserPrintButton?.addEventListener("click", browserPrint);
+
+            window.addEventListener("afterprint", markPrinted);
+        })();
+    </script>
+</body>
+</html>
