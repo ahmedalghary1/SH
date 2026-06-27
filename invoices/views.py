@@ -186,7 +186,7 @@ class InvoicePrintView(InvoiceContextMixin, SalesRequiredMixin, DetailView):
         company_settings = context['company_settings']
         paper_width = company_settings.thermal_paper_width or CompanySettings.THERMAL_WIDTH_80
         context['thermal_paper_width'] = int(paper_width)
-        context['thermal_receipt_width'] = 52 if paper_width == CompanySettings.THERMAL_WIDTH_58 else 74
+        context['thermal_receipt_width'] = 56 if paper_width == CompanySettings.THERMAL_WIDTH_58 else 76
         context['thermal_print_mode'] = company_settings.thermal_print_mode or CompanySettings.PRINT_MODE_BROWSER
         context['thermal_printer_name'] = company_settings.thermal_printer_name or ''
         return context

@@ -9,6 +9,8 @@
         :root {
             --paper-width: {{ thermal_paper_width }}mm;
             --receipt-width: {{ thermal_receipt_width }}mm;
+            --receipt-padding: 1.2mm;
+            --receipt-print-offset: 1mm;
             --ink: #000;
             --muted-ink: #444;
         }
@@ -96,7 +98,7 @@
             width: var(--receipt-width);
             max-width: var(--receipt-width);
             margin-inline: auto;
-            padding: 2mm;
+            padding: var(--receipt-padding);
             border: 0;
             background: #fff;
             color: var(--ink);
@@ -315,7 +317,8 @@
                 width: var(--receipt-width) !important;
                 max-width: var(--receipt-width) !important;
                 margin: 0 auto !important;
-                padding: 2mm !important;
+                padding: var(--receipt-padding) !important;
+                transform: translateX(var(--receipt-print-offset));
                 page-break-inside: avoid;
             }
 
