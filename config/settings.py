@@ -27,6 +27,9 @@ def env_bool(name, default=False):
     return value.strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
+DESKTOP_LOCAL_MODE = env_bool('DESKTOP_LOCAL_MODE', False)
+
+
 def env_int(name, default):
     value = os.environ.get(name)
     if value is None or str(value).strip() == '':
@@ -119,6 +122,7 @@ INSTALLED_APPS = [
     'dashboard',
     'settings_app',
     'sync_api',
+    'desktop_sync.apps.DesktopSyncConfig',
     'audit.apps.AuditConfig',
 ]
 
@@ -171,6 +175,14 @@ DATABASES = {
         'CONN_MAX_AGE': env_int('DB_CONN_MAX_AGE', 60),
     }
 }
+
+if DESKTOP_LOCAL_MODE:
+    DATA_DIR = env_path('DJANGO_DATA_DIR', Path.home() / '.shdesktop')
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    DATABASES['default'] = {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': os.environ.get('SQLITE_PATH') or os.environ.get('POSTGRES_DB') or str(DATA_DIR / 'db.sqlite3'),
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
@@ -265,7 +277,7 @@ PDF_ARABIC_FONT_PATH = os.environ.get('PDF_ARABIC_FONT_PATH', '').strip()
 
 
 LOG_DIR = Path(os.environ.get('LOG_DIR', BASE_DIR / 'logs'))
-LOG_DIR.mkdir(exist_ok=True)
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 LOGGING = {
     'version': 1,

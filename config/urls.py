@@ -196,6 +196,7 @@ urlpatterns = static_urlpatterns + media_urlpatterns + [
     path('sales-reps/', include('sales_reps.urls')),
     path('settings/', include('settings_app.urls')),
     path('audit/', include('audit.urls')),
+    path('desktop-sync/', include('desktop_sync.urls')),
     path('api/', include('sync_api.urls')),
 ]
 

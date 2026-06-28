@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}مزامنة تطبيق الديسكتوب{% endblock %}
+
+{% block content %}
+<div class="container py-4" dir="rtl">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h1 class="h4 m-0">مزامنة تطبيق الديسكتوب</h1>
+    <form method="post" action="{% url 'desktop_sync:sync' %}">
+      {% csrf_token %}
+      <button class="btn btn-primary" type="submit">مزامنة الآن</button>
+    </form>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted">معلق</div><div class="fs-4">{{ pending_count }}</div></div></div></div>
+    <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted">تم رفعه</div><div class="fs-4">{{ synced_count }}</div></div></div></div>
+    <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted">أخطاء/تعارض</div><div class="fs-4">{{ failed_count }}</div></div></div></div>
+    <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted">الجهاز</div><div class="small text-break">{{ config.device_id }}</div></div></div></div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header">الاتصال بالموقع</div>
+    <div class="card-body">
+      <form method="post" action="{% url 'desktop_sync:login' %}" class="row g-2">
+        {% csrf_token %}
+        <div class="col-md-4">
+          <label class="form-label">رابط API</label>
+          <input class="form-control" name="remote_api_url" value="{{ config.normalized_api_url }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">اسم المستخدم</label>
+          <input class="form-control" name="username" value="{{ config.username }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">كلمة المرور</label>
+          <input class="form-control" name="password" type="password">
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+          <button class="btn btn-success w-100" type="submit">تسجيل وربط</button>
+        </div>
+      </form>
+      <div class="text-muted small mt-3">
+        آخر تحميل: {{ config.last_pull_at|default:"-" }} · آخر رفع: {{ config.last_push_at|default:"-" }}
+        {% if config.last_error %}<div class="text-danger mt-1">{{ config.last_error }}</div>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2 mb-3">
+    <form method="post" action="{% url 'desktop_sync:pull' %}">{% csrf_token %}<button class="btn btn-outline-secondary" type="submit">تحميل من الموقع</button></form>
+    <form method="post" action="{% url 'desktop_sync:push' %}">{% csrf_token %}<button class="btn btn-outline-secondary" type="submit">رفع العمليات المحلية</button></form>
+  </div>
+
+  <div class="card">
+    <div class="card-header">آخر العمليات المحلية</div>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead><tr><th>النوع</th><th>الحالة</th><th>المحاولات</th><th>الخطأ</th><th>آخر تحديث</th></tr></thead>
+        <tbody>
+          {% for item in recent_outbox %}
+          <tr>
+            <td>{{ item.entity_type }}</td>
+            <td>{{ item.status }}</td>
+            <td>{{ item.attempts }}</td>
+            <td class="text-danger">{{ item.last_error }}</td>
+            <td>{{ item.updated_at }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="text-muted text-center py-4">لا توجد عمليات محلية بعد.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

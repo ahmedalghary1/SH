@@ -1,0 +1,43 @@
+{
+  "name": "sh-desktop",
+  "version": "1.0.0",
+  "description": "SH offline-first desktop client",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "start": "set ELECTRON_RUN_AS_NODE=& electron .",
+    "desktop": "set ELECTRON_RUN_AS_NODE=& electron .",
+    "build:backend": "pyinstaller sh-desktop-backend.spec --clean --noconfirm --distpath backend-dist",
+    "build:win": "npm run build:backend && electron-builder --win nsis",
+    "dist": "npm run build:win"
+  },
+  "devDependencies": {
+    "electron": "^42.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.elwsamstore.shdesktop",
+    "productName": "SH Desktop",
+    "directories": {
+      "output": "desktop-dist"
+    },
+    "files": [
+      "electron/**/*",
+      "sh-family-Logo.png"
+    ],
+    "extraResources": [
+      {
+        "from": "backend-dist",
+        "to": "backend-dist"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "sh-family-Logo.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
