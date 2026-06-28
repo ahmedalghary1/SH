@@ -373,7 +373,7 @@
             const mediaWidth = {{ thermal_paper_width }};
             const printableWidth = {{ thermal_printable_width }};
             const receiptWidth = {{ thermal_receipt_width }};
-            const printEndFeed = 2;
+            const printEndFeed = 0;
             let printRequested = false;
             let marked = false;
 
@@ -398,8 +398,8 @@
                 }).catch(() => {});
             }
 
-            function browserPrint() {
-                updatePrintMetrics();
+            async function browserPrint() {
+                await preparePrintMetrics();
                 printRequested = true;
                 window.print();
             }
@@ -425,8 +425,48 @@
                     style.id = "thermal-print-page-size";
                     document.head.appendChild(style);
                 }
-                style.textContent = `@page { size: ${printableWidth}mm ${pageHeight}mm; margin: 0; }`;
+                style.textContent = `
+                    @page { size: ${printableWidth}mm ${pageHeight}mm; margin: 0; }
+                    @media print {
+                        html,
+                        body,
+                        .print-shell {
+                            height: ${pageHeight}mm !important;
+                            min-height: ${pageHeight}mm !important;
+                            max-height: ${pageHeight}mm !important;
+                            overflow: hidden !important;
+                        }
+                    }
+                `;
                 document.documentElement.style.setProperty("--print-page-height", `${pageHeight}mm`);
+                document.documentElement.style.height = `${pageHeight}mm`;
+                document.body.style.height = `${pageHeight}mm`;
+                document.querySelector(".print-shell")?.style.setProperty("height", `${pageHeight}mm`);
+                return pageHeight;
+            }
+
+            function nextFrame() {
+                return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            }
+
+            async function waitForReceiptAssets() {
+                if (document.fonts?.ready) {
+                    await document.fonts.ready.catch(() => {});
+                }
+                await Promise.all(Array.from(document.images).map((image) => {
+                    if (image.complete) return Promise.resolve();
+                    return new Promise((resolve) => {
+                        image.addEventListener("load", resolve, { once: true });
+                        image.addEventListener("error", resolve, { once: true });
+                    });
+                }));
+            }
+
+            async function preparePrintMetrics() {
+                await waitForReceiptAssets();
+                await nextFrame();
+                const pageHeight = updatePrintMetrics();
+                await nextFrame();
                 return pageHeight;
             }
 
@@ -434,7 +474,7 @@
                 const bridge = window.shDesktopPrinter || window.electronPrinter || window.electronAPI;
                 const printHtml = bridge?.printHtml || bridge?.printInvoice || bridge?.printReceipt;
                 if (!printHtml) return false;
-                const pageHeight = updatePrintMetrics();
+                const pageHeight = await preparePrintMetrics();
                 await printHtml.call(bridge, {
                     html: document.documentElement.outerHTML,
                     receiptHtml: document.querySelector(".receipt-invoice")?.outerHTML || "",
@@ -445,6 +485,8 @@
                     receiptWidth,
                     pageHeight,
                     receiptHeight: pageHeight,
+                    endFeed: printEndFeed,
+                    feedAfterPrint: 0,
                     invoiceNumber: "{{ invoice.invoice_number|escapejs }}",
                 });
                 printRequested = true;
@@ -457,7 +499,7 @@
                 if (!qz.websocket.isActive()) {
                     await qz.websocket.connect();
                 }
-                const pageHeight = updatePrintMetrics();
+                const pageHeight = await preparePrintMetrics();
                 const config = qz.configs.create(printerName || null, {
                     units: "mm",
                     size: { width: printableWidth, height: pageHeight },
@@ -488,10 +530,10 @@
                         return;
                     }
                     setStatus("الطباعة المباشرة غير متاحة على هذا الجهاز، سيتم فتح طباعة المتصفح.");
-                    browserPrint();
+                    await browserPrint();
                 } catch (error) {
                     setStatus("تعذرت الطباعة المباشرة، سيتم فتح طباعة المتصفح.");
-                    browserPrint();
+                    await browserPrint();
                 } finally {
                     printButton.disabled = false;
                 }
@@ -500,7 +542,7 @@
             printButton?.addEventListener("click", directPrint);
             browserPrintButton?.addEventListener("click", browserPrint);
 
-            window.addEventListener("load", updatePrintMetrics);
+            window.addEventListener("load", () => { preparePrintMetrics(); });
             window.addEventListener("beforeprint", updatePrintMetrics);
             window.addEventListener("afterprint", markPrinted);
         })();

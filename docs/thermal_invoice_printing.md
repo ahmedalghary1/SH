@@ -56,6 +56,7 @@ ipcMain.handle("thermal-print", async (event, payload) => {
         silent: true,
         deviceName: payload.printerName || undefined,
         printBackground: true,
+        preferCSSPageSize: true,
         margins: { marginType: "none" },
         pageSize: {
           width: payload.paperWidth * 1000,
