@@ -11,6 +11,7 @@
             --paper-width: {{ thermal_printable_width }}mm;
             --receipt-width: {{ thermal_receipt_width }}mm;
             --receipt-padding: 1.2mm;
+            --receipt-vertical-padding: 10mm;
             --ink: #000;
             --muted-ink: #444;
         }
@@ -101,7 +102,7 @@
             width: var(--receipt-width);
             max-width: var(--receipt-width);
             margin-inline: auto;
-            padding: var(--receipt-padding);
+            padding: var(--receipt-vertical-padding) var(--receipt-padding);
             border: 0;
             background: #fff;
             color: var(--ink);
@@ -333,7 +334,7 @@
                 max-width: var(--receipt-width) !important;
                 margin-right: auto !important;
                 margin-left: auto !important;
-                padding: var(--receipt-padding) !important;
+                padding: var(--receipt-vertical-padding) var(--receipt-padding) !important;
                 transform: none !important;
                 page-break-inside: avoid;
             }
