@@ -36,9 +36,15 @@ def parse_json_body(request):
         return None
 
 
+def method_not_allowed(allowed_methods):
+    response = JsonResponse({'error': 'Method not allowed'}, status=405)
+    response['Allow'] = ', '.join(allowed_methods)
+    return response
+
+
 def login_view(request):
     if request.method != 'POST':
-        return JsonResponse({'error': 'Method not allowed'}, status=405)
+        return method_not_allowed(['POST'])
     payload = parse_json_body(request)
     if payload is None:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
@@ -74,13 +80,19 @@ def token_required(view_func):
 
 @token_required
 def me_view(request):
+    if request.method != 'GET':
+        return method_not_allowed(['GET'])
     return JsonResponse({'user': user_payload(request.sync_user)})
 
 
 @token_required
 def refresh_view(request):
+    if request.method != 'POST':
+        return method_not_allowed(['POST'])
     device_id = ''
-    payload = parse_json_body(request) if request.method == 'POST' and request.body else {}
+    payload = parse_json_body(request) if request.body else {}
+    if payload is None:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
     if payload:
         device_id = payload.get('device_id') or ''
     return JsonResponse({'token': make_token(request.sync_user, device_id), 'user': user_payload(request.sync_user)})

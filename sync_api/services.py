@@ -179,8 +179,15 @@ PROCESSORS = {
 
 
 def process_operation(operation, user):
+    current_payload_hash = payload_hash(operation.get('payload') or {})
     existing = SyncOperation.objects.filter(idempotency_key=operation['idempotency_key']).first()
     if existing:
+        if existing.payload_hash and existing.payload_hash != current_payload_hash:
+            return response_failed(
+                operation.get('local_uuid'),
+                'Idempotency key already used with different payload',
+                'failed_conflict',
+            )
         return existing.response_json
 
     processor = PROCESSORS.get(operation.get('entity_type'))
@@ -215,7 +222,7 @@ def process_operation(operation, user):
         local_uuid=operation.get('local_uuid') or '',
         server_model=server_model,
         server_object_id=server_object_id,
-        payload_hash=payload_hash(operation.get('payload') or {}),
+        payload_hash=current_payload_hash,
         status=status,
         response_json=result,
     )

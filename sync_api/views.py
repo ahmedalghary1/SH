@@ -10,12 +10,14 @@ from orders.models import Order
 from products.models import Product, ProductVariant
 from settings_app.models import CompanySettings
 
-from .auth import token_required, user_payload
+from .auth import method_not_allowed, token_required, user_payload
 from .serializers import serialize_customer, serialize_order, serialize_product, serialize_stock, serialize_variant
 from .services import process_operation
 
 
 def ping_view(request):
+    if request.method != 'GET':
+        return method_not_allowed(['GET'])
     return JsonResponse({'status': 'ok'})
 
 
@@ -67,15 +69,18 @@ def _bootstrap_payload(user):
 @token_required
 def bootstrap_view(request):
     if request.method != 'GET':
-        return JsonResponse({'error': 'Method not allowed'}, status=405)
+        return method_not_allowed(['GET'])
     return JsonResponse(_bootstrap_payload(request.sync_user))
 
 
 @token_required
 def changes_view(request):
     if request.method != 'GET':
-        return JsonResponse({'error': 'Method not allowed'}, status=405)
-    since = parse_datetime(request.GET.get('since') or '') if request.GET.get('since') else None
+        return method_not_allowed(['GET'])
+    since_param = request.GET.get('since')
+    since = parse_datetime(since_param) if since_param else None
+    if since_param and since is None:
+        return JsonResponse({'error': 'Invalid since datetime'}, status=400)
     payload = _bootstrap_payload(request.sync_user)
     if since:
         payload['customers'] = [
@@ -94,7 +99,7 @@ def changes_view(request):
 @token_required
 def push_view(request):
     if request.method != 'POST':
-        return JsonResponse({'error': 'Method not allowed'}, status=405)
+        return method_not_allowed(['POST'])
     try:
         operations = json.loads(request.body.decode('utf-8') or '[]')
     except json.JSONDecodeError:
@@ -103,6 +108,9 @@ def push_view(request):
         return JsonResponse({'error': 'Expected a list of operations'}, status=400)
     results = []
     for operation in operations:
+        if not isinstance(operation, dict):
+            results.append({'local_uuid': '', 'status': 'failed', 'error': 'Operation must be an object'})
+            continue
         if not operation.get('idempotency_key') or not operation.get('local_uuid'):
             results.append({'local_uuid': operation.get('local_uuid'), 'status': 'failed', 'error': 'Missing idempotency_key or local_uuid'})
             continue
