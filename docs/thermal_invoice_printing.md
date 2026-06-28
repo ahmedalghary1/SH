@@ -59,7 +59,7 @@ ipcMain.handle("thermal-print", async (event, payload) => {
         margins: { marginType: "none" },
         pageSize: {
           width: payload.paperWidth * 1000,
-          height: 297000,
+          height: Math.ceil((payload.pageHeight || payload.receiptHeight || 80) * 1000),
         },
       },
       (success, failureReason) => {

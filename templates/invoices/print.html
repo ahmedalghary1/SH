@@ -7,7 +7,8 @@
     <title>طباعة فاتورة {{ invoice.invoice_number }}</title>
     <style>
         :root {
-            --paper-width: {{ thermal_paper_width }}mm;
+            --media-width: {{ thermal_paper_width }}mm;
+            --paper-width: {{ thermal_printable_width }}mm;
             --receipt-width: {{ thermal_receipt_width }}mm;
             --receipt-padding: 1.2mm;
             --ink: #000;
@@ -105,7 +106,12 @@
             background: #fff;
             color: var(--ink);
             font-size: 8px;
+            font-weight: 900 !important;
             line-height: 1.32;
+        }
+
+        .receipt-invoice * {
+            font-weight: 900 !important;
         }
 
         .receipt-head {
@@ -291,7 +297,7 @@
         }
 
         @page {
-            size: {{ thermal_paper_width }}mm auto;
+            size: {{ thermal_printable_width }}mm auto;
             margin: 0;
         }
 
@@ -307,8 +313,15 @@
             }
 
             body {
-                display: block;
+                display: flex;
+                justify-content: center;
+                align-items: flex-start;
                 min-height: 0;
+            }
+
+            .print-shell {
+                display: flex !important;
+                align-items: center !important;
             }
 
             .print-actions {
@@ -357,7 +370,10 @@
             const csrfToken = "{{ csrf_token }}";
             const printMode = "{{ thermal_print_mode|escapejs }}";
             const printerName = "{{ thermal_printer_name|escapejs }}";
-            const paperWidth = {{ thermal_paper_width }};
+            const mediaWidth = {{ thermal_paper_width }};
+            const printableWidth = {{ thermal_printable_width }};
+            const receiptWidth = {{ thermal_receipt_width }};
+            const printEndFeed = 2;
             let printRequested = false;
             let marked = false;
 
@@ -383,19 +399,52 @@
             }
 
             function browserPrint() {
+                updatePrintMetrics();
                 printRequested = true;
                 window.print();
+            }
+
+            function pxToMm(px) {
+                return px * 25.4 / 96;
+            }
+
+            function measuredReceiptHeightMm() {
+                const receipt = document.querySelector(".receipt-invoice");
+                if (!receipt) return 80;
+                const rect = receipt.getBoundingClientRect();
+                const heightPx = Math.max(receipt.scrollHeight, rect.height);
+                const heightMm = pxToMm(heightPx) + printEndFeed;
+                return Math.max(35, Math.ceil(heightMm * 10) / 10);
+            }
+
+            function updatePrintMetrics() {
+                const pageHeight = measuredReceiptHeightMm();
+                let style = document.getElementById("thermal-print-page-size");
+                if (!style) {
+                    style = document.createElement("style");
+                    style.id = "thermal-print-page-size";
+                    document.head.appendChild(style);
+                }
+                style.textContent = `@page { size: ${printableWidth}mm ${pageHeight}mm; margin: 0; }`;
+                document.documentElement.style.setProperty("--print-page-height", `${pageHeight}mm`);
+                return pageHeight;
             }
 
             async function electronPrint() {
                 const bridge = window.shDesktopPrinter || window.electronPrinter || window.electronAPI;
                 const printHtml = bridge?.printHtml || bridge?.printInvoice || bridge?.printReceipt;
                 if (!printHtml) return false;
+                const pageHeight = updatePrintMetrics();
                 await printHtml.call(bridge, {
                     html: document.documentElement.outerHTML,
                     receiptHtml: document.querySelector(".receipt-invoice")?.outerHTML || "",
                     printerName,
-                    paperWidth,
+                    mediaWidth,
+                    paperWidth: printableWidth,
+                    printableWidth,
+                    receiptWidth,
+                    pageHeight,
+                    receiptHeight: pageHeight,
                     invoiceNumber: "{{ invoice.invoice_number|escapejs }}",
                 });
                 printRequested = true;
@@ -408,9 +457,10 @@
                 if (!qz.websocket.isActive()) {
                     await qz.websocket.connect();
                 }
+                const pageHeight = updatePrintMetrics();
                 const config = qz.configs.create(printerName || null, {
                     units: "mm",
-                    size: { width: paperWidth },
+                    size: { width: printableWidth, height: pageHeight },
                     margins: 0,
                     density: 203,
                 });
@@ -450,6 +500,8 @@
             printButton?.addEventListener("click", directPrint);
             browserPrintButton?.addEventListener("click", browserPrint);
 
+            window.addEventListener("load", updatePrintMetrics);
+            window.addEventListener("beforeprint", updatePrintMetrics);
             window.addEventListener("afterprint", markPrinted);
         })();
     </script>
