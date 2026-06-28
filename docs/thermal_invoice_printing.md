@@ -30,7 +30,24 @@ contextBridge.exposeInMainWorld("shDesktopPrinter", {
   printHtml(payload) {
     return ipcRenderer.invoke("thermal-print", payload);
   },
+  printRaw(payload) {
+    return ipcRenderer.invoke("thermal-print-raw", payload);
+  },
 });
+```
+
+لمنع الطابعة من استخدام طول label محفوظ في تعريف Windows، ترسل صفحة الطباعة أوامر TSPL قبل طباعة HTML إذا كان الجسر يدعم `printRaw`. يجب تمرير `payload.data` كما هو إلى الطابعة بصيغة Raw، مثل:
+
+```txt
+SIZE 72 mm,95 mm
+GAP 0,0
+DIRECTION 1
+REFERENCE 0,0
+OFFSET 0 mm
+SET TEAR OFF
+SET PEEL OFF
+SET CUTTER OFF
+CLS
 ```
 
 وفي `main.js`:

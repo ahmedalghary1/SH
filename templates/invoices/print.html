@@ -470,11 +470,34 @@
                 return pageHeight;
             }
 
+            function tscSetupCommand(pageHeight) {
+                return [
+                    `SIZE ${printableWidth} mm,${pageHeight} mm`,
+                    "GAP 0,0",
+                    "DIRECTION 1",
+                    "REFERENCE 0,0",
+                    "OFFSET 0 mm",
+                    "SET TEAR OFF",
+                    "SET PEEL OFF",
+                    "SET CUTTER OFF",
+                    "CLS",
+                    "",
+                ].join("\r\n");
+            }
+
             async function electronPrint() {
                 const bridge = window.shDesktopPrinter || window.electronPrinter || window.electronAPI;
                 const printHtml = bridge?.printHtml || bridge?.printInvoice || bridge?.printReceipt;
                 if (!printHtml) return false;
                 const pageHeight = await preparePrintMetrics();
+                const rawPrint = bridge?.printRaw || bridge?.rawPrint || bridge?.printCommand;
+                if (rawPrint) {
+                    await rawPrint.call(bridge, {
+                        printerName,
+                        data: tscSetupCommand(pageHeight),
+                        commandLanguage: "TSPL",
+                    });
+                }
                 await printHtml.call(bridge, {
                     html: document.documentElement.outerHTML,
                     receiptHtml: document.querySelector(".receipt-invoice")?.outerHTML || "",
@@ -500,6 +523,14 @@
                     await qz.websocket.connect();
                 }
                 const pageHeight = await preparePrintMetrics();
+                const rawConfig = qz.configs.create(printerName || null, {
+                    encoding: "UTF-8",
+                });
+                await qz.print(rawConfig, [{
+                    type: "raw",
+                    format: "plain",
+                    data: tscSetupCommand(pageHeight),
+                }]);
                 const config = qz.configs.create(printerName || null, {
                     units: "mm",
                     size: { width: printableWidth, height: pageHeight },
