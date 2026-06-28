@@ -171,7 +171,7 @@ class InvoicePDFExportTests(TestCase):
         self.assertContains(print_response, 'receipt-invoice')
         self.assertContains(print_response, 'receipt-items-table')
         self.assertContains(print_response, 'size: 80mm auto')
-        self.assertContains(print_response, '--receipt-width: 72mm')
+        self.assertContains(print_response, '--receipt-width: 68mm')
         self.assertNotContains(print_response, 'app-shell')
         self.assertNotContains(print_response, 'css/main.css')
 
@@ -184,7 +184,7 @@ class InvoicePDFExportTests(TestCase):
         response = self.client.get(reverse('invoices:print', kwargs={'pk': self.invoice.pk}), secure=True)
 
         self.assertContains(response, 'size: 58mm auto')
-        self.assertContains(response, '--receipt-width: 52mm')
+        self.assertContains(response, '--receipt-width: 50mm')
 
     def test_invoice_print_exposes_direct_print_settings(self):
         self.client.force_login(self.user)
