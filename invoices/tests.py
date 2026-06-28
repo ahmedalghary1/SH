@@ -171,6 +171,7 @@ class InvoicePDFExportTests(TestCase):
         self.assertContains(print_response, 'receipt-invoice')
         self.assertContains(print_response, 'receipt-items-table')
         self.assertContains(print_response, 'size: 80mm auto')
+        self.assertContains(print_response, '--receipt-width: 72mm')
         self.assertNotContains(print_response, 'app-shell')
         self.assertNotContains(print_response, 'css/main.css')
 
