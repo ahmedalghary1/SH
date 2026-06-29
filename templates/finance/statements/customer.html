@@ -6,14 +6,33 @@
     <label><span>رقم العميل</span><input type="number" name="customer" value="{{ customer_id }}"></label>
     <button class="btn btn-primary" type="submit">عرض</button>
 </form>
+{% if customer %}
+<div class="stats-grid">
+    <div class="stat-card"><span>العميل</span><strong>{{ customer }}</strong></div>
+    <div class="stat-card"><span>رصيد العميل الحالي</span><strong>{{ current_balance }}</strong></div>
+    <div class="stat-card"><span>إجمالي المدين</span><strong>{{ total_debit }}</strong></div>
+    <div class="stat-card"><span>إجمالي الدائن</span><strong>{{ total_credit }}</strong></div>
+</div>
+{% elif customer_id %}
+<div class="card">
+    <p>لا يوجد عميل بهذا الرقم.</p>
+</div>
+{% endif %}
 <div class="table-wrap card">
     <table>
-        <thead><tr><th>العميل</th><th>الطلب</th><th>النوع</th><th>الاتجاه</th><th>المبلغ</th><th>الخزنة</th><th>التاريخ</th></tr></thead>
+        <thead><tr><th>التاريخ</th><th>نوع الحركة</th><th>البيان</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
         <tbody>
-        {% for tx in transactions %}
-            <tr><td>{{ tx.related_customer|default:'-' }}</td><td>{{ tx.related_order|default:'-' }}</td><td>{{ tx.get_transaction_type_display }}</td><td>{{ tx.get_direction_display }}</td><td>{{ tx.amount }}</td><td>{{ tx.cash_account }}</td><td>{{ tx.transaction_date }}</td></tr>
+        {% for entry in statement %}
+            <tr>
+                <td>{{ entry.date|date:'Y-m-d' }}</td>
+                <td>{{ entry.type }}</td>
+                <td>{{ entry.description }}</td>
+                <td>{% if entry.debit %}{{ entry.debit }}{% endif %}</td>
+                <td>{% if entry.credit %}{{ entry.credit }}{% endif %}</td>
+                <td>{{ entry.balance }}</td>
+            </tr>
         {% empty %}
-            <tr><td colspan="7">لا توجد حركات لهذا الاختيار</td></tr>
+            <tr><td colspan="6">لا توجد حركات لهذا الاختيار</td></tr>
         {% endfor %}
         </tbody>
     </table>

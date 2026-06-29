@@ -15,7 +15,7 @@ from config.exports import ExportListMixin
 
 from .forms import CashAccountForm, CustomerCollectionForm, ExpenseForm, SalesRepStatementForm, TransferForm, SupplierPaymentForm
 from .models import CashAccount, PaymentTransaction
-from .services import add_expense, collect_customer_balance_payment, collect_order_payment, delete_transaction, record_customer_allowed_discount, record_customer_payment, record_customer_refund_payment, record_supplier_payment, transfer_between_accounts
+from .services import add_expense, build_customer_statement, collect_customer_balance_payment, collect_order_payment, delete_transaction, record_customer_allowed_discount, record_customer_payment, record_customer_refund_payment, record_supplier_payment, transfer_between_accounts
 
 
 def _validation_error_message(exc):
@@ -489,10 +489,31 @@ class CustomerStatementView(ManagerRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         customer_id = self.request.GET.get('customer')
-        transactions = PaymentTransaction.objects.select_related('related_customer', 'related_order', 'cash_account')
+        customer = None
+        statement_data = {
+            'entries': [],
+            'total_debit': 0,
+            'total_credit': 0,
+            'current_balance': 0,
+            'orders_balance': 0,
+            'opening_balance': 0,
+        }
         if customer_id:
-            transactions = transactions.filter(related_customer_id=customer_id)
-        context['transactions'] = transactions[:100]
+            from customers.models import Customer
+
+            try:
+                customer = Customer.objects.filter(pk=customer_id).first()
+            except (TypeError, ValueError):
+                customer = None
+            if customer:
+                statement_data = build_customer_statement(customer)
+        context['customer'] = customer
+        context['statement'] = statement_data['entries']
+        context['total_debit'] = statement_data['total_debit']
+        context['total_credit'] = statement_data['total_credit']
+        context['current_balance'] = statement_data['current_balance']
+        context['orders_balance'] = statement_data['orders_balance']
+        context['opening_balance'] = statement_data['opening_balance']
         context['customer_id'] = customer_id or ''
         return context
 

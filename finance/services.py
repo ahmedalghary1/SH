@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -17,6 +18,10 @@ def _as_decimal(amount):
     if amount <= 0:
         raise ValidationError('المبلغ يجب أن يكون أكبر من صفر')
     return amount
+
+
+def _money(amount):
+    return Decimal(str(amount or 0))
 
 
 def _locked_account(account):
@@ -184,9 +189,14 @@ def collect_customer_balance_payment(*, customer, amount, user, cash_account=Non
     return transactions
 
 
+@transaction.atomic
 def record_customer_refund_payment(*, customer, amount, user, cash_account=None, notes='', transaction_date=None):
+    from customers.models import Customer
+
     amount = _as_decimal(amount)
-    return record_transaction(
+    if customer:
+        customer = Customer.objects.select_for_update().get(pk=customer.pk)
+    tx = record_transaction(
         transaction_type=PaymentTransaction.TYPE_REFUND,
         direction=PaymentTransaction.DIRECTION_OUT,
         amount=amount,
@@ -196,6 +206,9 @@ def record_customer_refund_payment(*, customer, amount, user, cash_account=None,
         created_by=user,
         transaction_date=transaction_date,
     )
+    if customer:
+        Customer.objects.filter(pk=customer.pk).update(opening_balance=F('opening_balance') + amount)
+    return tx
 
 
 def record_customer_allowed_discount(*, customer, amount, user, order=None, cash_account=None, notes='', transaction_date=None):
@@ -212,6 +225,191 @@ def record_customer_allowed_discount(*, customer, amount, user, order=None, cash
         created_by=user,
         affects_cash=False,
     )
+
+
+def _statement_date(value):
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return timezone.localdate()
+
+
+def _statement_entry(*, date_value, sort_at, sort_order, entry_type, description, debit=0, credit=0, **extra):
+    entry = {
+        'date': _statement_date(date_value),
+        'sort_at': sort_at or timezone.now(),
+        'sort_order': sort_order,
+        'type': entry_type,
+        'description': description,
+        'debit': _money(debit),
+        'credit': _money(credit),
+    }
+    entry.update(extra)
+    return entry
+
+
+def _customer_statement_orders(customer):
+    from orders.models import Order
+
+    return Order.objects.filter(customer=customer).exclude(
+        status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED],
+    ).exclude(
+        document_type=Order.DOCUMENT_QUOTE,
+    )
+
+
+def build_customer_statement(customer):
+    from returns.models import SalesReturn
+
+    orders = _customer_statement_orders(customer).select_related('created_by').order_by('created_at', 'pk')
+    transactions = PaymentTransaction.objects.filter(
+        related_customer=customer,
+        transaction_type__in=[
+            PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+            PaymentTransaction.TYPE_SALES_REP_COLLECTION,
+            PaymentTransaction.TYPE_REFUND,
+            PaymentTransaction.TYPE_CUSTOMER_ALLOWED_DISCOUNT,
+        ],
+    ).select_related('cash_account', 'related_order', 'created_by').order_by('transaction_date', 'created_at', 'pk')
+    returns = SalesReturn.objects.filter(
+        customer=customer,
+        status=SalesReturn.STATUS_COMPLETED,
+    ).select_related('order').prefetch_related('exchange_items').order_by('created_at', 'pk')
+
+    entries = []
+    for order in orders:
+        amount = _money(order.total)
+        if amount <= 0:
+            continue
+        entries.append(_statement_entry(
+            date_value=order.created_at,
+            sort_at=order.created_at,
+            sort_order=10,
+            entry_type='فاتورة بيع',
+            description=f'فاتورة {order.order_number}',
+            debit=amount,
+            order=order,
+        ))
+
+    for sales_return in returns:
+        if sales_return.return_type == SalesReturn.TYPE_EXCHANGE:
+            for exchange in sales_return.exchange_items.all():
+                difference = _money(exchange.price_difference)
+                if difference > 0:
+                    entries.append(_statement_entry(
+                        date_value=sales_return.created_at,
+                        sort_at=sales_return.created_at,
+                        sort_order=20,
+                        entry_type='فرق استبدال',
+                        description=f'فرق استبدال على {sales_return.order.order_number}',
+                        debit=difference,
+                        sales_return=sales_return,
+                    ))
+                elif difference < 0:
+                    entries.append(_statement_entry(
+                        date_value=sales_return.created_at,
+                        sort_at=sales_return.created_at,
+                        sort_order=20,
+                        entry_type='فرق استبدال',
+                        description=f'فرق استبدال لصالح العميل على {sales_return.order.order_number}',
+                        credit=abs(difference),
+                        sales_return=sales_return,
+                    ))
+            continue
+
+        refund_amount = _money(sales_return.refund_amount)
+        if refund_amount <= 0:
+            continue
+        entries.append(_statement_entry(
+            date_value=sales_return.created_at,
+            sort_at=sales_return.created_at,
+            sort_order=20,
+            entry_type='مرتجع',
+            description=f'مرتجع {sales_return.pk} على {sales_return.order.order_number}',
+            credit=refund_amount,
+            sales_return=sales_return,
+        ))
+
+    for tx in transactions:
+        amount = _money(tx.amount)
+        if amount <= 0:
+            continue
+        description = tx.notes or tx.get_transaction_type_display()
+        if tx.related_order_id and not tx.notes:
+            description = f'{description} - {tx.related_order.order_number}'
+
+        if (
+            tx.transaction_type in [PaymentTransaction.TYPE_CUSTOMER_PAYMENT, PaymentTransaction.TYPE_SALES_REP_COLLECTION]
+            and tx.direction == PaymentTransaction.DIRECTION_IN
+        ):
+            entries.append(_statement_entry(
+                date_value=tx.transaction_date,
+                sort_at=tx.created_at,
+                sort_order=30,
+                entry_type=tx.get_transaction_type_display(),
+                description=description,
+                credit=amount,
+                payment=tx,
+            ))
+        elif tx.transaction_type == PaymentTransaction.TYPE_REFUND and tx.direction == PaymentTransaction.DIRECTION_OUT:
+            entries.append(_statement_entry(
+                date_value=tx.transaction_date,
+                sort_at=tx.created_at,
+                sort_order=40,
+                entry_type=tx.get_transaction_type_display(),
+                description=description,
+                debit=amount,
+                payment=tx,
+            ))
+        elif tx.transaction_type == PaymentTransaction.TYPE_CUSTOMER_ALLOWED_DISCOUNT:
+            entries.append(_statement_entry(
+                date_value=tx.transaction_date,
+                sort_at=tx.created_at,
+                sort_order=35,
+                entry_type=tx.get_transaction_type_display(),
+                description=description,
+                credit=amount,
+                payment=tx,
+            ))
+
+    orders_balance = orders.aggregate(v=Sum('remaining_amount'))['v'] or Decimal('0')
+    target_balance = _money(customer.opening_balance) + _money(orders_balance)
+    movement_balance = sum((entry['debit'] - entry['credit'] for entry in entries), Decimal('0'))
+    opening_balance = target_balance - movement_balance
+    if opening_balance:
+        opening_date = _statement_date(getattr(customer, 'created_at', None))
+        if entries:
+            opening_date = min([opening_date] + [entry['date'] for entry in entries])
+        entries.append(_statement_entry(
+            date_value=opening_date,
+            sort_at=getattr(customer, 'created_at', None),
+            sort_order=0,
+            entry_type='رصيد سابق',
+            description='رصيد سابق',
+            debit=opening_balance if opening_balance > 0 else 0,
+            credit=abs(opening_balance) if opening_balance < 0 else 0,
+        ))
+
+    entries.sort(key=lambda entry: (entry['date'], entry['sort_order'], entry['sort_at'], entry.get('payment').pk if entry.get('payment') else 0))
+
+    balance = Decimal('0')
+    total_debit = Decimal('0')
+    total_credit = Decimal('0')
+    for entry in entries:
+        total_debit += entry['debit']
+        total_credit += entry['credit']
+        balance += entry['debit'] - entry['credit']
+        entry['balance'] = balance
+
+    return {
+        'entries': entries,
+        'total_debit': total_debit,
+        'total_credit': total_credit,
+        'current_balance': balance,
+        'orders_balance': orders_balance,
+        'opening_balance': _money(customer.opening_balance),
+    }
 
 
 @transaction.atomic
@@ -385,6 +583,15 @@ def delete_transaction(*, payment_transaction, user=None):
         from customers.models import Customer
 
         Customer.objects.filter(pk=tx.related_customer_id).update(opening_balance=F('opening_balance') + tx.amount)
+    if (
+        tx.transaction_type == PaymentTransaction.TYPE_REFUND
+        and tx.direction == PaymentTransaction.DIRECTION_OUT
+        and tx.related_customer_id
+        and not tx.related_order_id
+    ):
+        from customers.models import Customer
+
+        Customer.objects.filter(pk=tx.related_customer_id).update(opening_balance=F('opening_balance') - tx.amount)
     if (
         tx.transaction_type == PaymentTransaction.TYPE_CUSTOMER_PAYMENT
         and tx.direction == PaymentTransaction.DIRECTION_IN

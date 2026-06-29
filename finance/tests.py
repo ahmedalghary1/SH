@@ -10,12 +10,15 @@ from inventory.models import Warehouse
 from orders.models import Order
 from purchases.models import Supplier
 
+from .forms import CustomerCollectionForm
 from .models import CashAccount, PaymentTransaction
 from .services import (
     add_expense,
+    build_customer_statement,
     collect_order_payment,
     collect_customer_balance_payment,
     record_customer_payment,
+    record_customer_refund_payment,
     record_order_sale_payment,
     transfer_between_accounts,
 )
@@ -98,6 +101,60 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(self.order.remaining_amount, Decimal('100.00'))
         self.assertEqual(second_order.remaining_amount, Decimal('300.00'))
         self.assertEqual(self.cash.balance, Decimal('1500.00'))
+
+    def test_customer_collection_form_accepts_negative_amount_without_order(self):
+        form = CustomerCollectionForm(data={
+            'cash_account': self.cash.pk,
+            'customer': self.customer.pk,
+            'amount': '-50.00',
+            'transaction_date': '2026-06-12',
+        })
+
+        self.assertTrue(form.is_valid(), form.errors.as_text())
+        self.assertEqual(form.fields['amount'].label, 'القبض')
+
+    def test_negative_customer_collection_records_refund_and_updates_customer_balance(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('finance:collection_create'), {
+            'cash_account': self.cash.pk,
+            'customer': self.customer.pk,
+            'amount': '-50.00',
+            'transaction_date': '2026-06-12',
+        })
+
+        self.assertRedirects(response, reverse('finance:transactions'))
+        self.cash.refresh_from_db()
+        self.customer.refresh_from_db()
+        self.assertEqual(self.cash.balance, Decimal('950.00'))
+        self.assertEqual(self.customer.opening_balance, Decimal('250.00'))
+        self.assertTrue(PaymentTransaction.objects.filter(
+            transaction_type=PaymentTransaction.TYPE_REFUND,
+            direction=PaymentTransaction.DIRECTION_OUT,
+            amount=Decimal('50.00'),
+            related_customer=self.customer,
+            related_order__isnull=True,
+        ).exists())
+
+    def test_customer_statement_includes_orders_payments_refunds_and_running_balance(self):
+        self.order.paid_amount = Decimal('0.00')
+        self.order.remaining_amount = Decimal('500.00')
+        self.order.save(update_fields=['paid_amount', 'remaining_amount'])
+        record_customer_payment(order=None, customer=self.customer, amount=Decimal('200.00'), cash_account=self.cash, user=self.user)
+        collect_order_payment(order=self.order, amount=Decimal('100.00'), cash_account=self.cash, user=self.user)
+        record_customer_refund_payment(
+            customer=self.customer,
+            amount=Decimal('50.00'),
+            cash_account=self.cash,
+            user=self.user,
+        )
+
+        statement = build_customer_statement(self.customer)
+
+        self.assertEqual(statement['current_balance'], Decimal('450.00'))
+        self.assertEqual(statement['total_debit'], Decimal('750.00'))
+        self.assertEqual(statement['total_credit'], Decimal('300.00'))
+        self.assertEqual(statement['entries'][-1]['balance'], Decimal('450.00'))
 
     def test_record_order_sale_payment_accepts_nullable_customer(self):
         order = Order.objects.create(

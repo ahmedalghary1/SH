@@ -37,7 +37,7 @@ class CustomerCollectionForm(forms.Form):
     allowed_discount = forms.DecimalField(min_value=0, required=False, initial=0, label='خصم مسموح به')
     customer = forms.ModelChoiceField(queryset=Customer.objects.filter(is_active=True), label='العميل')
     order = forms.ModelChoiceField(queryset=Order.objects.exclude(remaining_amount=0), label='الطلب', required=False)
-    amount = forms.DecimalField(min_value=0.01, label='السعر')
+    amount = forms.DecimalField(label='القبض', widget=forms.NumberInput(attrs={'step': '0.01'}))
     transaction_date = forms.DateField(label='تاريخ التحصيل', initial=timezone.localdate, widget=forms.DateInput(attrs={'type': 'date'}))
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
 
@@ -57,13 +57,15 @@ class CustomerCollectionForm(forms.Form):
         allowed_discount = cleaned.get('allowed_discount') or 0
         if not customer:
             self.add_error('customer', 'اختر العميل')
-        if order and amount and amount <= 0:
+        if amount is not None and amount == 0:
+            self.add_error('amount', 'مبلغ القبض لا يمكن أن يساوي صفر')
+        if order and amount is not None and amount <= 0:
             self.add_error('amount', 'تحصيل الفاتورة يجب أن يكون مبلغًا موجبًا')
-        if order and amount and allowed_discount and amount + allowed_discount <= 0:
+        if order and amount is not None and allowed_discount and amount + allowed_discount <= 0:
             self.add_error('amount', 'إجمالي التحصيل والخصم يجب أن يكون موجبًا')
-        if order and amount and amount + allowed_discount > order.remaining_amount:
+        if order and amount is not None and amount + allowed_discount > order.remaining_amount:
             self.add_error('amount', 'مبلغ التحصيل أكبر من المتبقي على الطلب')
-        if not order and customer and amount:
+        if not order and customer and amount is not None and amount > 0:
             orders_debt = Order.objects.filter(customer=customer, remaining_amount__gt=0).exclude(
                 status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED],
             ).aggregate(v=Sum('remaining_amount'))['v'] or 0

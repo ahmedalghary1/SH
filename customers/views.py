@@ -11,6 +11,7 @@ from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
+from finance.services import build_customer_statement
 from orders.models import Order, OrderItem
 from returns.models import SalesReturn
 
@@ -170,13 +171,13 @@ class SimpleCustomerDetailView(SalesRequiredMixin, DetailView):
         last_payment = payments.first()
         
         # Generate statement
-        statement = self._generate_statement(customer, orders, returns, payments)
+        statement_data = build_customer_statement(customer)
         
         context.update({
             'summary': {
                 'total_purchases': summary['total_purchases'],
                 'total_paid': summary['total_paid'],
-                'total_remaining': summary['total_remaining'],
+                'total_remaining': statement_data['current_balance'],
                 'total_returns': total_returns,
                 'last_order': summary['last_order'],
                 'last_payment': last_payment,
@@ -184,7 +185,7 @@ class SimpleCustomerDetailView(SalesRequiredMixin, DetailView):
             'orders': orders[:20],
             'returns': returns[:20],
             'payments': payments[:20],
-            'statement': statement,
+            'statement': statement_data['entries'],
         })
         return context
 
