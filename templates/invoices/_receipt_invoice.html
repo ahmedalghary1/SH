@@ -37,6 +37,7 @@
                 <tr>
                     <td>
                         <strong>{{ item.variant.product.name }}</strong>
+                        <span>كود المنتج: {{ item.variant.product.sku }}</span>
                         <span>{{ item.variant.color|default:'-' }} / {{ item.variant.size|default:'-' }}</span>
                         {% if item.discount %}<span>خصم {{ item.discount }}</span>{% endif %}
                     </td>
