@@ -376,8 +376,8 @@ def build_customer_statement(customer):
     orders_balance = orders.aggregate(v=Sum('remaining_amount'))['v'] or Decimal('0')
     target_balance = _money(customer.opening_balance) + _money(orders_balance)
     movement_balance = sum((entry['debit'] - entry['credit'] for entry in entries), Decimal('0'))
-    opening_balance = target_balance - movement_balance
-    if opening_balance:
+    statement_opening_balance = target_balance - movement_balance
+    if statement_opening_balance:
         opening_date = _statement_date(getattr(customer, 'created_at', None))
         if entries:
             opening_date = min([opening_date] + [entry['date'] for entry in entries])
@@ -387,8 +387,8 @@ def build_customer_statement(customer):
             sort_order=0,
             entry_type='رصيد سابق',
             description='رصيد سابق',
-            debit=opening_balance if opening_balance > 0 else 0,
-            credit=abs(opening_balance) if opening_balance < 0 else 0,
+            debit=statement_opening_balance if statement_opening_balance > 0 else 0,
+            credit=abs(statement_opening_balance) if statement_opening_balance < 0 else 0,
         ))
 
     entries.sort(key=lambda entry: (entry['date'], entry['sort_order'], entry['sort_at'], entry.get('payment').pk if entry.get('payment') else 0))
@@ -408,6 +408,8 @@ def build_customer_statement(customer):
         'total_credit': total_credit,
         'current_balance': balance,
         'orders_balance': orders_balance,
+        'statement_opening_balance': statement_opening_balance,
+        'remaining_opening_balance': _money(customer.opening_balance),
         'opening_balance': _money(customer.opening_balance),
     }
 

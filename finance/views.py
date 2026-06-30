@@ -496,13 +496,15 @@ class CustomerStatementView(ManagerRequiredMixin, TemplateView):
             'total_credit': 0,
             'current_balance': 0,
             'orders_balance': 0,
+            'statement_opening_balance': 0,
+            'remaining_opening_balance': 0,
             'opening_balance': 0,
         }
         if customer_id:
             from customers.models import Customer
 
             try:
-                customer = Customer.objects.filter(pk=customer_id).first()
+                customer = Customer.objects.select_related('created_by').filter(pk=customer_id).first()
             except (TypeError, ValueError):
                 customer = None
             if customer:
@@ -513,6 +515,8 @@ class CustomerStatementView(ManagerRequiredMixin, TemplateView):
         context['total_credit'] = statement_data['total_credit']
         context['current_balance'] = statement_data['current_balance']
         context['orders_balance'] = statement_data['orders_balance']
+        context['statement_opening_balance'] = statement_data['statement_opening_balance']
+        context['remaining_opening_balance'] = statement_data['remaining_opening_balance']
         context['opening_balance'] = statement_data['opening_balance']
         context['customer_id'] = customer_id or ''
         return context

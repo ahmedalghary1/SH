@@ -156,6 +156,18 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(statement['total_credit'], Decimal('300.00'))
         self.assertEqual(statement['entries'][-1]['balance'], Decimal('450.00'))
 
+    def test_customer_statement_view_displays_customer_details_and_balance_parts(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('finance:customer_statement'), {'customer': self.customer.pk})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'بيانات العميل')
+        self.assertContains(response, 'Test Customer')
+        self.assertContains(response, '01000000001')
+        self.assertContains(response, 'رصيد فواتير مفتوحة')
+        self.assertContains(response, 'رصيد افتتاحي متبق')
+
     def test_record_order_sale_payment_accepts_nullable_customer(self):
         order = Order.objects.create(
             order_number='ORD-FIN-NO-CUSTOMER',

@@ -7,11 +7,29 @@
     <button class="btn btn-primary" type="submit">عرض</button>
 </form>
 {% if customer %}
+<section class="card">
+    <h2>بيانات العميل</h2>
+    <div class="detail-grid">
+        <div><span>رقم العميل</span><strong>{{ customer.pk }}</strong></div>
+        <div><span>اسم العميل</span><strong>{{ customer.name }}</strong></div>
+        <div><span>نوع العميل</span><strong>{{ customer.get_customer_type_display }}</strong></div>
+        <div><span>الهاتف</span><strong>{{ customer.phone|default:'-' }}</strong></div>
+        <div><span>الشركة</span><strong>{{ customer.company_name|default:'-' }}</strong></div>
+        <div><span>الرقم الضريبي</span><strong>{{ customer.tax_number|default:'-' }}</strong></div>
+        <div><span>العنوان</span><strong>{{ customer.address|default:'-' }}</strong></div>
+        <div><span>حد الائتمان</span><strong>{{ customer.credit_limit }}</strong></div>
+        <div><span>المسؤول</span><strong>{{ customer.created_by|default:'-' }}</strong></div>
+        <div><span>تاريخ الإضافة</span><strong>{{ customer.created_at|date:'Y-m-d' }}</strong></div>
+        <div><span>الحالة</span><strong>{% if customer.is_active %}نشط{% else %}متوقف{% endif %}</strong></div>
+    </div>
+</section>
 <div class="stats-grid">
-    <div class="stat-card"><span>العميل</span><strong>{{ customer }}</strong></div>
     <div class="stat-card"><span>رصيد العميل الحالي</span><strong>{{ current_balance }}</strong></div>
-    <div class="stat-card"><span>إجمالي المدين</span><strong>{{ total_debit }}</strong></div>
-    <div class="stat-card"><span>إجمالي الدائن</span><strong>{{ total_credit }}</strong></div>
+    <div class="stat-card"><span>رصيد فواتير مفتوحة</span><strong>{{ orders_balance }}</strong></div>
+    <div class="stat-card"><span>رصيد افتتاحي متبقٍ</span><strong>{{ remaining_opening_balance }}</strong></div>
+    <div class="stat-card"><span>رصيد سابق في الكشف</span><strong>{{ statement_opening_balance }}</strong></div>
+    <div class="stat-card"><span>إجمالي عليه</span><strong>{{ total_debit }}</strong></div>
+    <div class="stat-card"><span>إجمالي له</span><strong>{{ total_credit }}</strong></div>
 </div>
 {% elif customer_id %}
 <div class="card">
@@ -20,7 +38,7 @@
 {% endif %}
 <div class="table-wrap card">
     <table>
-        <thead><tr><th>التاريخ</th><th>نوع الحركة</th><th>البيان</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
+        <thead><tr><th>التاريخ</th><th>نوع الحركة</th><th>البيان</th><th>عليه</th><th>له</th><th>الرصيد</th></tr></thead>
         <tbody>
         {% for entry in statement %}
             <tr>

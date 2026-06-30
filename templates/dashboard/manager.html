@@ -12,13 +12,25 @@
             <svg class="ui-icon"><use href="#icon-sale"></use></svg>
             <span>فاتورة بيع جديدة</span>
         </a>
-        <a href="{% url 'products:create' %}" class="quick-action-btn">
+        <a href="{% url 'purchases:order_create' %}" class="quick-action-btn">
             <svg class="ui-icon"><use href="#icon-box"></use></svg>
-            <span>إضافة منتج</span>
+            <span>شراء بضاعة</span>
         </a>
-        <a href="{% url 'customers:create' %}" class="quick-action-btn">
+        <a href="{% url 'finance:collection_create' %}" class="quick-action-btn">
+            <svg class="ui-icon"><use href="#icon-money"></use></svg>
+            <span>قبض</span>
+        </a>
+        <a href="{% url 'orders:create' %}?document=quote" class="quick-action-btn">
+            <svg class="ui-icon"><use href="#icon-file"></use></svg>
+            <span>عرض سعر</span>
+        </a>
+        <a href="{% url 'finance:cash' %}" class="quick-action-btn">
+            <svg class="ui-icon"><use href="#icon-money"></use></svg>
+            <span>الخزنة</span>
+        </a>
+        <a href="{% url 'customers:simple_list' %}" class="quick-action-btn">
             <svg class="ui-icon"><use href="#icon-users"></use></svg>
-            <span>إضافة عميل</span>
+            <span>العملاء</span>
         </a>
         <a href="{% url 'reports:daily_sales' %}" class="quick-action-btn">
             <svg class="ui-icon"><use href="#icon-chart"></use></svg>
