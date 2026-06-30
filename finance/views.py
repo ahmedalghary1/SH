@@ -13,9 +13,9 @@ from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, can_vi
 from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 
-from .forms import CashAccountForm, CustomerCollectionForm, ExpenseForm, SalesRepStatementForm, TransferForm, SupplierPaymentForm
+from .forms import CashAccountForm, CashAccountStatementForm, CustomerCollectionForm, ExpenseForm, SalesRepStatementForm, TransferForm, SupplierPaymentForm
 from .models import CashAccount, PaymentTransaction
-from .services import add_expense, build_customer_statement, collect_customer_balance_payment, collect_order_payment, delete_transaction, record_customer_allowed_discount, record_customer_payment, record_customer_refund_payment, record_supplier_payment, transfer_between_accounts
+from .services import add_expense, build_cash_account_statement, build_customer_statement, collect_customer_balance_payment, collect_order_payment, delete_transaction, record_customer_allowed_discount, record_customer_payment, record_customer_refund_payment, record_supplier_payment, transfer_between_accounts
 
 
 def _validation_error_message(exc):
@@ -338,15 +338,16 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
             cash_account = form.cleaned_data.get('cash_account')
             allowed_discount = form.cleaned_data.get('allowed_discount') or 0
             if order:
+                amount = form.cleaned_data['amount']
                 collect_order_payment(
                     order=order,
-                    amount=form.cleaned_data['amount'],
+                    amount=amount,
                     user=self.request.user,
                     cash_account=cash_account,
                     notes=form.cleaned_data.get('notes') or '',
                     transaction_date=form.cleaned_data.get('transaction_date'),
                 )
-                if allowed_discount:
+                if allowed_discount and amount > 0:
                     record_customer_allowed_discount(
                         order=order,
                         customer=order.customer,
@@ -530,6 +531,41 @@ class SalesRepStatementView(ManagerRequiredMixin, FormView):
         sales_rep = form.cleaned_data['sales_rep']
         transactions = PaymentTransaction.objects.filter(related_sales_rep=sales_rep).select_related('cash_account', 'related_order')
         return self.render_to_response(self.get_context_data(form=form, sales_rep=sales_rep, transactions=transactions))
+
+
+class CashAccountStatementView(ManagerRequiredMixin, TemplateView):
+    template_name = 'finance/statements/cash_account.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        form = CashAccountStatementForm(self.request.GET or None)
+        account = None
+        statement_data = {
+            'entries': [],
+            'opening_balance': 0,
+            'current_balance': 0,
+            'total_in': 0,
+            'total_out': 0,
+            'net_movement': 0,
+            'transactions_count': 0,
+            'non_cash_transactions_count': 0,
+        }
+        if self.request.GET and form.is_valid():
+            account = form.cleaned_data['cash_account']
+            statement_data = build_cash_account_statement(account)
+        context.update({
+            'form': form,
+            'account': account,
+            'statement': statement_data['entries'],
+            'opening_balance': statement_data['opening_balance'],
+            'current_balance': statement_data['current_balance'],
+            'total_in': statement_data['total_in'],
+            'total_out': statement_data['total_out'],
+            'net_movement': statement_data['net_movement'],
+            'transactions_count': statement_data['transactions_count'],
+            'non_cash_transactions_count': statement_data['non_cash_transactions_count'],
+        })
+        return context
 
 
 class DailyCollectionsReportView(ManagerRequiredMixin, TemplateView):

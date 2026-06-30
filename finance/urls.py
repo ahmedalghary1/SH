@@ -19,6 +19,7 @@ urlpatterns = [
     path('transactions/collection/', views.CustomerCollectionView.as_view(), name='collection_create'),
     path('transactions/supplier-payment/', views.SupplierPaymentView.as_view(), name='supplier_payment_create'),
     path('transactions/transfer/', views.TransferView.as_view(), name='transfer'),
+    path('statements/cash-account/', views.CashAccountStatementView.as_view(), name='cash_account_statement'),
     path('statements/customer/', views.CustomerStatementView.as_view(), name='customer_statement'),
     path('statements/sales-rep/', views.SalesRepStatementView.as_view(), name='sales_rep_statement'),
     path('reports/daily-collections/', views.DailyCollectionsReportView.as_view(), name='daily_collections'),

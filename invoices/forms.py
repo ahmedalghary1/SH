@@ -31,7 +31,7 @@ class InvoiceFilterForm(forms.Form):
 
 class InvoicePaymentForm(forms.Form):
     cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة')
-    amount = forms.DecimalField(min_value=0.01, label='قيمة الدفعة')
+    amount = forms.DecimalField(label='قيمة الدفعة')
     transaction_date = forms.DateField(label='تاريخ الدفعة', widget=forms.DateInput(attrs={'type': 'date'}))
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
 
@@ -47,6 +47,8 @@ class InvoicePaymentForm(forms.Form):
 
     def clean_amount(self):
         amount = self.cleaned_data['amount']
-        if self.invoice and amount > self.invoice.order.remaining_amount:
+        if amount == 0:
+            raise forms.ValidationError('قيمة الدفعة لا يمكن أن تساوي صفر')
+        if self.invoice and amount > 0 and amount > self.invoice.order.remaining_amount:
             raise forms.ValidationError('قيمة الدفعة أكبر من المتبقي على الفاتورة')
         return amount

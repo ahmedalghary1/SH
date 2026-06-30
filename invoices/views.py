@@ -31,8 +31,10 @@ class InvoiceContextMixin:
                 'cash_account', 'created_by',
             ).filter(
                 related_order=invoice.order,
-                transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
-                direction=PaymentTransaction.DIRECTION_IN,
+                transaction_type__in=[
+                    PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+                    PaymentTransaction.TYPE_REFUND,
+                ],
             ).order_by('-transaction_date', '-created_at')
             context['payment_form'] = kwargs.get('payment_form') or InvoicePaymentForm(
                 invoice=invoice,

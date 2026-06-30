@@ -81,9 +81,9 @@ class AssignmentActionForm(forms.Form):
 class SalesRepCollectionForm(forms.Form):
     sales_rep = forms.ModelChoiceField(queryset=sales_rep_queryset(), label='المندوب')
     customer = forms.ModelChoiceField(queryset=Customer.objects.filter(is_active=True), required=False, label='العميل')
-    order = forms.ModelChoiceField(queryset=Order.objects.exclude(remaining_amount=0), required=False, label='الطلب')
+    order = forms.ModelChoiceField(queryset=Order.objects.all(), required=False, label='الطلب')
     cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), required=False, label='حساب العهدة النقدية')
-    amount = forms.DecimalField(min_value=0.01, label='المبلغ')
+    amount = forms.DecimalField(label='المبلغ', widget=forms.NumberInput(attrs={'step': '0.01'}))
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
 
 

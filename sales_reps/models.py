@@ -1,7 +1,6 @@
 from decimal import Decimal
 
 from django.conf import settings
-from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -42,7 +41,7 @@ class SalesRepCollection(models.Model):
     sales_rep = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='collections')
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='sales_rep_collections')
     order = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True, blank=True, related_name='sales_rep_collections')
-    amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(0.01)])
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
     handed_over_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     cash_account = models.ForeignKey(CashAccount, on_delete=models.PROTECT, related_name='sales_rep_collections')
     collection_date = models.DateField(default=timezone.localdate, db_index=True)

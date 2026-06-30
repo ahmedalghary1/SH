@@ -123,6 +123,34 @@ class SalesRepServiceTests(TestCase):
         self.assertEqual(rep_cash.balance, Decimal('250.00'))
         self.assertTrue(PaymentTransaction.objects.filter(transaction_type=PaymentTransaction.TYPE_SALES_REP_COLLECTION, related_order=self.order).exists())
 
+    def test_record_collection_accepts_negative_amount(self):
+        rep_cash = get_or_create_sales_rep_cash_account(self.sales_rep)
+        rep_cash.balance = Decimal('300.00')
+        rep_cash.save(update_fields=['balance'])
+
+        collection = record_sales_rep_collection(
+            sales_rep=self.sales_rep,
+            customer=self.customer,
+            order=self.order,
+            amount=Decimal('-50.00'),
+            cash_account=rep_cash,
+            user=self.manager,
+        )
+        self.order.refresh_from_db()
+        rep_cash.refresh_from_db()
+
+        self.assertEqual(collection.amount, Decimal('-50.00'))
+        self.assertEqual(self.order.paid_amount, Decimal('250.00'))
+        self.assertEqual(self.order.remaining_amount, Decimal('650.00'))
+        self.assertEqual(rep_cash.balance, Decimal('250.00'))
+        self.assertTrue(PaymentTransaction.objects.filter(
+            transaction_type=PaymentTransaction.TYPE_REFUND,
+            direction=PaymentTransaction.DIRECTION_OUT,
+            related_order=self.order,
+            related_sales_rep=self.sales_rep,
+            amount=Decimal('50.00'),
+        ).exists())
+
     def test_handover_creates_out_and_in_transactions_and_marks_collections(self):
         rep_cash = get_or_create_sales_rep_cash_account(self.sales_rep)
         record_sales_rep_collection(sales_rep=self.sales_rep, customer=self.customer, amount=Decimal('200.00'), cash_account=rep_cash, user=self.manager)

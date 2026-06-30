@@ -159,6 +159,45 @@ class InvoicePDFExportTests(TestCase):
         self.assertEqual(cash.balance, Decimal('200.00'))
         self.assertEqual(tx.transaction_date, date(2026, 6, 1))
 
+    def test_invoice_payment_add_accepts_negative_amount(self):
+        self.client.login(username='manager', password='pass12345')
+        cash = CashAccount.objects.create(name='Invoice Refund Cash', balance=Decimal('300.00'))
+        credit_order = Order.objects.create(
+            order_number='ORD-CREDIT-REFUND-001',
+            order_type=Order.TYPE_B2C,
+            customer=self.order.customer,
+            warehouse=self.order.warehouse,
+            status=Order.STATUS_CONFIRMED,
+            payment_method=Order.METHOD_CREDIT,
+            payment_status=Order.PAYMENT_PARTIAL,
+            subtotal=Decimal('500.00'),
+            total=Decimal('500.00'),
+            paid_amount=Decimal('200.00'),
+            remaining_amount=Decimal('300.00'),
+            created_by=self.user,
+        )
+        invoice = Invoice.objects.create(order=credit_order, invoice_number='INV-CREDIT-REFUND-001')
+
+        response = self.client.post(reverse('invoices:payment_add', kwargs={'pk': invoice.pk}), {
+            'cash_account': cash.pk,
+            'amount': '-50.00',
+            'transaction_date': '2026-06-01',
+            'notes': 'refund installment',
+        })
+        credit_order.refresh_from_db()
+        cash.refresh_from_db()
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(credit_order.paid_amount, Decimal('150.00'))
+        self.assertEqual(credit_order.remaining_amount, Decimal('350.00'))
+        self.assertEqual(cash.balance, Decimal('250.00'))
+        self.assertTrue(PaymentTransaction.objects.filter(
+            related_order=credit_order,
+            transaction_type=PaymentTransaction.TYPE_REFUND,
+            direction=PaymentTransaction.DIRECTION_OUT,
+            amount=Decimal('50.00'),
+        ).exists())
+
     def test_invoice_detail_uses_table_and_print_uses_thermal_receipt(self):
         self.client.force_login(self.user)
 

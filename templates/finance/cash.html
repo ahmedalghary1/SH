@@ -9,7 +9,10 @@
 <div class="simple-cash-page">
     <div class="page-head">
         <h1>الخزنة</h1>
-        <a href="{% url 'finance:transfer' %}" class="btn btn-primary">تحويل للخزنة الرئيسية</a>
+        <div class="actions">
+            <a href="{% url 'finance:cash_account_statement' %}" class="btn btn-light">كشف حساب خزنة</a>
+            <a href="{% url 'finance:transfer' %}" class="btn btn-primary">تحويل للخزنة الرئيسية</a>
+        </div>
     </div>
 
     <div class="stats-grid">

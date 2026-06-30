@@ -133,11 +133,11 @@ def record_sales_rep_sale(*, assignment, quantity, user, order=None, notes=''):
 def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, customer=None, order=None, notes=''):
     _validate_sales_rep(sales_rep)
     amount = Decimal(str(amount or 0))
-    if amount <= 0:
-        raise ValidationError('مبلغ التحصيل يجب أن يكون أكبر من صفر')
+    if amount == 0:
+        raise ValidationError('مبلغ التحصيل لا يمكن أن يساوي صفر')
     if order:
         order = Order.objects.select_for_update().get(pk=order.pk)
-        if amount > order.remaining_amount:
+        if amount > 0 and amount > order.remaining_amount:
             raise ValidationError('مبلغ التحصيل أكبر من المتبقي على الطلب')
         customer = customer or order.customer
     cash_account = cash_account or get_or_create_sales_rep_cash_account(sales_rep)
@@ -150,6 +150,43 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, c
         notes=notes,
         created_by=user,
     )
+    if amount < 0:
+        refund_amount = abs(amount)
+        record_transaction(
+            transaction_type=PaymentTransaction.TYPE_REFUND,
+            direction=PaymentTransaction.DIRECTION_OUT,
+            amount=refund_amount,
+            cash_account=cash_account,
+            related_order=order,
+            related_customer=customer,
+            related_sales_rep=sales_rep,
+            notes=notes or f'Sales rep refund {sales_rep}',
+            created_by=user,
+        )
+        if order:
+            current_paid = Decimal(str(order.paid_amount or 0))
+            paid_reversal = min(refund_amount, current_paid)
+            extra_customer_balance = refund_amount - paid_reversal
+            order.paid_amount = current_paid - paid_reversal
+            order.save(update_fields=['paid_amount'])
+            order.remaining_amount = max(order.total - order.paid_amount, Decimal('0'))
+            if order.paid_amount <= 0:
+                order.payment_status = Order.PAYMENT_UNPAID
+            elif order.paid_amount >= order.total:
+                order.payment_status = Order.PAYMENT_PAID
+            else:
+                order.payment_status = Order.PAYMENT_PARTIAL
+            order.save(update_fields=['remaining_amount', 'payment_status'])
+            if extra_customer_balance > 0 and order.customer_id:
+                from customers.models import Customer
+
+                Customer.objects.filter(pk=order.customer_id).update(opening_balance=F('opening_balance') + extra_customer_balance)
+        elif customer:
+            from customers.models import Customer
+
+            Customer.objects.filter(pk=customer.pk).update(opening_balance=F('opening_balance') + refund_amount)
+        return collection
+
     record_transaction(
         transaction_type=PaymentTransaction.TYPE_SALES_REP_COLLECTION,
         direction=PaymentTransaction.DIRECTION_IN,

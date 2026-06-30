@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+{% block title %}كشف حساب خزنة{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>كشف حساب خزنة</h1>
+    <div class="actions">
+        <a class="btn btn-light" href="{% url 'finance:cash' %}">رجوع للخزنة</a>
+    </div>
+</div>
+
+<form class="card filter-form" method="get">
+    <label>
+        <span>الخزنة</span>
+        {{ form.cash_account }}
+    </label>
+    <button class="btn btn-primary" type="submit">عرض الكشف</button>
+</form>
+
+{% if form.errors %}
+    <div class="card form-errors">{{ form.errors }}</div>
+{% endif %}
+
+{% if account %}
+<section class="card">
+    <h2>بيانات الخزنة</h2>
+    <div class="detail-grid">
+        <div><span>اسم الخزنة</span><strong>{{ account.name }}</strong></div>
+        <div><span>نوع الحساب</span><strong>{{ account.get_account_type_display }}</strong></div>
+        <div><span>المسؤول</span><strong>{{ account.assigned_user|default:'-' }}</strong></div>
+        <div><span>الحالة</span><strong>{% if account.is_active %}نشط{% else %}متوقف{% endif %}</strong></div>
+    </div>
+</section>
+
+<div class="stats-grid">
+    <div class="stat-card"><span>رصيد بداية الكشف</span><strong>{{ opening_balance }}</strong></div>
+    <div class="stat-card"><span>إجمالي الداخل</span><strong>{{ total_in }}</strong></div>
+    <div class="stat-card"><span>إجمالي الخارج</span><strong>{{ total_out }}</strong></div>
+    <div class="stat-card"><span>صافي الحركة</span><strong>{{ net_movement }}</strong></div>
+    <div class="stat-card"><span>الرصيد الحالي</span><strong>{{ current_balance }}</strong></div>
+    <div class="stat-card"><span>عدد الحركات</span><strong>{{ transactions_count }}</strong></div>
+</div>
+
+{% if non_cash_transactions_count %}
+<div class="card">
+    <p>يوجد {{ non_cash_transactions_count }} حركة مسجلة على الخزنة لا تؤثر على رصيدها، وتظهر في الكشف بدون تغيير الرصيد الجاري.</p>
+</div>
+{% endif %}
+
+<div class="table-wrap card">
+    <table>
+        <thead>
+            <tr>
+                <th>تاريخ الحركة</th>
+                <th>وقت التسجيل</th>
+                <th>نوع الحركة</th>
+                <th>الاتجاه</th>
+                <th>البيان</th>
+                <th>داخل</th>
+                <th>خارج</th>
+                <th>الرصيد</th>
+                <th>الطلب</th>
+                <th>العميل</th>
+                <th>المورد</th>
+                <th>المندوب</th>
+                <th>المرجع</th>
+                <th>المستخدم</th>
+                <th>تؤثر على الرصيد</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for entry in statement %}
+            <tr>
+                <td>{{ entry.date|date:'Y-m-d' }}</td>
+                <td>{{ entry.created_at|date:'Y-m-d H:i' }}</td>
+                <td>{{ entry.type }}</td>
+                <td>{{ entry.direction }}</td>
+                <td>{{ entry.description|default:'-' }}</td>
+                <td>{% if entry.in_amount %}{{ entry.in_amount }}{% endif %}</td>
+                <td>{% if entry.out_amount %}{{ entry.out_amount }}{% endif %}</td>
+                <td>{{ entry.balance }}</td>
+                <td>{{ entry.order|default:'-' }}</td>
+                <td>{{ entry.customer|default:'-' }}</td>
+                <td>{{ entry.supplier|default:'-' }}</td>
+                <td>{{ entry.sales_rep|default:'-' }}</td>
+                <td>{{ entry.reference|default:'-' }}</td>
+                <td>{{ entry.created_by|default:'-' }}</td>
+                <td>{% if entry.affects_cash %}نعم{% else %}لا{% endif %}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="15">لا توجد حركات على هذه الخزنة</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

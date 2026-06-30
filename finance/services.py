@@ -190,7 +190,7 @@ def collect_customer_balance_payment(*, customer, amount, user, cash_account=Non
 
 
 @transaction.atomic
-def record_customer_refund_payment(*, customer, amount, user, cash_account=None, notes='', transaction_date=None):
+def record_customer_refund_payment(*, customer, amount, user, cash_account=None, order=None, notes='', transaction_date=None):
     from customers.models import Customer
 
     amount = _as_decimal(amount)
@@ -201,12 +201,13 @@ def record_customer_refund_payment(*, customer, amount, user, cash_account=None,
         direction=PaymentTransaction.DIRECTION_OUT,
         amount=amount,
         cash_account=cash_account,
+        related_order=order,
         related_customer=customer,
         notes=notes,
         created_by=user,
         transaction_date=transaction_date,
     )
-    if customer:
+    if customer and not order:
         Customer.objects.filter(pk=customer.pk).update(opening_balance=F('opening_balance') + amount)
     return tx
 
@@ -414,6 +415,81 @@ def build_customer_statement(customer):
     }
 
 
+def build_cash_account_statement(account):
+    transactions = PaymentTransaction.objects.filter(
+        cash_account=account,
+    ).select_related(
+        'related_order',
+        'related_customer',
+        'related_sales_rep',
+        'related_supplier',
+        'created_by',
+    ).order_by('transaction_date', 'created_at', 'pk')
+
+    entries = []
+    total_in = Decimal('0')
+    total_out = Decimal('0')
+    movement_total = Decimal('0')
+    non_cash_transactions_count = 0
+
+    for tx in transactions:
+        amount = _money(tx.amount)
+        affects_cash = getattr(tx, 'affects_cash', True)
+        balance_delta = Decimal('0')
+        in_amount = Decimal('0')
+        out_amount = Decimal('0')
+
+        if tx.direction == PaymentTransaction.DIRECTION_IN:
+            in_amount = amount
+            if affects_cash:
+                balance_delta = amount
+                total_in += amount
+        elif tx.direction == PaymentTransaction.DIRECTION_OUT:
+            out_amount = amount
+            if affects_cash:
+                balance_delta = -amount
+                total_out += amount
+
+        if not affects_cash:
+            non_cash_transactions_count += 1
+
+        movement_total += balance_delta
+        entries.append({
+            'date': _statement_date(tx.transaction_date),
+            'created_at': tx.created_at,
+            'type': tx.get_transaction_type_display(),
+            'direction': tx.get_direction_display(),
+            'description': tx.notes or tx.get_transaction_type_display(),
+            'in_amount': in_amount,
+            'out_amount': out_amount,
+            'balance_delta': balance_delta,
+            'affects_cash': affects_cash,
+            'order': tx.related_order,
+            'customer': tx.related_customer,
+            'supplier': tx.related_supplier or tx.related_supplier_name,
+            'sales_rep': tx.related_sales_rep,
+            'reference': tx.reference,
+            'created_by': tx.created_by,
+        })
+
+    opening_balance = _money(account.balance) - movement_total
+    running_balance = opening_balance
+    for entry in entries:
+        running_balance += entry['balance_delta']
+        entry['balance'] = running_balance
+
+    return {
+        'entries': entries,
+        'opening_balance': opening_balance,
+        'current_balance': _money(account.balance),
+        'total_in': total_in,
+        'total_out': total_out,
+        'net_movement': total_in - total_out,
+        'transactions_count': len(entries),
+        'non_cash_transactions_count': non_cash_transactions_count,
+    }
+
+
 @transaction.atomic
 def record_supplier_payment(*, supplier, amount, user, cash_account=None, notes='', transaction_date=None):
     from purchases.models import Supplier
@@ -510,9 +586,33 @@ def record_order_refund(*, order, user, cash_account=None, amount=None, notes=''
 @transaction.atomic
 def collect_order_payment(*, order, amount, user, cash_account=None, notes='', transaction_date=None):
     from orders.models import Order
+    from customers.models import Customer
 
-    amount = _as_decimal(amount)
     order = Order.objects.select_for_update().get(pk=order.pk)
+    amount = Decimal(str(amount or 0))
+    if amount == 0:
+        raise ValidationError('مبلغ التحصيل لا يمكن أن يساوي صفر')
+    if amount < 0:
+        refund_amount = abs(amount)
+        current_paid = Decimal(str(order.paid_amount or 0))
+        paid_reversal = min(refund_amount, current_paid)
+        extra_customer_balance = refund_amount - paid_reversal
+        tx = record_customer_refund_payment(
+            order=order,
+            customer=order.customer,
+            amount=refund_amount,
+            user=user,
+            cash_account=cash_account,
+            notes=notes,
+            transaction_date=transaction_date,
+        )
+        order.paid_amount = current_paid - paid_reversal
+        order.save(update_fields=['paid_amount'])
+        _sync_order_payment_status(order)
+        if extra_customer_balance > 0 and order.customer_id:
+            Customer.objects.filter(pk=order.customer_id).update(opening_balance=F('opening_balance') + extra_customer_balance)
+        return tx
+    amount = _as_decimal(amount)
     if amount > order.remaining_amount:
         raise ValidationError('مبلغ التحصيل أكبر من المتبقي على الطلب')
     tx = record_customer_payment(
@@ -650,7 +750,46 @@ def transfer_between_accounts(*, from_account, to_account, amount, user, notes='
     return out_tx, in_tx
 
 
+@transaction.atomic
 def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, order=None, customer=None, notes='', transaction_date=None):
+    amount = Decimal(str(amount or 0))
+    if amount == 0:
+        raise ValidationError('مبلغ التحصيل لا يمكن أن يساوي صفر')
+    if amount < 0:
+        refund_amount = abs(amount)
+        if order:
+            from orders.models import Order
+
+            order = Order.objects.select_for_update().get(pk=order.pk)
+            customer = customer or order.customer
+        tx = record_transaction(
+            transaction_type=PaymentTransaction.TYPE_REFUND,
+            direction=PaymentTransaction.DIRECTION_OUT,
+            amount=refund_amount,
+            cash_account=cash_account,
+            related_order=order,
+            related_customer=customer,
+            related_sales_rep=sales_rep,
+            notes=notes,
+            created_by=user,
+            transaction_date=transaction_date,
+        )
+        if order:
+            from customers.models import Customer
+
+            current_paid = Decimal(str(order.paid_amount or 0))
+            paid_reversal = min(refund_amount, current_paid)
+            extra_customer_balance = refund_amount - paid_reversal
+            order.paid_amount = current_paid - paid_reversal
+            order.save(update_fields=['paid_amount'])
+            _sync_order_payment_status(order)
+            if extra_customer_balance > 0 and order.customer_id:
+                Customer.objects.filter(pk=order.customer_id).update(opening_balance=F('opening_balance') + extra_customer_balance)
+        elif customer:
+            from customers.models import Customer
+
+            Customer.objects.filter(pk=customer.pk).update(opening_balance=F('opening_balance') + refund_amount)
+        return tx
     return record_transaction(
         transaction_type=PaymentTransaction.TYPE_SALES_REP_COLLECTION,
         direction=PaymentTransaction.DIRECTION_IN,

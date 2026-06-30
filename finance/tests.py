@@ -113,6 +113,17 @@ class FinanceServiceTests(TestCase):
         self.assertTrue(form.is_valid(), form.errors.as_text())
         self.assertEqual(form.fields['amount'].label, 'القبض')
 
+    def test_customer_collection_form_accepts_negative_amount_with_order(self):
+        form = CustomerCollectionForm(data={
+            'cash_account': self.cash.pk,
+            'customer': self.customer.pk,
+            'order': self.order.pk,
+            'amount': '-50.00',
+            'transaction_date': '2026-06-12',
+        })
+
+        self.assertTrue(form.is_valid(), form.errors.as_text())
+
     def test_negative_customer_collection_records_refund_and_updates_customer_balance(self):
         self.client.force_login(self.user)
 
@@ -134,6 +145,22 @@ class FinanceServiceTests(TestCase):
             amount=Decimal('50.00'),
             related_customer=self.customer,
             related_order__isnull=True,
+        ).exists())
+
+    def test_collect_order_payment_accepts_negative_amount_and_reopens_balance(self):
+        collect_order_payment(order=self.order, amount=Decimal('-50.00'), cash_account=self.cash, user=self.user)
+        self.order.refresh_from_db()
+        self.cash.refresh_from_db()
+
+        self.assertEqual(self.order.paid_amount, Decimal('50.00'))
+        self.assertEqual(self.order.remaining_amount, Decimal('450.00'))
+        self.assertEqual(self.cash.balance, Decimal('950.00'))
+        self.assertTrue(PaymentTransaction.objects.filter(
+            transaction_type=PaymentTransaction.TYPE_REFUND,
+            direction=PaymentTransaction.DIRECTION_OUT,
+            amount=Decimal('50.00'),
+            related_order=self.order,
+            related_customer=self.customer,
         ).exists())
 
     def test_customer_statement_includes_orders_payments_refunds_and_running_balance(self):

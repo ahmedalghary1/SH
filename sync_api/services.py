@@ -7,7 +7,7 @@ from django.db import transaction
 
 from customers.models import Customer
 from finance.models import CashAccount, PaymentTransaction
-from finance.services import collect_order_payment, record_customer_payment, record_transaction
+from finance.services import collect_order_payment, record_customer_payment, record_customer_refund_payment, record_transaction
 from inventory.models import Warehouse
 from orders.models import Order
 from orders.services import create_order
@@ -130,6 +130,14 @@ def process_payment(operation, user):
     if order_id:
         order = Order.objects.get(pk=order_id)
         tx = collect_order_payment(order=order, amount=amount, user=user, cash_account=cash_account, notes=payment.get('notes') or '')
+    elif amount < 0:
+        tx = record_customer_refund_payment(
+            customer=customer,
+            amount=abs(amount),
+            user=user,
+            cash_account=cash_account,
+            notes=payment.get('notes') or '',
+        )
     else:
         tx = record_customer_payment(order=None, customer=customer, amount=amount, user=user, cash_account=cash_account, notes=payment.get('notes') or '')
     return response_success(operation['local_uuid'], tx.pk, 'PaymentTransaction')
