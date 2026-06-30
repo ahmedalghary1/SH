@@ -2899,6 +2899,7 @@ tbody tr:hover {
 
 .stat-content {
     flex: 1;
+    min-width: 0;
 }
 
 .stat-label {
@@ -2910,9 +2911,32 @@ tbody tr:hover {
 
 .stat-value {
     display: block;
-    font-size: 1.5rem;
+    max-width: 100%;
+    font-size: 1.25rem;
     font-weight: 700;
+    line-height: 1.2;
     color: var(--text-color);
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    font-variant-numeric: tabular-nums;
+    unicode-bidi: plaintext;
+}
+
+.stat-card strong {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    font-size: 1.25rem;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    font-variant-numeric: tabular-nums;
+    unicode-bidi: plaintext;
+}
+
+.simple-dashboard .stat-card {
+    align-items: flex-start;
+    min-height: 7rem;
 }
 
 /* Alerts Section */
@@ -3856,30 +3880,30 @@ tbody tr:hover {
     border-radius: var(--radius-md);
 }
 
-.stat-label {
+.shift-stats .stat-label {
     font-size: 0.875rem;
     color: var(--text-color);
 }
 
-.stat-value {
+.shift-stats .stat-value {
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--text-color);
 }
 
-.stat-value.sales {
+.shift-stats .stat-value.sales {
     color: #16a34a;
 }
 
-.stat-value.refund {
+.shift-stats .stat-value.refund {
     color: #dc2626;
 }
 
-.stat-value.expense {
+.shift-stats .stat-value.expense {
     color: #dc2626;
 }
 
-.stat-value.expected {
+.shift-stats .stat-value.expected {
     color: #0284c7;
 }
 
@@ -3892,15 +3916,15 @@ tbody tr:hover {
     text-align: center;
 }
 
-.stat-value.difference {
+.shift-stats .stat-value.difference {
     color: #d97706;
 }
 
-.stat-value.difference.positive {
+.shift-stats .stat-value.difference.positive {
     color: #16a34a;
 }
 
-.stat-value.difference.negative {
+.shift-stats .stat-value.difference.negative {
     color: #dc2626;
 }
 
