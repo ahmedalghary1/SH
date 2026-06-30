@@ -357,6 +357,10 @@ class OrderCreateViewTests(TestCase):
         order = Order.objects.get()
         self.assertEqual(order.items.count(), 1)
         self.assertEqual(order.items.get().variant, self.variant)
+        self.assertEqual(order.document_type, Order.DOCUMENT_SALE)
+        self.assertEqual(order.status, Order.STATUS_DRAFT)
+        self.assertEqual(order.payment_status, Order.PAYMENT_UNPAID)
+        self.assertFalse(PaymentTransaction.objects.filter(related_order=order).exists())
 
     def test_create_order_page_exposes_and_saves_discount_percentage(self):
         self.client.force_login(self.sales)
@@ -400,6 +404,7 @@ class OrderListViewTests(TestCase):
             order_number='ORD-LIST-SALE',
             document_type=Order.DOCUMENT_SALE,
             order_type=Order.TYPE_B2C,
+            status=Order.STATUS_CONFIRMED,
             created_by=self.manager,
         )
         self.quote_order = Order.objects.create(

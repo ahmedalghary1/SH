@@ -49,16 +49,23 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
         debt = self.request.GET.get('debt')
         
         valid_types = {choice[0] for choice in Customer.CUSTOMER_TYPE_CHOICES}
+        debt_order_statuses = [
+            Order.STATUS_CONFIRMED,
+            Order.STATUS_PREPARING,
+            Order.STATUS_READY,
+            Order.STATUS_COMPLETED,
+            Order.STATUS_PARTIALLY_RETURNED,
+        ]
         if q:
             qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name'), q))
         if customer_type in valid_types:
             qs = qs.filter(customer_type=customer_type)
         if debt == 'yes':
-            qs = qs.filter(Q(opening_balance__gt=0) | Q(order__remaining_amount__gt=0))
+            qs = qs.filter(Q(opening_balance__gt=0) | Q(order__remaining_amount__gt=0, order__status__in=debt_order_statuses))
         elif debt == 'no':
-            qs = qs.filter(Q(opening_balance=0) & Q(order__remaining_amount=0))
+            qs = qs.exclude(Q(opening_balance__gt=0) | Q(order__remaining_amount__gt=0, order__status__in=debt_order_statuses))
         
-        return qs.order_by('-created_at')
+        return qs.distinct().order_by('-created_at')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

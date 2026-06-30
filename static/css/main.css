@@ -2476,6 +2476,93 @@ tbody tr:hover {
     padding: var(--space-4);
 }
 
+.cashier-session-bar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-4);
+    align-items: center;
+    margin-bottom: var(--space-4);
+    padding: var(--space-3);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--surface-color);
+}
+
+.session-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+}
+
+.session-current {
+    max-width: 220px;
+    overflow: hidden;
+    color: var(--muted-text);
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.session-drafts {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-3);
+    align-items: center;
+    min-width: 0;
+}
+
+.session-label {
+    color: var(--muted-text);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.draft-tabs {
+    display: flex;
+    gap: var(--space-2);
+    min-width: 0;
+    overflow-x: auto;
+    padding-bottom: 2px;
+}
+
+.draft-tab {
+    display: grid;
+    gap: 2px;
+    min-width: 150px;
+    max-width: 210px;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--background-color);
+    color: var(--text-color);
+    text-decoration: none;
+}
+
+.draft-tab.is-active {
+    border-color: var(--accent-color);
+    background: var(--accent-soft);
+}
+
+.draft-tab strong,
+.draft-tab small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.draft-tab small,
+.draft-empty {
+    color: var(--muted-text);
+    font-size: 0.82rem;
+}
+
+.draft-empty {
+    display: inline-flex;
+    align-items: center;
+    min-height: 42px;
+}
+
 .cashier-grid {
     display: grid;
     grid-template-columns: 1fr 1.2fr;
@@ -2739,6 +2826,14 @@ tbody tr:hover {
 
 /* Responsive Design for Cashier */
 @media (max-width: 1024px) {
+    .cashier-session-bar {
+        grid-template-columns: 1fr;
+    }
+
+    .session-drafts {
+        grid-template-columns: 1fr;
+    }
+
     .cashier-grid {
         grid-template-columns: 1fr;
         gap: var(--space-4);
@@ -2752,6 +2847,19 @@ tbody tr:hover {
 @media (max-width: 768px) {
     .cashier-layout {
         padding: var(--space-2);
+    }
+
+    .session-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .session-current {
+        max-width: 100%;
+    }
+
+    .draft-tab {
+        min-width: 140px;
     }
 
     .variant-selection {

@@ -543,7 +543,7 @@ class DailySalesReportView(RoleRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         today = timezone.localdate()
-        orders = Order.objects.filter(created_at__date=today).exclude(status__in=[Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
+        orders = Order.objects.filter(created_at__date=today).exclude(status__in=services.EXCLUDED_SALES_STATUSES)
         returns = SalesReturn.objects.filter(created_at__date=today)
         transactions = PaymentTransaction.objects.filter(transaction_date=today)
         if getattr(self.request.user, 'role', None) == 'sales' and not self.request.user.is_superuser:
@@ -594,7 +594,7 @@ class MonthlySalesReportView(ManagerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        orders = Order.objects.exclude(status__in=[Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
+        orders = Order.objects.exclude(status__in=services.EXCLUDED_SALES_STATUSES)
         context['can_view_costs'] = can_view_costs(self.request.user)
         if can_view_costs(self.request.user):
             context['months'] = orders.annotate(month=TruncMonth('created_at')).values('month').annotate(
@@ -632,7 +632,7 @@ class CustomerReportView(ManagerRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['can_view_costs'] = can_view_costs(self.request.user)
-        valid_orders = Order.objects.exclude(status__in=[Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
+        valid_orders = Order.objects.exclude(status__in=services.EXCLUDED_SALES_STATUSES)
         context['new_customers'] = Customer.objects.order_by('-created_at')[:20]
         context['top_customers'] = valid_orders.values('customer__name', 'customer__phone').annotate(total=Sum('total'), count=Count('id')).order_by('-total')[:20]
         context['debt_customers'] = valid_orders.filter(remaining_amount__gt=0).values('customer__name', 'customer__phone').annotate(remaining=Sum('remaining_amount')).order_by('-remaining')[:20]
@@ -644,7 +644,7 @@ class EmployeeSalesReportView(ManagerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        orders = Order.objects.exclude(status__in=[Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
+        orders = Order.objects.exclude(status__in=services.EXCLUDED_SALES_STATUSES)
         context['can_view_costs'] = can_view_costs(self.request.user)
         if can_view_costs(self.request.user):
             context['employees'] = orders.values('created_by__username').annotate(
@@ -670,7 +670,7 @@ class YearlySalesReportView(ManagerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        orders = Order.objects.exclude(status__in=[Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
+        orders = Order.objects.exclude(status__in=services.EXCLUDED_SALES_STATUSES)
         context['can_view_costs'] = can_view_costs(self.request.user)
         if can_view_costs(self.request.user):
             context['years'] = orders.annotate(year=ExtractYear('created_at')).values('year').annotate(

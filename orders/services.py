@@ -164,11 +164,12 @@ def get_order_item_warehouse(item, order=None):
 
 
 @transaction.atomic
-def create_order(*, order_data, items, user, confirm=False):
+def create_order(*, order_data, items, user, confirm=False, auto_collect=True):
     order_data = dict(order_data)
     document_type = order_data.get('document_type') or Order.DOCUMENT_SALE
     if document_type == Order.DOCUMENT_QUOTE:
         confirm = False
+        auto_collect = False
     customer = order_data.get('customer')
     if not order_data.get('warehouse') and items:
         order_data['warehouse'] = items[0].get('warehouse')
@@ -246,7 +247,7 @@ def create_order(*, order_data, items, user, confirm=False):
         max_percentage=max_discount,
     )
     calculate_order_totals(order)
-    if document_type == Order.DOCUMENT_SALE and order.total > 0 and order.payment_method != Order.METHOD_CREDIT:
+    if auto_collect and document_type == Order.DOCUMENT_SALE and order.total > 0 and order.payment_method != Order.METHOD_CREDIT:
         from finance.services import record_order_sale_payment
 
         record_order_sale_payment(
@@ -262,6 +263,118 @@ def create_order(*, order_data, items, user, confirm=False):
         order.save(update_fields=['paid_amount', 'remaining_amount', 'payment_status'])
     if confirm:
         order = confirm_order(order=order, user=user)
+    return order
+
+
+@transaction.atomic
+def save_order_draft(*, order=None, order_data, items, user):
+    if order is None:
+        return create_order(
+            order_data=order_data,
+            items=items,
+            user=user,
+            confirm=False,
+            auto_collect=False,
+        )
+
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    if order.status != Order.STATUS_DRAFT:
+        raise ValidationError('يمكن تعديل الفواتير المعلقة فقط')
+
+    order_data = dict(order_data)
+    document_type = order_data.get('document_type') or Order.DOCUMENT_SALE
+    customer = order_data.get('customer')
+    if not order_data.get('warehouse') and items:
+        order_data['warehouse'] = items[0].get('warehouse')
+
+    order_discount_amount = Decimal('0') if document_type == Order.DOCUMENT_SAMPLE else _as_decimal(order_data.get('discount_amount', order_data.get('discount', 0)))
+    order_discount_percentage = Decimal('0') if document_type == Order.DOCUMENT_SAMPLE else _as_decimal(order_data.get('discount_percentage', 0))
+    order.document_type = document_type
+    order.order_type = order_data.get('order_type') or order.order_type
+    order.customer = customer
+    order.warehouse = order_data.get('warehouse')
+    order.payment_method = order_data.get('payment_method') or Order.METHOD_CASH
+    order.wallet_from_number = order_data.get('wallet_from_number')
+    order.wallet_to_number = order_data.get('wallet_to_number')
+    order.discount_amount = order_discount_amount
+    order.discount_percentage = order_discount_percentage
+    order.discount = order_discount_amount
+    order.discount_approved_by = user if order_discount_amount > 0 or order_discount_percentage > 0 else None
+    order.paid_amount = Decimal('0')
+    order.remaining_amount = Decimal('0')
+    order.payment_status = Order.PAYMENT_UNPAID
+    order.status = Order.STATUS_DRAFT
+    order.save(update_fields=[
+        'document_type', 'order_type', 'customer', 'warehouse', 'payment_method',
+        'wallet_from_number', 'wallet_to_number', 'discount_amount', 'discount_percentage',
+        'discount', 'discount_approved_by', 'paid_amount', 'remaining_amount',
+        'payment_status', 'status', 'updated_at',
+    ])
+
+    order.items.all().delete()
+    subtotal_after_item_discounts = Decimal('0')
+    subtotal_before_item_discounts = Decimal('0')
+    item_discount_total = Decimal('0')
+    max_discount, _ = get_discount_limits(user, customer=customer)
+    for item in items:
+        variant = item['variant']
+        warehouse = item.get('warehouse') or order.warehouse
+        stock_batch = item.get('stock_batch')
+        if not warehouse:
+            raise ValidationError('يجب تحديد مخزن لكل صنف في الفاتورة')
+        quantity = int(item['quantity'])
+        is_sample = document_type == Order.DOCUMENT_SAMPLE
+        pricing = prepare_order_item_pricing(
+            variant=variant,
+            quantity=quantity,
+            user=user,
+            customer=customer,
+            order_type=order.order_type,
+            unit_price=0 if is_sample else item.get('unit_price'),
+            discount_amount=0 if is_sample else item.get('discount_amount', item.get('discount', 0)),
+            discount_percentage=0 if is_sample else item.get('discount_percentage', 0),
+            unit_cost=getattr(stock_batch, 'unit_cost', None),
+            allow_free=is_sample,
+        )
+        subtotal_before_item_discounts += pricing['original_unit_price'] * quantity
+        item_discount_total += pricing['line_discount']
+        subtotal_after_item_discounts += pricing['total']
+        OrderItem.objects.create(
+            order=order,
+            variant=variant,
+            warehouse=warehouse,
+            stock_batch=stock_batch,
+            quantity=quantity,
+            unit_price=pricing['final_unit_price'],
+            original_unit_price=pricing['original_unit_price'],
+            discount_amount=pricing['discount_amount'],
+            discount_percentage=pricing['discount_percentage'],
+            final_unit_price=pricing['final_unit_price'],
+            unit_cost=pricing['unit_cost'],
+            discount=pricing['line_discount'],
+            total=pricing['total'],
+            cost_total=pricing['cost_total'],
+            profit_total=pricing['profit_total'],
+        )
+
+    _validate_discount_percentage(
+        discount_amount=order_discount_amount,
+        discount_percentage=order_discount_percentage,
+        base_amount=subtotal_after_item_discounts,
+        max_percentage=max_discount,
+    )
+    order_discount_total = calculate_discount_amount(
+        base_amount=subtotal_after_item_discounts,
+        discount_amount=order_discount_amount,
+        discount_percentage=order_discount_percentage,
+    )
+    _validate_discount_percentage(
+        discount_amount=item_discount_total + order_discount_total,
+        discount_percentage=0,
+        base_amount=subtotal_before_item_discounts,
+        max_percentage=max_discount,
+    )
+    calculate_order_totals(order)
     return order
 
 

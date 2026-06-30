@@ -137,6 +137,8 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, c
         raise ValidationError('مبلغ التحصيل لا يمكن أن يساوي صفر')
     if order:
         order = Order.objects.select_for_update().get(pk=order.pk)
+        if order.status == Order.STATUS_DRAFT or order.document_type == Order.DOCUMENT_QUOTE:
+            raise ValidationError('لا يمكن تسجيل تحصيل على فاتورة معلقة أو عرض سعر')
         customer = customer or order.customer
     cash_account = cash_account or get_or_create_sales_rep_cash_account(sales_rep)
     collection = SalesRepCollection.objects.create(

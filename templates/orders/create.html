@@ -3,12 +3,13 @@
 {% block title %}فاتورة بيع جديدة{% endblock %}
 {% block content %}
 <div class="page-head">
-    <h1>فاتورة بيع جديدة</h1>
+    <h1>{% if current_draft %}استكمال فاتورة معلقة{% elif is_quote_mode %}عرض سعر جديد{% else %}فاتورة بيع جديدة{% endif %}</h1>
 </div>
 
 <form method="post" id="order-form" class="cashier-layout">
     {% csrf_token %}
     <input type="hidden" name="items_json" id="items-json" value="[]">
+    <input type="hidden" name="draft_id" value="{% if current_draft %}{{ current_draft.pk }}{% endif %}">
     {{ form.document_type }}
     {{ form.warehouse }}
     {{ form.order_type }}
@@ -18,6 +19,33 @@
 
     {% if form.non_field_errors %}
         <div class="form-errors">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    {% if not is_quote_mode %}
+        <div class="cashier-session-bar">
+            <div class="session-actions">
+                <a class="btn btn-light btn-small" href="{% url 'orders:create' %}">
+                    <svg class="ui-icon"><use href="#icon-plus"></use></svg>
+                    فاتورة جديدة
+                </a>
+                {% if current_draft %}
+                    <span class="session-current">تستكمل {{ current_draft.order_number }}</span>
+                {% endif %}
+            </div>
+            <div class="session-drafts">
+                <span class="session-label">الفواتير المعلقة</span>
+                <div class="draft-tabs">
+                    {% for draft in suspended_orders %}
+                        <a class="draft-tab{% if current_draft and draft.pk == current_draft.pk %} is-active{% endif %}" href="{% url 'orders:create' %}?draft={{ draft.pk }}">
+                            <strong>{{ draft.customer|default:'عميل بدون اسم' }}</strong>
+                            <small>{{ draft.items_count }} صنف - {{ draft.total|floatformat:2 }}</small>
+                        </a>
+                    {% empty %}
+                        <span class="draft-empty">لا توجد فواتير معلقة</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
     {% endif %}
 
     <div class="cashier-grid">
@@ -135,10 +163,10 @@
                     <div class="summary-row">
                         <span>الخصم</span>
                         <select id="discount-type">
-                            <option value="amount">بالقيمة</option>
-                            <option value="percentage">بالنسبة %</option>
+                            <option value="amount"{% if initial_discount_type == 'amount' %} selected{% endif %}>بالقيمة</option>
+                            <option value="percentage"{% if initial_discount_type == 'percentage' %} selected{% endif %}>بالنسبة %</option>
                         </select>
-                        <input id="discount-input" name="discount_amount" type="number" step="0.01" min="0" placeholder="0.00" value="{{ form.discount_amount.value|default:'0' }}">
+                        <input id="discount-input" name="discount_amount" type="number" step="0.01" min="0" placeholder="0.00" value="{% if current_draft %}{{ initial_discount_value|default:'0' }}{% else %}{{ form.discount_amount.value|default:'0' }}{% endif %}">
                         <input id="id_discount_percentage" name="discount_percentage" type="number" step="0.01" min="0" max="100" placeholder="0" value="{{ form.discount_percentage.value|default:'0' }}" hidden>
                     </div>
                     <div class="summary-row total">
@@ -168,9 +196,9 @@
                         <svg class="ui-icon"><use href="#icon-invoice"></use></svg>
                         حفظ وطباعة
                     </button>
-                    <button class="btn btn-primary btn-large" name="action" value="draft" type="submit">
+                    <button class="btn btn-primary btn-large" name="action" value="hold" type="submit">
                         <svg class="ui-icon"><use href="#icon-file"></use></svg>
-                        حفظ
+                        {% if is_quote_mode %}حفظ عرض السعر{% else %}تعليق الفاتورة{% endif %}
                     </button>
                     <a class="btn btn-danger btn-large" href="{% url 'orders:list' %}">
                         <svg class="ui-icon"><use href="#icon-close"></use></svg>
@@ -182,6 +210,7 @@
     </div>
 </form>
 
+{{ initial_order_items|json_script:"initial-order-items" }}
 {% include 'orders/partials/customer_modal.html' %}
 {% endblock %}
 {% block extra_js %}<script src="{% static 'js/orders.js' %}"></script>{% endblock %}

@@ -593,6 +593,8 @@ def collect_order_payment(*, order, amount, user, cash_account=None, notes='', t
     from customers.models import Customer
 
     order = Order.objects.select_for_update().get(pk=order.pk)
+    if order.status == Order.STATUS_DRAFT or order.document_type == Order.DOCUMENT_QUOTE:
+        raise ValidationError('لا يمكن تسجيل قبض على فاتورة معلقة أو عرض سعر')
     amount = Decimal(str(amount or 0))
     if amount == 0:
         raise ValidationError('مبلغ التحصيل لا يمكن أن يساوي صفر')

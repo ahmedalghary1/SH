@@ -35,7 +35,13 @@ class CustomerCollectionForm(forms.Form):
     cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة')
     allowed_discount = forms.DecimalField(min_value=0, required=False, initial=0, label='خصم مسموح به')
     customer = forms.ModelChoiceField(queryset=Customer.objects.filter(is_active=True), label='العميل')
-    order = forms.ModelChoiceField(queryset=Order.objects.all(), label='الطلب', required=False)
+    order = forms.ModelChoiceField(
+        queryset=Order.objects.exclude(
+            status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED],
+        ).exclude(document_type=Order.DOCUMENT_QUOTE),
+        label='الطلب',
+        required=False,
+    )
     amount = forms.DecimalField(label='القبض', widget=forms.NumberInput(attrs={'step': '0.01'}))
     transaction_date = forms.DateField(label='تاريخ التحصيل', initial=timezone.localdate, widget=forms.DateInput(attrs={'type': 'date'}))
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')

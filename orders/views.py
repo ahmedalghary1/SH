@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
@@ -31,6 +31,7 @@ from .services import (
     get_price_for_customer,
     prepare_order_item_pricing,
     return_order,
+    save_order_draft,
 )
 
 
@@ -99,6 +100,8 @@ class OrderListView(RoleRequiredMixin, ExportListMixin, ListView):
         qs = Order.objects.select_related('customer', 'warehouse', 'created_by').order_by('-created_at')
         if getattr(self, 'document_type', None):
             qs = qs.filter(document_type=self.document_type)
+        if getattr(self, 'document_type', None) == Order.DOCUMENT_SALE:
+            qs = qs.exclude(status=Order.STATUS_DRAFT)
         if getattr(self, 'order_type', None):
             qs = qs.filter(order_type=self.order_type)
         if self.request.user.role == 'sales' and not self.request.user.is_superuser:
@@ -134,18 +137,99 @@ class OrderCreateView(SalesRequiredMixin, FormView):
     form_class = OrderForm
     template_name = 'orders/create.html'
 
+    def get_draft_queryset(self):
+        qs = Order.objects.filter(
+            document_type=Order.DOCUMENT_SALE,
+            paid_amount=0,
+            status=Order.STATUS_DRAFT,
+        ).select_related('customer', 'warehouse', 'created_by').prefetch_related(
+            'items__variant__product',
+            'items__variant__color',
+            'items__variant__size',
+            'items__warehouse',
+        )
+        if self.request.user.role == 'sales' and not self.request.user.is_superuser:
+            qs = qs.filter(created_by=self.request.user)
+        return qs
+
+    def get_current_draft(self):
+        if hasattr(self, '_current_draft'):
+            return self._current_draft
+        draft_id = self.request.POST.get('draft_id') or self.request.GET.get('draft')
+        if not draft_id:
+            self._current_draft = None
+            return None
+        self._current_draft = get_object_or_404(self.get_draft_queryset(), pk=draft_id)
+        return self._current_draft
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user'] = self.request.user
+        current_draft = self.get_current_draft()
+        if current_draft:
+            kwargs['instance'] = current_draft
         return kwargs
 
     def get_initial(self):
         initial = super().get_initial()
+        if self.get_current_draft():
+            return initial
         if self.request.GET.get('type') == 'wholesale':
             initial['order_type'] = Order.TYPE_B2B
         if self.request.GET.get('document') == 'quote':
             initial['document_type'] = Order.DOCUMENT_QUOTE
         return initial
+
+    def serialize_order_items(self, order):
+        if not order:
+            return []
+        data = []
+        for item in order.items.select_related('variant__product', 'variant__color', 'variant__size', 'warehouse'):
+            if not item.variant_id:
+                continue
+            warehouse = item.warehouse or order.warehouse
+            if not warehouse:
+                continue
+            stock = Stock.objects.filter(warehouse=warehouse, variant=item.variant).first()
+            data.append({
+                'variant_id': str(item.variant_id),
+                'product_name': item.variant.product.name,
+                'color': item.variant.color.name if item.variant.color else '',
+                'size': item.variant.size.name if item.variant.size else '',
+                'warehouse_id': str(warehouse.pk),
+                'warehouse_name': warehouse.name,
+                'stock_batch_id': str(item.stock_batch_id) if item.stock_batch_id else '',
+                'available_quantity': stock.quantity if stock else 0,
+                'quantity': item.quantity,
+                'input_quantity': item.quantity,
+                'quantity_unit': 'piece',
+                'pieces_per_dozen': item.variant.product.pieces_per_dozen,
+                'unit_price': str(item.original_unit_price or item.unit_price),
+                'discount_amount': str(item.discount_amount or 0),
+                'discount_percentage': str(item.discount_percentage or 0),
+            })
+        return data
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        current_draft = self.get_current_draft()
+        suspended_orders = self.get_draft_queryset().annotate(
+            items_count=Count('items'),
+        ).order_by('-updated_at', '-created_at')[:12]
+        discount_percentage = Decimal(str(getattr(current_draft, 'discount_percentage', 0) or 0))
+        context['current_draft'] = current_draft
+        context['suspended_orders'] = suspended_orders
+        context['initial_order_items'] = self.serialize_order_items(current_draft)
+        context['initial_discount_type'] = 'percentage' if discount_percentage > 0 else 'amount'
+        context['initial_discount_value'] = (
+            current_draft.discount_percentage
+            if current_draft and discount_percentage > 0
+            else getattr(current_draft, 'discount_amount', 0) if current_draft else 0
+        )
+        context['is_quote_mode'] = self.request.GET.get('document') == 'quote' or (
+            current_draft and current_draft.document_type == Order.DOCUMENT_QUOTE
+        )
+        return context
 
     def get_item_warehouse(self, warehouse_id):
         warehouses = Warehouse.objects.filter(is_active=True)
@@ -153,53 +237,72 @@ class OrderCreateView(SalesRequiredMixin, FormView):
             warehouses = warehouses.filter(assigned_user=self.request.user, warehouse_type=Warehouse.TYPE_REPRESENTATIVE)
         return warehouses.get(pk=warehouse_id)
 
-    def form_valid(self, form):
+    def build_posted_items(self):
         raw_items = self.request.POST.get('items_json', '[]')
+        posted_items = _loads_items_payload(raw_items)
+        items = []
+        for posted in posted_items:
+            variant = _available_variants_for_user(self.request.user).select_related('product').get(pk=posted['variant_id'])
+            warehouse = self.get_item_warehouse(posted['warehouse_id'])
+            quantity = int(posted['quantity'])
+            stock_batch = None
+            batch_id = posted.get('stock_batch_id')
+            if batch_id:
+                stock_batch = StockBatch.objects.get(
+                    pk=batch_id,
+                    variant=variant,
+                    warehouse=warehouse,
+                    remaining_quantity__gte=quantity,
+                )
+            if _is_restricted_sales_user(self.request.user):
+                available_stock = Stock.objects.filter(
+                    warehouse=warehouse,
+                    variant=variant,
+                    quantity__gte=quantity,
+                ).exists()
+                if not available_stock:
+                    raise ValidationError('الكمية غير متاحة في عهدة المندوب')
+            items.append({
+                'variant': variant,
+                'warehouse': warehouse,
+                'stock_batch': stock_batch,
+                'quantity': quantity,
+                'unit_price': Decimal(str(posted.get('unit_price', 0))),
+                'discount_amount': Decimal(str(posted.get('discount_amount', posted.get('discount', 0)))),
+                'discount_percentage': Decimal(str(posted.get('discount_percentage', 0))),
+            })
+        return items
+
+    def form_valid(self, form):
         try:
-            posted_items = _loads_items_payload(raw_items)
-            items = []
-            for posted in posted_items:
-                variant = _available_variants_for_user(self.request.user).select_related('product').get(pk=posted['variant_id'])
-                warehouse = self.get_item_warehouse(posted['warehouse_id'])
-                quantity = int(posted['quantity'])
-                stock_batch = None
-                batch_id = posted.get('stock_batch_id')
-                if batch_id:
-                    stock_batch = StockBatch.objects.get(
-                        pk=batch_id,
-                        variant=variant,
-                        warehouse=warehouse,
-                        remaining_quantity__gte=quantity,
-                    )
-                if _is_restricted_sales_user(self.request.user):
-                    available_stock = Stock.objects.filter(
-                        warehouse=warehouse,
-                        variant=variant,
-                        quantity__gte=quantity,
-                    ).exists()
-                    if not available_stock:
-                        raise ValidationError('الكمية غير متاحة في عهدة المندوب')
-                items.append({
-                    'variant': variant,
-                    'warehouse': warehouse,
-                    'stock_batch': stock_batch,
-                    'quantity': quantity,
-                    'unit_price': Decimal(str(posted.get('unit_price', 0))),
-                    'discount_amount': Decimal(str(posted.get('discount_amount', posted.get('discount', 0)))),
-                    'discount_percentage': Decimal(str(posted.get('discount_percentage', 0))),
-                })
-            confirm = self.request.POST.get('action') == 'confirm'
+            items = self.build_posted_items()
+            action = self.request.POST.get('action')
+            confirm = action == 'confirm'
             order_data = dict(form.cleaned_data)
-            if self.request.POST.get('action') == 'draft':
-                order_data['document_type'] = Order.DOCUMENT_QUOTE
             if order_data.get('document_type') == Order.DOCUMENT_QUOTE:
                 confirm = False
+            current_draft = self.get_current_draft()
+            suspend = action in {'hold', 'draft'} and order_data.get('document_type') == Order.DOCUMENT_SALE
+            if current_draft or suspend:
+                order = save_order_draft(
+                    order=current_draft,
+                    order_data=order_data,
+                    items=items,
+                    user=self.request.user,
+                )
+                if confirm:
+                    order = confirm_order(order=order, user=self.request.user)
+                    invoice = generate_invoice(order, user=self.request.user)
+                    messages.success(self.request, 'تم حفظ الفاتورة وخصم الكمية من المخزون')
+                    return redirect('invoices:detail', pk=invoice.pk)
+                messages.success(self.request, 'تم تعليق الفاتورة')
+                return redirect('orders:create')
             order = create_order(order_data=order_data, items=items, user=self.request.user, confirm=confirm)
             if confirm:
                 invoice = generate_invoice(order, user=self.request.user)
                 messages.success(self.request, 'تم حفظ الفاتورة وخصم الكمية من المخزون')
                 return redirect('invoices:detail', pk=invoice.pk)
-            messages.success(self.request, 'تم حفظ الطلب' + (' وتأكيده' if confirm else ' كمسودة'))
+            messages.success(self.request, 'تم حفظ الطلب')
             return redirect('orders:detail', pk=order.pk)
         except (ValidationError, ProductVariant.DoesNotExist, StockBatch.DoesNotExist, Warehouse.DoesNotExist, KeyError, ValueError, json.JSONDecodeError) as exc:
             form.add_error(None, getattr(exc, 'message', 'بيانات الطلب غير صحيحة'))

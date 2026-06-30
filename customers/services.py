@@ -32,7 +32,7 @@ def get_customer_summary(customer):
         transaction_type__in=[PaymentTransaction.TYPE_CUSTOMER_PAYMENT, PaymentTransaction.TYPE_SALES_REP_COLLECTION],
     ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
-    last_order = Order.objects.filter(customer=customer).exclude(status=Order.STATUS_CANCELLED).order_by('-created_at').first()
+    last_order = _customer_orders(customer).order_by('-created_at').first()
 
     interactions = customer.interactions.order_by('-created_at')
     last_interaction = interactions.first()
@@ -61,13 +61,20 @@ def get_customer_summary(customer):
 
 def get_inactive_customers(days=90):
     cutoff = timezone.now() - timedelta(days=days)
-    active_customer_ids = Order.objects.filter(created_at__gte=cutoff).exclude(status=Order.STATUS_CANCELLED).values('customer_id')
+    active_customer_ids = Order.objects.filter(created_at__gte=cutoff).exclude(status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED]).values('customer_id')
     return Customer.objects.filter(is_active=True).exclude(id__in=active_customer_ids).order_by('name')
 
 
 def get_customers_with_debt():
     return Customer.objects.filter(
-        Q(opening_balance__gt=0) | Q(order__remaining_amount__gt=0)
+        Q(opening_balance__gt=0) |
+        Q(order__remaining_amount__gt=0, order__status__in=[
+            Order.STATUS_CONFIRMED,
+            Order.STATUS_PREPARING,
+            Order.STATUS_READY,
+            Order.STATUS_COMPLETED,
+            Order.STATUS_PARTIALLY_RETURNED,
+        ])
     ).distinct().order_by('name')
 
 

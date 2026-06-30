@@ -70,12 +70,12 @@ class DashboardView(RoleRequiredMixin, TemplateView):
                 {'label': 'الفواتير', 'href': reverse('invoices:list'), 'icon': 'icon-invoice'},
                 {'label': 'العملاء', 'href': reverse('customers:list'), 'icon': 'icon-users'},
             ]
-            my_orders = Order.objects.filter(created_by=user, created_at__date=today)
+            my_orders = Order.objects.filter(created_by=user, created_at__date=today).exclude(status=Order.STATUS_DRAFT)
             context.update({
                 'my_orders_today': my_orders.count(),
                 'my_sales_today': my_orders.aggregate(v=Sum('total'))['v'] or 0,
                 'my_customers': Customer.objects.filter(created_by=user, created_at__date=today).count(),
-                'latest_orders': Order.objects.filter(created_by=user).select_related('customer').order_by('-created_at')[:10],
+                'latest_orders': Order.objects.filter(created_by=user).exclude(status=Order.STATUS_DRAFT).select_related('customer').order_by('-created_at')[:10],
             })
         return context
 

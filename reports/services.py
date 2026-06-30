@@ -16,7 +16,7 @@ from sales_reps.models import SalesRepCollection, SalesRepStockAssignment
 
 
 ZERO = Decimal('0.00')
-EXCLUDED_SALES_STATUSES = [Order.STATUS_CANCELLED, Order.STATUS_RETURNED]
+EXCLUDED_SALES_STATUSES = [Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED]
 
 
 def _sum(queryset, field):
@@ -77,7 +77,7 @@ def apply_order_filters(qs, request, *, restrict_to_user=False):
 
 
 def visible_orders_for_user(user):
-    qs = Order.objects.select_related('customer', 'created_by', 'warehouse').order_by('-created_at')
+    qs = Order.objects.exclude(status__in=EXCLUDED_SALES_STATUSES).select_related('customer', 'created_by', 'warehouse').order_by('-created_at')
     if getattr(user, 'role', None) == 'sales' and not user.is_superuser:
         qs = qs.filter(created_by=user)
     return qs
@@ -170,12 +170,12 @@ def net_profit_report(request):
 
 
 def customer_debt_report():
-    qs = Customer.objects.filter(
-        Q(order__remaining_amount__gt=0) | Q(opening_balance__gt=0),
-        is_active=True,
-    ).annotate(
-        purchases=Sum('order__total'),
-        remaining=Sum('order__remaining_amount'),
+    valid_order_filter = ~Q(order__status__in=EXCLUDED_SALES_STATUSES)
+    qs = Customer.objects.filter(is_active=True).annotate(
+        purchases=Sum('order__total', filter=valid_order_filter),
+        remaining=Sum('order__remaining_amount', filter=valid_order_filter),
+    ).filter(
+        Q(opening_balance__gt=0) | Q(remaining__gt=0),
     ).order_by('-remaining')
     return {
         'title': 'مديونيات العملاء',
@@ -195,7 +195,10 @@ def inactive_customer_report(days=90):
 
 
 def discount_report(request):
-    orders = apply_order_filters(Order.objects.filter(Q(discount__gt=0) | Q(discount_amount__gt=0)), request)
+    orders = apply_order_filters(
+        Order.objects.exclude(status__in=EXCLUDED_SALES_STATUSES).filter(Q(discount__gt=0) | Q(discount_amount__gt=0)),
+        request,
+    )
     return {
         'title': 'تقرير الخصومات',
         'summary': {'orders': orders.count(), 'total_discounts': _sum(orders, 'discount')},
@@ -253,7 +256,7 @@ def low_stock_report():
 
 def stale_products_report(days=90):
     cutoff = timezone.now() - timedelta(days=days)
-    sold_variant_ids = OrderItem.objects.filter(order__created_at__gte=cutoff).values('variant_id')
+    sold_variant_ids = OrderItem.objects.filter(order__created_at__gte=cutoff).exclude(order__status__in=EXCLUDED_SALES_STATUSES).values('variant_id')
     qs = ProductVariant.objects.select_related('product').exclude(pk__in=sold_variant_ids).filter(is_active=True)
     return {
         'title': 'المنتجات الراكدة',
@@ -368,6 +371,6 @@ def manager_dashboard_kpis():
         'low_profit_products': month_order_items.values('variant__product__name').annotate(profit=Sum('profit_total')).order_by('profit')[:10],
         'low_stocks': Stock.objects.select_related('warehouse', 'variant__product').filter(quantity__lte=F('min_quantity'))[:10],
         'stale_products': stale_products_report()['rows'][:10],
-        'latest_orders': Order.objects.select_related('customer', 'created_by').order_by('-created_at')[:10],
+        'latest_orders': valid_orders.select_related('customer', 'created_by').order_by('-created_at')[:10],
         'daily_sales_chart': valid_orders.filter(created_at__date__gte=today - timedelta(days=6)).annotate(day=TruncDate('created_at')).values('day').annotate(total=Sum('total')).order_by('day'),
     }
