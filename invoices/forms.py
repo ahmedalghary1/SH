@@ -40,7 +40,6 @@ class InvoicePaymentForm(forms.Form):
         self.invoice = invoice
         if invoice:
             self.fields['amount'].widget.attrs.update({
-                'max': str(invoice.order.remaining_amount),
                 'step': '0.01',
                 'placeholder': str(invoice.order.remaining_amount),
             })
@@ -49,6 +48,4 @@ class InvoicePaymentForm(forms.Form):
         amount = self.cleaned_data['amount']
         if amount == 0:
             raise forms.ValidationError('قيمة الدفعة لا يمكن أن تساوي صفر')
-        if self.invoice and amount > 0 and amount > self.invoice.order.remaining_amount:
-            raise forms.ValidationError('قيمة الدفعة أكبر من المتبقي على الفاتورة')
         return amount

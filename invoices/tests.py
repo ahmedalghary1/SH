@@ -198,6 +198,52 @@ class InvoicePDFExportTests(TestCase):
             amount=Decimal('50.00'),
         ).exists())
 
+    def test_invoice_payment_add_stores_overpayment_as_customer_credit(self):
+        self.client.login(username='manager', password='pass12345')
+        cash = CashAccount.objects.create(name='Invoice Overpay Cash', balance=Decimal('0.00'))
+        credit_order = Order.objects.create(
+            order_number='ORD-CREDIT-OVERPAY-001',
+            order_type=Order.TYPE_B2C,
+            customer=self.order.customer,
+            warehouse=self.order.warehouse,
+            status=Order.STATUS_CONFIRMED,
+            payment_method=Order.METHOD_CREDIT,
+            payment_status=Order.PAYMENT_UNPAID,
+            subtotal=Decimal('500.00'),
+            total=Decimal('500.00'),
+            paid_amount=Decimal('0.00'),
+            remaining_amount=Decimal('500.00'),
+            created_by=self.user,
+        )
+        invoice = Invoice.objects.create(order=credit_order, invoice_number='INV-CREDIT-OVERPAY-001')
+
+        response = self.client.post(reverse('invoices:payment_add', kwargs={'pk': invoice.pk}), {
+            'cash_account': cash.pk,
+            'amount': '600.00',
+            'transaction_date': '2026-06-01',
+            'notes': 'overpayment',
+        })
+        credit_order.refresh_from_db()
+        credit_order.customer.refresh_from_db()
+        cash.refresh_from_db()
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(credit_order.paid_amount, Decimal('500.00'))
+        self.assertEqual(credit_order.remaining_amount, Decimal('0.00'))
+        self.assertEqual(credit_order.customer.opening_balance, Decimal('-100.00'))
+        self.assertEqual(cash.balance, Decimal('600.00'))
+        self.assertTrue(PaymentTransaction.objects.filter(
+            related_order=credit_order,
+            transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+            amount=Decimal('500.00'),
+        ).exists())
+        self.assertTrue(PaymentTransaction.objects.filter(
+            related_order__isnull=True,
+            related_customer=credit_order.customer,
+            transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+            amount=Decimal('100.00'),
+        ).exists())
+
     def test_invoice_detail_uses_table_and_print_uses_thermal_receipt(self):
         self.client.force_login(self.user)
 

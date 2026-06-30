@@ -137,8 +137,6 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, c
         raise ValidationError('مبلغ التحصيل لا يمكن أن يساوي صفر')
     if order:
         order = Order.objects.select_for_update().get(pk=order.pk)
-        if amount > 0 and amount > order.remaining_amount:
-            raise ValidationError('مبلغ التحصيل أكبر من المتبقي على الطلب')
         customer = customer or order.customer
     cash_account = cash_account or get_or_create_sales_rep_cash_account(sales_rep)
     collection = SalesRepCollection.objects.create(
@@ -187,19 +185,26 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, c
             Customer.objects.filter(pk=customer.pk).update(opening_balance=F('opening_balance') + refund_amount)
         return collection
 
-    record_transaction(
-        transaction_type=PaymentTransaction.TYPE_SALES_REP_COLLECTION,
-        direction=PaymentTransaction.DIRECTION_IN,
-        amount=amount,
-        cash_account=cash_account,
-        related_order=order,
-        related_customer=customer,
-        related_sales_rep=sales_rep,
-        notes=notes or f'Sales rep collection {sales_rep}',
-        created_by=user,
-    )
     if order:
-        order.paid_amount = F('paid_amount') + amount
+        order_payment = min(amount, Decimal(str(order.remaining_amount or 0)))
+        extra_credit = amount - order_payment
+    else:
+        order_payment = Decimal('0')
+        extra_credit = amount
+
+    if order_payment > 0:
+        record_transaction(
+            transaction_type=PaymentTransaction.TYPE_SALES_REP_COLLECTION,
+            direction=PaymentTransaction.DIRECTION_IN,
+            amount=order_payment,
+            cash_account=cash_account,
+            related_order=order,
+            related_customer=customer,
+            related_sales_rep=sales_rep,
+            notes=notes or f'Sales rep collection {sales_rep}',
+            created_by=user,
+        )
+        order.paid_amount = F('paid_amount') + order_payment
         order.save(update_fields=['paid_amount'])
         order.refresh_from_db(fields=['paid_amount'])
         order.remaining_amount = max(order.total - order.paid_amount, Decimal('0'))
@@ -210,6 +215,22 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, c
         else:
             order.payment_status = Order.PAYMENT_PARTIAL
         order.save(update_fields=['remaining_amount', 'payment_status'])
+    if extra_credit > 0:
+        record_transaction(
+            transaction_type=PaymentTransaction.TYPE_SALES_REP_COLLECTION,
+            direction=PaymentTransaction.DIRECTION_IN,
+            amount=extra_credit,
+            cash_account=cash_account,
+            related_order=None if customer else order,
+            related_customer=customer,
+            related_sales_rep=sales_rep,
+            notes=notes or f'Sales rep customer credit {sales_rep}',
+            created_by=user,
+        )
+        if customer:
+            from customers.models import Customer
+
+            Customer.objects.filter(pk=customer.pk).update(opening_balance=F('opening_balance') - extra_credit)
     return collection
 
 

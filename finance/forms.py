@@ -1,5 +1,4 @@
 from django import forms
-from django.db.models import Sum
 from django.utils import timezone
 
 from accounts.models import User
@@ -59,17 +58,6 @@ class CustomerCollectionForm(forms.Form):
             self.add_error('customer', 'اختر العميل')
         if amount is not None and amount == 0:
             self.add_error('amount', 'مبلغ القبض لا يمكن أن يساوي صفر')
-        if order and amount is not None and amount > 0 and allowed_discount and amount + allowed_discount <= 0:
-            self.add_error('amount', 'إجمالي التحصيل والخصم يجب أن يكون موجبًا')
-        if order and amount is not None and amount > 0 and amount + allowed_discount > order.remaining_amount:
-            self.add_error('amount', 'مبلغ التحصيل أكبر من المتبقي على الطلب')
-        if not order and customer and amount is not None and amount > 0:
-            orders_debt = Order.objects.filter(customer=customer, remaining_amount__gt=0).exclude(
-                status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED],
-            ).aggregate(v=Sum('remaining_amount'))['v'] or 0
-            total_debt = (customer.opening_balance or 0) + orders_debt
-            if amount > total_debt:
-                self.add_error('amount', 'مبلغ القبض أكبر من مديونية العميل')
         if order and not customer:
             cleaned['customer'] = order.customer
         return cleaned

@@ -151,6 +151,38 @@ class SalesRepServiceTests(TestCase):
             amount=Decimal('50.00'),
         ).exists())
 
+    def test_record_collection_stores_overpayment_as_customer_credit(self):
+        collection = record_sales_rep_collection(
+            sales_rep=self.sales_rep,
+            customer=self.customer,
+            order=self.order,
+            amount=Decimal('700.00'),
+            user=self.manager,
+        )
+        self.order.refresh_from_db()
+        self.customer.refresh_from_db()
+        rep_cash = collection.cash_account
+        rep_cash.refresh_from_db()
+
+        self.assertEqual(collection.amount, Decimal('700.00'))
+        self.assertEqual(self.order.paid_amount, Decimal('900.00'))
+        self.assertEqual(self.order.remaining_amount, Decimal('0.00'))
+        self.assertEqual(self.customer.opening_balance, Decimal('-100.00'))
+        self.assertEqual(rep_cash.balance, Decimal('700.00'))
+        self.assertTrue(PaymentTransaction.objects.filter(
+            transaction_type=PaymentTransaction.TYPE_SALES_REP_COLLECTION,
+            related_order=self.order,
+            related_sales_rep=self.sales_rep,
+            amount=Decimal('600.00'),
+        ).exists())
+        self.assertTrue(PaymentTransaction.objects.filter(
+            transaction_type=PaymentTransaction.TYPE_SALES_REP_COLLECTION,
+            related_order__isnull=True,
+            related_customer=self.customer,
+            related_sales_rep=self.sales_rep,
+            amount=Decimal('100.00'),
+        ).exists())
+
     def test_handover_creates_out_and_in_transactions_and_marks_collections(self):
         rep_cash = get_or_create_sales_rep_cash_account(self.sales_rep)
         record_sales_rep_collection(sales_rep=self.sales_rep, customer=self.customer, amount=Decimal('200.00'), cash_account=rep_cash, user=self.manager)

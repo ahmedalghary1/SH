@@ -114,12 +114,8 @@ def record_customer_payment(*, order, customer, amount, user, cash_account=None,
     from customers.models import Customer
 
     amount = _as_decimal(amount)
-    if order and amount > order.remaining_amount:
-        raise ValidationError('مبلغ التحصيل أكبر من المتبقي على الطلب')
     if not order and customer:
         customer = Customer.objects.select_for_update().get(pk=customer.pk)
-        if amount > (customer.opening_balance or 0):
-            raise ValidationError('مبلغ القبض أكبر من رصيد العميل الافتتاحي')
     tx = record_transaction(
         transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
         direction=PaymentTransaction.DIRECTION_IN,
@@ -185,7 +181,15 @@ def collect_customer_balance_payment(*, customer, amount, user, cash_account=Non
         remaining_to_allocate -= order_payment
 
     if remaining_to_allocate > 0:
-        raise ValidationError('مبلغ التحصيل أكبر من مديونية العميل')
+        transactions.append(record_customer_payment(
+            order=None,
+            customer=customer,
+            amount=remaining_to_allocate,
+            user=user,
+            cash_account=cash_account,
+            notes=notes or f'رصيد دائن للعميل {customer}',
+            transaction_date=transaction_date,
+        ))
     return transactions
 
 
@@ -613,21 +617,44 @@ def collect_order_payment(*, order, amount, user, cash_account=None, notes='', t
             Customer.objects.filter(pk=order.customer_id).update(opening_balance=F('opening_balance') + extra_customer_balance)
         return tx
     amount = _as_decimal(amount)
-    if amount > order.remaining_amount:
-        raise ValidationError('مبلغ التحصيل أكبر من المتبقي على الطلب')
-    tx = record_customer_payment(
-        order=order,
-        customer=order.customer,
-        amount=amount,
-        user=user,
-        cash_account=cash_account,
-        notes=notes,
-        transaction_date=transaction_date,
-    )
-    order.paid_amount = F('paid_amount') + amount
-    order.save(update_fields=['paid_amount'])
-    order.refresh_from_db(fields=['paid_amount'])
-    _sync_order_payment_status(order)
+    order_payment = min(amount, Decimal(str(order.remaining_amount or 0)))
+    extra_credit = amount - order_payment
+    tx = None
+    if order_payment > 0:
+        tx = record_customer_payment(
+            order=order,
+            customer=order.customer,
+            amount=order_payment,
+            user=user,
+            cash_account=cash_account,
+            notes=notes,
+            transaction_date=transaction_date,
+        )
+        order.paid_amount = F('paid_amount') + order_payment
+        order.save(update_fields=['paid_amount'])
+        order.refresh_from_db(fields=['paid_amount'])
+        _sync_order_payment_status(order)
+    if extra_credit > 0:
+        if order.customer_id:
+            tx = record_customer_payment(
+                order=None,
+                customer=order.customer,
+                amount=extra_credit,
+                user=user,
+                cash_account=cash_account,
+                notes=notes or f'رصيد دائن زائد من الطلب {order.order_number}',
+                transaction_date=transaction_date,
+            )
+        else:
+            tx = record_customer_payment(
+                order=order,
+                customer=None,
+                amount=extra_credit,
+                user=user,
+                cash_account=cash_account,
+                notes=notes,
+                transaction_date=transaction_date,
+            )
     return tx
 
 

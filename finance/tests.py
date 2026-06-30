@@ -102,6 +102,22 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(second_order.remaining_amount, Decimal('300.00'))
         self.assertEqual(self.cash.balance, Decimal('1500.00'))
 
+    def test_collect_customer_balance_payment_stores_overpayment_as_customer_credit(self):
+        collect_customer_balance_payment(
+            customer=self.customer,
+            amount=Decimal('700.00'),
+            cash_account=self.cash,
+            user=self.user,
+        )
+        self.customer.refresh_from_db()
+        self.order.refresh_from_db()
+        self.cash.refresh_from_db()
+
+        self.assertEqual(self.customer.opening_balance, Decimal('-100.00'))
+        self.assertEqual(self.order.paid_amount, Decimal('500.00'))
+        self.assertEqual(self.order.remaining_amount, Decimal('0.00'))
+        self.assertEqual(self.cash.balance, Decimal('1700.00'))
+
     def test_customer_collection_form_accepts_negative_amount_without_order(self):
         form = CustomerCollectionForm(data={
             'cash_account': self.cash.pk,
@@ -161,6 +177,24 @@ class FinanceServiceTests(TestCase):
             amount=Decimal('50.00'),
             related_order=self.order,
             related_customer=self.customer,
+        ).exists())
+
+    def test_collect_order_payment_stores_overpayment_as_customer_credit(self):
+        collect_order_payment(order=self.order, amount=Decimal('500.00'), cash_account=self.cash, user=self.user)
+        self.order.refresh_from_db()
+        self.customer.refresh_from_db()
+        self.cash.refresh_from_db()
+
+        self.assertEqual(self.order.paid_amount, Decimal('500.00'))
+        self.assertEqual(self.order.remaining_amount, Decimal('0.00'))
+        self.assertEqual(self.customer.opening_balance, Decimal('100.00'))
+        self.assertEqual(self.cash.balance, Decimal('1500.00'))
+        self.assertTrue(PaymentTransaction.objects.filter(
+            transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+            direction=PaymentTransaction.DIRECTION_IN,
+            amount=Decimal('100.00'),
+            related_customer=self.customer,
+            related_order__isnull=True,
         ).exists())
 
     def test_customer_statement_includes_orders_payments_refunds_and_running_balance(self):
