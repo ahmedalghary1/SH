@@ -46,6 +46,7 @@
                         <th>الاسم</th>
                         <th>الهاتف</th>
                         <th>النوع</th>
+                        {% if request.user.is_manager %}<th>مسؤول المبيعات</th>{% endif %}
                         <th>إجمالي المشتريات</th>
                         <th>الرصيد الحالي</th>
                         <th>آخر تعامل</th>
@@ -63,6 +64,7 @@
                         </td>
                         <td>{{ customer.phone }}</td>
                         <td>{{ customer.get_customer_type_display }}</td>
+                        {% if request.user.is_manager %}<td>{{ customer.sales_representative|default:'-' }}</td>{% endif %}
                         <td class="purchases">{{ customer.total_purchases|default:0 }}</td>
                         <td class="balance {% if customer.current_balance > 0 %}positive{% elif customer.current_balance < 0 %}negative{% endif %}">
                             {{ customer.current_balance|default:0 }}
@@ -78,7 +80,7 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="8">لا توجد عملاء</td></tr>
+                    <tr><td colspan="{% if request.user.is_manager %}9{% else %}8{% endif %}">لا توجد عملاء</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

@@ -25,7 +25,14 @@ from .services import (
     get_inactive_customers,
     get_open_complaints,
     get_top_customers,
+    visible_customers_for_user,
 )
+
+
+class CustomerVisibilityMixin:
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return visible_customers_for_user(self.request.user, qs)
 
 
 class SimpleCustomerListView(SalesRequiredMixin, ListView):
@@ -35,7 +42,8 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
     paginate_by = 20
 
     def get_queryset(self):
-        qs = Customer.objects.select_related('created_by').filter(is_active=True).annotate(
+        qs = Customer.objects.select_related('created_by', 'sales_representative').filter(is_active=True)
+        qs = visible_customers_for_user(self.request.user, qs).annotate(
             total_purchases=Sum('order__total', filter=Q(order__status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED])),
             current_balance=Sum('order__remaining_amount', filter=Q(order__status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED])),
             last_transaction_date=Max(
@@ -87,12 +95,14 @@ class CustomerListView(SalesRequiredMixin, ExportListMixin, ListView):
         ('الهاتف', 'phone'),
         ('الشركة', 'company_name'),
         ('العنوان', 'address'),
-        ('المسؤول', 'created_by'),
+        ('مسؤول المبيعات', 'sales_representative'),
+        ('أضيف بواسطة', 'created_by'),
         ('تاريخ الإضافة', 'created_at'),
     )
 
     def get_queryset(self):
-        qs = Customer.objects.select_related('created_by').filter(is_active=True)
+        qs = Customer.objects.select_related('created_by', 'sales_representative').filter(is_active=True)
+        qs = visible_customers_for_user(self.request.user, qs)
         q = self.request.GET.get('q')
         customer_type = self.request.GET.get('type')
         valid_types = {choice[0] for choice in Customer.CUSTOMER_TYPE_CHOICES}
@@ -109,8 +119,15 @@ class SimpleCustomerCreateView(SalesRequiredMixin, CreateView):
     template_name = 'customers/simple_create.html'
     success_url = reverse_lazy('customers:simple_list')
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
+
     def form_valid(self, form):
         form.instance.created_by = self.request.user
+        if self.request.user.is_sales and not form.instance.sales_representative_id:
+            form.instance.sales_representative = self.request.user
         messages.success(self.request, 'تم إضافة العميل')
         return super().form_valid(form)
 
@@ -121,17 +138,29 @@ class CustomerCreateView(SalesRequiredMixin, CreateView):
     template_name = 'customers/create.html'
     success_url = reverse_lazy('customers:list')
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
+
     def form_valid(self, form):
         form.instance.created_by = self.request.user
+        if self.request.user.is_sales and not form.instance.sales_representative_id:
+            form.instance.sales_representative = self.request.user
         messages.success(self.request, 'تم إضافة العميل')
         return super().form_valid(form)
 
 
-class CustomerUpdateView(SalesRequiredMixin, UpdateView):
+class CustomerUpdateView(CustomerVisibilityMixin, SalesRequiredMixin, UpdateView):
     model = Customer
     form_class = CustomerForm
     template_name = 'customers/update.html'
     success_url = reverse_lazy('customers:list')
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
 
     def form_valid(self, form):
         messages.success(self.request, 'تم تعديل العميل')
@@ -144,7 +173,7 @@ class CustomerDeleteView(ManagerDeleteView):
     success_message = 'تم حذف العميل'
 
 
-class SimpleCustomerDetailView(SalesRequiredMixin, DetailView):
+class SimpleCustomerDetailView(CustomerVisibilityMixin, SalesRequiredMixin, DetailView):
     model = Customer
     template_name = 'customers/simple_detail.html'
     context_object_name = 'customer'
@@ -259,7 +288,7 @@ class SimpleCustomerDetailView(SalesRequiredMixin, DetailView):
         return statement
 
 
-class CustomerDetailView(SalesRequiredMixin, DetailView):
+class CustomerDetailView(CustomerVisibilityMixin, SalesRequiredMixin, DetailView):
     model = Customer
     template_name = 'customers/detail.html'
     context_object_name = 'customer'
@@ -284,11 +313,11 @@ class CRMDashboardView(SalesRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context.update(get_crm_dashboard_context())
+        context.update(get_crm_dashboard_context(user=self.request.user))
         return context
 
 
-class CustomerCRMDetailView(SalesRequiredMixin, DetailView):
+class CustomerCRMDetailView(CustomerVisibilityMixin, SalesRequiredMixin, DetailView):
     model = Customer
     template_name = 'customers/crm/detail.html'
     context_object_name = 'customer'
@@ -311,7 +340,7 @@ class CustomerInteractionListView(SalesRequiredMixin, ListView):
     paginate_by = 30
 
     def dispatch(self, request, *args, **kwargs):
-        self.customer = get_object_or_404(Customer, pk=kwargs['pk'])
+        self.customer = get_object_or_404(visible_customers_for_user(request.user, Customer.objects.all()), pk=kwargs['pk'])
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
@@ -329,7 +358,7 @@ class CustomerInteractionCreateView(SalesRequiredMixin, CreateView):
     template_name = 'customers/crm/interaction_form.html'
 
     def dispatch(self, request, *args, **kwargs):
-        self.customer = get_object_or_404(Customer, pk=kwargs['pk'])
+        self.customer = get_object_or_404(visible_customers_for_user(request.user, Customer.objects.all()), pk=kwargs['pk'])
         return super().dispatch(request, *args, **kwargs)
 
     def form_valid(self, form):
@@ -354,7 +383,7 @@ class CustomerInteractionUpdateView(SalesRequiredMixin, UpdateView):
     pk_url_kwarg = 'interaction_id'
 
     def dispatch(self, request, *args, **kwargs):
-        self.customer = get_object_or_404(Customer, pk=kwargs['pk'])
+        self.customer = get_object_or_404(visible_customers_for_user(request.user, Customer.objects.all()), pk=kwargs['pk'])
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
@@ -379,7 +408,7 @@ class CustomerInteractionDeleteView(ManagerDeleteView):
     success_message = 'تم حذف المتابعة'
 
     def dispatch(self, request, *args, **kwargs):
-        self.customer = get_object_or_404(Customer, pk=kwargs['pk'])
+        self.customer = get_object_or_404(visible_customers_for_user(request.user, Customer.objects.all()), pk=kwargs['pk'])
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
@@ -396,7 +425,7 @@ class TodayInteractionsView(SalesRequiredMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
-        return get_due_followups()
+        return get_due_followups(user=self.request.user)
 
 
 class TopCustomersReportView(SalesRequiredMixin, TemplateView):
@@ -404,7 +433,7 @@ class TopCustomersReportView(SalesRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['customers'] = get_top_customers(50)
+        context['customers'] = get_top_customers(50, user=self.request.user)
         return context
 
 
@@ -417,7 +446,7 @@ class InactiveCustomersReportView(SalesRequiredMixin, ListView):
     def get_queryset(self):
         days = int(self.request.GET.get('days') or 90)
         self.days = days
-        return get_inactive_customers(days)
+        return get_inactive_customers(days, user=self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -432,7 +461,7 @@ class DebtorsReportView(SalesRequiredMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
-        return get_customers_with_debt()
+        return get_customers_with_debt(user=self.request.user)
 
 
 class ComplaintsReportView(SalesRequiredMixin, ListView):
@@ -442,13 +471,14 @@ class ComplaintsReportView(SalesRequiredMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
-        return get_open_complaints()
+        return get_open_complaints(user=self.request.user)
 
 
 @require_POST
 @sales_required
 def complete_interaction(request, pk, interaction_id):
-    interaction = get_object_or_404(CustomerInteraction, pk=interaction_id, customer_id=pk)
+    visible_customers = visible_customers_for_user(request.user, Customer.objects.all())
+    interaction = get_object_or_404(CustomerInteraction, pk=interaction_id, customer__in=visible_customers, customer_id=pk)
     interaction.is_completed = True
     interaction.save(update_fields=['is_completed', 'updated_at'])
     messages.success(request, 'تم إكمال المتابعة')
@@ -459,7 +489,7 @@ def complete_interaction(request, pk, interaction_id):
 @sales_required
 def ajax_search_customers(request):
     q = request.GET.get('q', '').strip()
-    qs = Customer.objects.filter(is_active=True)
+    qs = visible_customers_for_user(request.user, Customer.objects.filter(is_active=True))
     if q:
         qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name'), q))
     data = [
@@ -472,10 +502,12 @@ def ajax_search_customers(request):
 @require_POST
 @sales_required
 def ajax_quick_create_customer(request):
-    form = SimpleCustomerForm(request.POST)
+    form = SimpleCustomerForm(request.POST, user=request.user)
     if form.is_valid():
         customer = form.save(commit=False)
         customer.created_by = request.user
+        if request.user.is_sales and not customer.sales_representative_id:
+            customer.sales_representative = request.user
         customer.save()
         return JsonResponse({
             'success': True,

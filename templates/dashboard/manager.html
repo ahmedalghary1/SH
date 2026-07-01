@@ -8,32 +8,32 @@
 
     <!-- أزرار سريعة -->
     <div class="quick-actions">
-        <a href="{% url 'orders:create' %}" class="quick-action-btn primary">
-            <svg class="ui-icon"><use href="#icon-sale"></use></svg>
+        <a href="{% url 'orders:create' %}" class="quick-action-btn action-sale primary">
+            <span class="quick-action-icon"><svg class="ui-icon"><use href="#icon-receipt"></use></svg></span>
             <span>فاتورة بيع جديدة</span>
         </a>
-        <a href="{% url 'purchases:order_create' %}" class="quick-action-btn">
-            <svg class="ui-icon"><use href="#icon-box"></use></svg>
+        <a href="{% url 'purchases:order_create' %}" class="quick-action-btn action-purchase">
+            <span class="quick-action-icon"><svg class="ui-icon"><use href="#icon-shopping-bag"></use></svg></span>
             <span>شراء بضاعة</span>
         </a>
-        <a href="{% url 'finance:collection_create' %}" class="quick-action-btn">
-            <svg class="ui-icon"><use href="#icon-money"></use></svg>
+        <a href="{% url 'finance:collection_create' %}" class="quick-action-btn action-collection">
+            <span class="quick-action-icon"><svg class="ui-icon"><use href="#icon-hand-coins"></use></svg></span>
             <span>قبض</span>
         </a>
-        <a href="{% url 'orders:create' %}?document=quote" class="quick-action-btn">
-            <svg class="ui-icon"><use href="#icon-file"></use></svg>
+        <a href="{% url 'orders:create' %}?document=quote" class="quick-action-btn action-quote">
+            <span class="quick-action-icon"><svg class="ui-icon"><use href="#icon-clipboard-list"></use></svg></span>
             <span>عرض سعر</span>
         </a>
-        <a href="{% url 'finance:cash' %}" class="quick-action-btn">
-            <svg class="ui-icon"><use href="#icon-money"></use></svg>
+        <a href="{% url 'finance:cash' %}" class="quick-action-btn action-cash">
+            <span class="quick-action-icon"><svg class="ui-icon"><use href="#icon-wallet"></use></svg></span>
             <span>الخزنة</span>
         </a>
-        <a href="{% url 'customers:simple_list' %}" class="quick-action-btn">
-            <svg class="ui-icon"><use href="#icon-users"></use></svg>
+        <a href="{% url 'customers:simple_list' %}" class="quick-action-btn action-customers">
+            <span class="quick-action-icon"><svg class="ui-icon"><use href="#icon-users"></use></svg></span>
             <span>العملاء</span>
         </a>
-        <a href="{% url 'reports:daily_sales' %}" class="quick-action-btn">
-            <svg class="ui-icon"><use href="#icon-chart"></use></svg>
+        <a href="{% url 'reports:daily_sales' %}" class="quick-action-btn action-report">
+            <span class="quick-action-icon"><svg class="ui-icon"><use href="#icon-trending-up"></use></svg></span>
             <span>تقرير اليوم</span>
         </a>
     </div>
@@ -42,7 +42,7 @@
     <div class="stats-grid">
         <div class="stat-card">
             <div class="stat-icon sales">
-                <svg class="ui-icon"><use href="#icon-sale"></use></svg>
+                <svg class="ui-icon"><use href="#icon-trending-up"></use></svg>
             </div>
             <div class="stat-content">
                 <span class="stat-label">مبيعات اليوم</span>
@@ -52,7 +52,7 @@
 
         <div class="stat-card">
             <div class="stat-icon invoices">
-                <svg class="ui-icon"><use href="#icon-invoice"></use></svg>
+                <svg class="ui-icon"><use href="#icon-receipt"></use></svg>
             </div>
             <div class="stat-content">
                 <span class="stat-label">عدد الفواتير</span>
@@ -62,7 +62,7 @@
 
         <div class="stat-card">
             <div class="stat-icon stock">
-                <svg class="ui-icon"><use href="#icon-warehouse"></use></svg>
+                <svg class="ui-icon"><use href="#icon-alert-triangle"></use></svg>
             </div>
             <div class="stat-content">
                 <span class="stat-label">المنتجات الناقصة</span>
@@ -73,7 +73,7 @@
         {% if can_view_costs %}
         <div class="stat-card">
             <div class="stat-icon cash">
-                <svg class="ui-icon"><use href="#icon-money"></use></svg>
+                <svg class="ui-icon"><use href="#icon-wallet"></use></svg>
             </div>
             <div class="stat-content">
                 <span class="stat-label">رصيد الخزنة</span>
@@ -95,7 +95,7 @@
         {% if can_view_costs %}
         <div class="stat-card">
             <div class="stat-icon profit">
-                <svg class="ui-icon"><use href="#icon-chart"></use></svg>
+                <svg class="ui-icon"><use href="#icon-trending-up"></use></svg>
             </div>
             <div class="stat-content">
                 <span class="stat-label">صافي الربح</span>

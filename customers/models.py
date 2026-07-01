@@ -34,12 +34,21 @@ class Customer(models.Model):
     notes = models.TextField(blank=True, null=True)
     is_active = models.BooleanField(default=True, db_index=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    sales_representative = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_customers',
+        db_index=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
         indexes = [
             models.Index(fields=['phone']),
             models.Index(fields=['name', 'phone']),
+            models.Index(fields=['sales_representative', 'is_active']),
             models.Index(fields=['created_at']),
         ]
 

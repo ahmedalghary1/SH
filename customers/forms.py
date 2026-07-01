@@ -1,16 +1,19 @@
 from django import forms
 
+from accounts.models import User
+
 from .models import Customer, CustomerInteraction
 
 
 class CustomerForm(forms.ModelForm):
     class Meta:
         model = Customer
-        fields = ('name', 'customer_type', 'phone', 'address', 'notes', 'credit_limit', 'opening_balance')
+        fields = ('name', 'customer_type', 'phone', 'sales_representative', 'address', 'notes', 'credit_limit', 'opening_balance')
         labels = {
             'name': 'اسم العميل',
             'customer_type': 'نوع العميل',
             'phone': 'الهاتف',
+            'sales_representative': 'مسؤول المبيعات',
             'address': 'العنوان',
             'notes': 'ملاحظات',
             'credit_limit': 'حد الائتمان',
@@ -33,9 +36,17 @@ class CustomerForm(forms.ModelForm):
             (Customer.TYPE_WHOLESALE, 'جملة'),
             (Customer.TYPE_B2B, 'شركة'),
         )
+        self.fields['sales_representative'].required = False
+        self.fields['sales_representative'].empty_label = 'بدون مسؤول محدد'
+        self.fields['sales_representative'].queryset = User.objects.filter(
+            role=User.ROLE_SALES,
+            is_active=True,
+        ).order_by('username')
         
         # Hide financial fields for non-manager users
         if user and not user.is_manager and not user.is_superuser:
+            if 'sales_representative' in self.fields:
+                del self.fields['sales_representative']
             if 'credit_limit' in self.fields:
                 del self.fields['credit_limit']
             if 'opening_balance' in self.fields:
@@ -45,11 +56,12 @@ class CustomerForm(forms.ModelForm):
 class SimpleCustomerForm(forms.ModelForm):
     class Meta:
         model = Customer
-        fields = ('name', 'customer_type', 'phone', 'opening_balance', 'address', 'notes')
+        fields = ('name', 'customer_type', 'phone', 'sales_representative', 'opening_balance', 'address', 'notes')
         labels = {
             'name': 'اسم العميل',
             'customer_type': 'نوع العميل',
             'phone': 'الهاتف',
+            'sales_representative': 'مسؤول المبيعات',
             'opening_balance': 'الرصيد الافتتاحي',
             'address': 'العنوان',
             'notes': 'ملاحظات',
@@ -62,13 +74,21 @@ class SimpleCustomerForm(forms.ModelForm):
             'notes': forms.Textarea(attrs={'placeholder': 'ملاحظات', 'rows': 3}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['customer_type'].choices = (
             (Customer.TYPE_RETAIL, 'قطاعي'),
             (Customer.TYPE_WHOLESALE, 'جملة'),
             (Customer.TYPE_B2B, 'شركة'),
         )
+        self.fields['sales_representative'].required = False
+        self.fields['sales_representative'].empty_label = 'بدون مسؤول محدد'
+        self.fields['sales_representative'].queryset = User.objects.filter(
+            role=User.ROLE_SALES,
+            is_active=True,
+        ).order_by('username')
+        if user and not user.is_manager and not user.is_superuser:
+            del self.fields['sales_representative']
 
 
 class CustomerInteractionForm(forms.ModelForm):

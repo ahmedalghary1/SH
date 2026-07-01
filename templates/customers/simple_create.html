@@ -35,6 +35,16 @@
                 {% endif %}
             </div>
 
+            {% if form.sales_representative %}
+            <div class="form-group">
+                <label for="{{ form.sales_representative.id_for_label }}">مسؤول المبيعات</label>
+                {{ form.sales_representative }}
+                {% if form.sales_representative.errors %}
+                    <div class="error-message">{{ form.sales_representative.errors }}</div>
+                {% endif %}
+            </div>
+            {% endif %}
+
             <div class="form-group">
                 <label for="{{ form.opening_balance.id_for_label }}">الرصيد الافتتاحي</label>
                 {{ form.opening_balance }}

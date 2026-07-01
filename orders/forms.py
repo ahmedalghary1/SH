@@ -1,6 +1,7 @@
 from django import forms
 from django.core.exceptions import ValidationError
 
+from customers.services import visible_customers_for_user
 from inventory.models import Warehouse
 
 from .models import Order
@@ -35,6 +36,7 @@ class OrderForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['customer'].required = False
+        self.fields['customer'].queryset = visible_customers_for_user(user, self.fields['customer'].queryset)
         self.fields['warehouse'].required = False
         # Set default document type to sale and hide it
         self.fields['document_type'].initial = self.initial.get('document_type', Order.DOCUMENT_SALE)

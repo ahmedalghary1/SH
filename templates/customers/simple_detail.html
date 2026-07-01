@@ -38,6 +38,10 @@
     <!-- آخر العمليات -->
     <div class="last-operations">
         <div class="operation-card">
+            <span class="operation-label">مسؤول المبيعات</span>
+            <strong class="operation-value">{{ customer.sales_representative|default:'-' }}</strong>
+        </div>
+        <div class="operation-card">
             <span class="operation-label">آخر فاتورة</span>
             <strong class="operation-value">
                 {% if summary.last_order %}

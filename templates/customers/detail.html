@@ -16,6 +16,7 @@
 <section class="card detail-grid">
     <div><span>نوع العميل</span><strong>{{ customer.get_customer_type_display }}</strong></div>
     <div><span>الهاتف</span><strong>{{ customer.phone }}</strong></div>
+    <div><span>مسؤول المبيعات</span><strong>{{ customer.sales_representative|default:'-' }}</strong></div>
     <div><span>العنوان</span><strong>{{ customer.address|default:'-' }}</strong></div>
     <div><span>الحالة</span><strong>{% if customer.is_active %}نشط{% else %}متوقف{% endif %}</strong></div>
 </section>

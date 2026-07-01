@@ -17,6 +17,7 @@ from config.exports import ExportListMixin
 from config.ratelimit import RateLimitExceeded, rate_limit
 from config.search import arabic_search_q
 from customers.models import Customer
+from customers.services import visible_customers_for_user
 from invoices.services import generate_invoice
 from inventory.models import Stock, StockBatch, Warehouse
 from products.models import Product, ProductVariant
@@ -474,7 +475,7 @@ def ajax_get_variant_price(request, variant_id):
     order_type = request.GET.get('order_type', Order.TYPE_B2C)
     customer_id = request.GET.get('customer_id')
     variant = get_object_or_404(_available_variants_for_user(request.user).select_related('product'), pk=variant_id)
-    customer = Customer.objects.filter(pk=customer_id).first() if customer_id else None
+    customer = visible_customers_for_user(request.user, Customer.objects.filter(pk=customer_id)).first() if customer_id else None
     price = get_price_for_customer(variant, customer=customer, order_type=order_type)
     return JsonResponse({'success': True, 'message': 'تم جلب السعر', 'data': {'price': str(price)}})
 
@@ -487,7 +488,7 @@ def ajax_search_customers(request):
     except RateLimitExceeded:
         return JsonResponse({'success': False, 'message': 'تجاوزت الحد المسموح من الطلبات. يرجى المحاولة مرة أخرى بعد دقيقة.'}, status=429)
     q = request.GET.get('q', '').strip()
-    qs = Customer.objects.filter(is_active=True)
+    qs = visible_customers_for_user(request.user, Customer.objects.filter(is_active=True))
     if q:
         qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name'), q))
     data = [{'id': c.id, 'name': c.name, 'phone': c.phone, 'customer_type': c.customer_type} for c in qs[:10]]
@@ -507,7 +508,8 @@ def ajax_calculate_order_totals(request):
         paid_amount = Decimal(str(payload.get('paid_amount', 0)))
         order_discount_amount = Decimal(str(payload.get('discount_amount', payload.get('discount', 0))))
         order_discount_percentage = Decimal(str(payload.get('discount_percentage', 0)))
-        customer = Customer.objects.filter(pk=payload.get('customer_id')).first()
+        customer_id = payload.get('customer_id')
+        customer = visible_customers_for_user(request.user, Customer.objects.filter(pk=customer_id)).first() if customer_id else None
         order_type = payload.get('order_type', Order.TYPE_B2C)
     except (json.JSONDecodeError, ValueError):
         return JsonResponse({'success': False, 'message': 'بيانات غير صحيحة', 'errors': {}}, status=400)
