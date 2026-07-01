@@ -395,6 +395,24 @@ class OrderStatusUpdateView(RoleRequiredMixin, View):
         return redirect('orders:detail', pk=pk)
 
 
+class SuspendedOrderDeleteView(SalesRequiredMixin, View):
+    def get_queryset(self):
+        qs = Order.objects.filter(
+            document_type=Order.DOCUMENT_SALE,
+            paid_amount=0,
+            status=Order.STATUS_DRAFT,
+        )
+        if self.request.user.role == 'sales' and not self.request.user.is_superuser:
+            qs = qs.filter(created_by=self.request.user)
+        return qs
+
+    def post(self, request, pk):
+        order = get_object_or_404(self.get_queryset(), pk=pk)
+        order.delete()
+        messages.success(request, 'تم حذف الفاتورة المعلقة')
+        return redirect('orders:create')
+
+
 class OrderDeleteView(ManagerDeleteView):
     model = Order
     success_url = reverse_lazy('orders:list')

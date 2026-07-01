@@ -386,6 +386,48 @@ class OrderCreateViewTests(TestCase):
         self.assertEqual(order.items.count(), 1)
         self.assertFalse(PaymentTransaction.objects.filter(related_order=order).exists())
 
+    def test_sales_rep_can_delete_own_suspended_invoice(self):
+        self.client.force_login(self.sales)
+        order = Order.objects.create(
+            order_number='DRAFT-DELETE-001',
+            document_type=Order.DOCUMENT_SALE,
+            order_type=Order.TYPE_B2C,
+            warehouse=self.warehouse,
+            status=Order.STATUS_DRAFT,
+            created_by=self.sales,
+        )
+        OrderItem.objects.create(
+            order=order,
+            variant=self.variant,
+            warehouse=self.warehouse,
+            quantity=1,
+            unit_price=Decimal('300.00'),
+            total=Decimal('300.00'),
+        )
+
+        response = self.client.post(reverse('orders:delete_draft', args=[order.pk]))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response['Location'], reverse('orders:create'))
+        self.assertFalse(Order.objects.filter(pk=order.pk).exists())
+
+    def test_sales_rep_cannot_delete_another_rep_suspended_invoice(self):
+        other_sales = User.objects.create_user(username='other-create-view-sales', password='pass', role=User.ROLE_SALES)
+        self.client.force_login(self.sales)
+        order = Order.objects.create(
+            order_number='DRAFT-DELETE-002',
+            document_type=Order.DOCUMENT_SALE,
+            order_type=Order.TYPE_B2C,
+            warehouse=self.warehouse,
+            status=Order.STATUS_DRAFT,
+            created_by=other_sales,
+        )
+
+        response = self.client.post(reverse('orders:delete_draft', args=[order.pk]))
+
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(Order.objects.filter(pk=order.pk).exists())
+
     def test_create_order_page_exposes_and_saves_discount_percentage(self):
         self.client.force_login(self.sales)
 

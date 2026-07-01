@@ -534,7 +534,22 @@
         }
     });
 
+    form.addEventListener("click", (event) => {
+        const deleteDraft = event.target.closest("[data-delete-draft]");
+        if (!deleteDraft) return;
+        if (!window.confirm("هل تريد حذف الفاتورة المعلقة؟")) {
+            event.preventDefault();
+            return;
+        }
+        form.dataset.submitIntent = "delete-draft";
+    });
+
     form.addEventListener("submit", (event) => {
+        const submitter = event.submitter;
+        if (form.dataset.submitIntent === "delete-draft" || submitter?.matches("[data-delete-draft]")) {
+            delete form.dataset.submitIntent;
+            return;
+        }
         syncInvoiceKindFields();
         if (!items.length) {
             event.preventDefault();

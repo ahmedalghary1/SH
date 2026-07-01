@@ -36,10 +36,24 @@
                 <span class="session-label">الفواتير المعلقة</span>
                 <div class="draft-tabs">
                     {% for draft in suspended_orders %}
-                        <a class="draft-tab{% if current_draft and draft.pk == current_draft.pk %} is-active{% endif %}" href="{% url 'orders:create' %}?draft={{ draft.pk }}">
-                            <strong>{{ draft.customer|default:'عميل بدون اسم' }}</strong>
-                            <small>{{ draft.items_count }} صنف - {{ draft.total|floatformat:2 }}</small>
-                        </a>
+                        <div class="draft-tab-group{% if current_draft and draft.pk == current_draft.pk %} is-active{% endif %}">
+                            <a class="draft-tab" href="{% url 'orders:create' %}?draft={{ draft.pk }}">
+                                <strong>{{ draft.customer|default:'عميل بدون اسم' }}</strong>
+                                <small>{{ draft.items_count }} صنف - {{ draft.total|floatformat:2 }}</small>
+                            </a>
+                            <button
+                                class="draft-delete"
+                                type="submit"
+                                formaction="{% url 'orders:delete_draft' draft.pk %}"
+                                formmethod="post"
+                                formnovalidate
+                                data-delete-draft
+                                title="حذف الفاتورة المعلقة"
+                                aria-label="حذف الفاتورة المعلقة {{ draft.order_number }}"
+                            >
+                                <svg class="ui-icon"><use href="#icon-close"></use></svg>
+                            </button>
+                        </div>
                     {% empty %}
                         <span class="draft-empty">لا توجد فواتير معلقة</span>
                     {% endfor %}

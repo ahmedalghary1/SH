@@ -14,6 +14,7 @@ urlpatterns = [
     path('<int:pk>/cancel/', views.OrderCancelView.as_view(), name='cancel'),
     path('<int:pk>/return/', views.OrderReturnView.as_view(), name='return'),
     path('<int:pk>/status/', views.OrderStatusUpdateView.as_view(), name='status_update'),
+    path('<int:pk>/delete-draft/', views.SuspendedOrderDeleteView.as_view(), name='delete_draft'),
     path('<int:pk>/delete/', views.OrderDeleteView.as_view(), name='delete'),
     path('ajax/search-products/', views.ajax_search_products, name='ajax_search_products'),
     path('ajax/products/<int:product_id>/variants/', views.ajax_get_product_variants, name='ajax_get_product_variants'),
