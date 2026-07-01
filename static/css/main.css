@@ -2895,6 +2895,9 @@ tbody tr:hover {
 }
 
 .quick-action-btn {
+    --action-color: var(--accent-color);
+    --action-bg: var(--accent-soft);
+    --action-border: #bfdbfe;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -2902,38 +2905,115 @@ tbody tr:hover {
     gap: var(--space-2);
     padding: var(--space-5);
     background: var(--surface-color);
-    border: 2px solid var(--border-color);
-    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-color);
+    border-radius: .5rem;
     text-decoration: none;
     color: var(--text-color);
-    transition: all 0.2s;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s, background 0.2s;
     min-height: 120px;
+    box-shadow: 0 .0625rem .125rem rgba(15, 23, 42, .04);
 }
 
 .quick-action-btn:hover {
-    border-color: var(--accent-color);
+    border-color: var(--action-border);
     transform: translateY(-2px);
-    box-shadow: var(--shadow-panel);
+    box-shadow: 0 .75rem 1.5rem rgba(15, 23, 42, .08);
 }
 
 .quick-action-btn.primary {
-    background: var(--accent-color);
-    color: white;
-    border-color: var(--accent-color);
+    border-color: var(--action-border);
 }
 
 .quick-action-btn.primary:hover {
-    background: var(--accent-strong);
+    background: linear-gradient(180deg, #fff, var(--action-bg));
+}
+
+.quick-action-icon {
+    display: grid;
+    place-items: center;
+    width: 3.25rem;
+    height: 3.25rem;
+    color: var(--action-color);
+    background: var(--action-bg);
+    border: 1px solid var(--action-border);
+    border-radius: .5rem;
+}
+
+.quick-action-btn.primary .quick-action-icon {
+    color: #fff;
+    background: var(--action-color);
+    border-color: var(--action-color);
 }
 
 .quick-action-btn .ui-icon {
-    width: 2.5rem;
-    height: 2.5rem;
+    width: 1.8rem;
+    height: 1.8rem;
+    stroke-width: 1.9;
 }
 
-.quick-action-btn span {
+.quick-action-btn > span:not(.quick-action-icon) {
     font-size: 1rem;
     font-weight: 600;
+    text-align: center;
+    line-height: 1.35;
+}
+
+.quick-action-btn.action-sale,
+.stat-icon.sales {
+    --action-color: #2563eb;
+    --action-bg: #eff6ff;
+    --action-border: #bfdbfe;
+}
+
+.quick-action-btn.action-purchase {
+    --action-color: #b45309;
+    --action-bg: #fff7ed;
+    --action-border: #fed7aa;
+}
+
+.quick-action-btn.action-collection,
+.stat-icon.cash {
+    --action-color: #047857;
+    --action-bg: #ecfdf5;
+    --action-border: #a7f3d0;
+}
+
+.quick-action-btn.action-quote {
+    --action-color: #7c3aed;
+    --action-bg: #f5f3ff;
+    --action-border: #ddd6fe;
+}
+
+.stat-icon.invoices {
+    --action-color: #d97706;
+    --action-bg: #fffbeb;
+    --action-border: #fde68a;
+}
+
+.quick-action-btn.action-cash {
+    --action-color: #0f766e;
+    --action-bg: #f0fdfa;
+    --action-border: #99f6e4;
+}
+
+.quick-action-btn.action-customers,
+.stat-icon.debt {
+    --action-color: #0e7490;
+    --action-bg: #ecfeff;
+    --action-border: #a5f3fc;
+}
+
+.quick-action-btn.action-report,
+.stat-icon.profit {
+    --action-color: #4338ca;
+    --action-bg: #eef2ff;
+    --action-border: #c7d2fe;
+}
+
+.stat-icon.stock {
+    --action-color: #dc2626;
+    --action-bg: #fef2f2;
+    --action-border: #fecaca;
 }
 
 /* Stats Grid */
@@ -2950,13 +3030,13 @@ tbody tr:hover {
     gap: var(--space-4);
     padding: var(--space-5);
     background: var(--surface-color);
-    border: 2px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    transition: all 0.2s;
+    border: 1px solid var(--border-color);
+    border-radius: .5rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .stat-card:hover {
-    border-color: var(--accent-color);
+    border-color: #cbd5e1;
     box-shadow: var(--shadow-panel);
 }
 
@@ -2966,43 +3046,17 @@ tbody tr:hover {
     justify-content: center;
     width: 3.5rem;
     height: 3.5rem;
-    border-radius: var(--radius-md);
+    border: 1px solid var(--action-border, var(--border-color));
+    border-radius: .5rem;
+    background: var(--action-bg, var(--surface-muted));
+    color: var(--action-color, var(--accent-color));
     flex-shrink: 0;
-}
-
-.stat-icon.sales {
-    background: var(--accent-soft);
-    color: var(--accent-color);
-}
-
-.stat-icon.invoices {
-    background: #fef3c7;
-    color: #d97706;
-}
-
-.stat-icon.stock {
-    background: #fee2e2;
-    color: #dc2626;
-}
-
-.stat-icon.cash {
-    background: #d1fae5;
-    color: #059669;
-}
-
-.stat-icon.debt {
-    background: #ede9fe;
-    color: #7c3aed;
-}
-
-.stat-icon.profit {
-    background: #dbeafe;
-    color: #2563eb;
 }
 
 .stat-icon .ui-icon {
     width: 1.75rem;
     height: 1.75rem;
+    stroke-width: 1.9;
 }
 
 .stat-content {
