@@ -24,7 +24,7 @@
     {% if not is_quote_mode %}
         <div class="cashier-session-bar">
             <div class="session-actions">
-                <a class="btn btn-light btn-small" href="{% url 'orders:create' %}">
+                <a class="btn btn-light btn-small" href="{% url 'orders:create' %}" data-new-invoice-link>
                     <svg class="ui-icon"><use href="#icon-plus"></use></svg>
                     فاتورة جديدة
                 </a>
@@ -204,6 +204,7 @@
                         <svg class="ui-icon"><use href="#icon-close"></use></svg>
                         إلغاء
                     </a>
+                    <button id="new-invoice-submit" name="action" value="new_invoice" type="submit" hidden></button>
                 </div>
             </section>
         </div>

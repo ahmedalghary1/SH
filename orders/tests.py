@@ -362,6 +362,30 @@ class OrderCreateViewTests(TestCase):
         self.assertEqual(order.payment_status, Order.PAYMENT_UNPAID)
         self.assertFalse(PaymentTransaction.objects.filter(related_order=order).exists())
 
+    def test_new_invoice_action_suspends_current_invoice(self):
+        self.client.force_login(self.sales)
+
+        response = self.client.post(reverse('orders:create'), {
+            'document_type': Order.DOCUMENT_SALE,
+            'order_type': Order.TYPE_B2C,
+            'warehouse': str(self.warehouse.id),
+            'payment_method': Order.METHOD_CASH,
+            'discount_amount': '0',
+            'discount_percentage': '0',
+            'items_json': (
+                f'[{{"variant_id":"{self.variant.id}","warehouse_id":"{self.warehouse.id}",'
+                '"quantity":1,"unit_price":"300.00","discount_amount":0,"discount_percentage":0}}]'
+            ),
+            'action': 'new_invoice',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response['Location'], reverse('orders:create'))
+        order = Order.objects.get()
+        self.assertEqual(order.status, Order.STATUS_DRAFT)
+        self.assertEqual(order.items.count(), 1)
+        self.assertFalse(PaymentTransaction.objects.filter(related_order=order).exists())
+
     def test_create_order_page_exposes_and_saves_discount_percentage(self):
         self.client.force_login(self.sales)
 

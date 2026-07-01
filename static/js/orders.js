@@ -27,6 +27,8 @@
     const walletFields = document.querySelectorAll(".wallet-field");
     const walletInputs = [document.getElementById("id_wallet_from_number"), document.getElementById("id_wallet_to_number")];
     const invoiceItemSearch = document.getElementById("invoice-item-search");
+    const newInvoiceLink = document.querySelector("[data-new-invoice-link]");
+    const newInvoiceSubmit = document.getElementById("new-invoice-submit");
     const initialItemsElement = document.getElementById("initial-order-items");
     const items = initialItemsElement ? JSON.parse(initialItemsElement.textContent || "[]") : [];
     if (warehouse && items.length && !warehouse.value) {
@@ -520,6 +522,16 @@
         items.splice(Number(remove.dataset.remove), 1);
         warehouse.value = items[0]?.warehouse_id || "";
         renderItems();
+    });
+
+    newInvoiceLink?.addEventListener("click", (event) => {
+        if (!items.length || !newInvoiceSubmit) return;
+        event.preventDefault();
+        if (typeof form.requestSubmit === "function") {
+            form.requestSubmit(newInvoiceSubmit);
+        } else {
+            newInvoiceSubmit.click();
+        }
     });
 
     form.addEventListener("submit", (event) => {

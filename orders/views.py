@@ -282,7 +282,7 @@ class OrderCreateView(SalesRequiredMixin, FormView):
             if order_data.get('document_type') == Order.DOCUMENT_QUOTE:
                 confirm = False
             current_draft = self.get_current_draft()
-            suspend = action in {'hold', 'draft'} and order_data.get('document_type') == Order.DOCUMENT_SALE
+            suspend = action in {'hold', 'draft', 'new_invoice'} and order_data.get('document_type') == Order.DOCUMENT_SALE
             if current_draft or suspend:
                 order = save_order_draft(
                     order=current_draft,
