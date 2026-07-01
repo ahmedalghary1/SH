@@ -6,6 +6,65 @@
         return document.getElementById(id);
     }
 
+    const productVariant = field("id_product_variant");
+    const quantity = field("id_quantity");
+    const unitCost = field("id_unit_cost");
+    const itemsJson = field("id_items_json");
+    const itemsBody = form.querySelector("[data-purchase-items-body]");
+    const totalCell = form.querySelector("[data-purchase-total]");
+    let items = [];
+    try {
+        items = itemsJson?.value ? JSON.parse(itemsJson.value || "[]") : [];
+    } catch (error) {
+        items = [];
+    }
+
+    function money(value) {
+        return Number(value || 0).toFixed(2);
+    }
+
+    function selectedText(select) {
+        const option = select?.options[select.selectedIndex];
+        return option?.textContent?.trim() || "";
+    }
+
+    function updateItemsJson() {
+        if (itemsJson) itemsJson.value = JSON.stringify(items);
+    }
+
+    function renderItems() {
+        if (!itemsBody) return;
+        itemsBody.innerHTML = "";
+        if (!items.length) {
+            itemsBody.innerHTML = '<tr class="empty-row"><td colspan="5">لم تتم إضافة أصناف بعد</td></tr>';
+        } else {
+            items.forEach((item, index) => {
+                const row = document.createElement("tr");
+                const lineTotal = Number(item.quantity || 0) * Number(item.unit_cost || 0);
+                [item.product_name || "-", item.quantity, money(item.unit_cost), money(lineTotal)].forEach((value) => {
+                    const cell = document.createElement("td");
+                    cell.textContent = value;
+                    row.appendChild(cell);
+                });
+                const actions = document.createElement("td");
+                const button = document.createElement("button");
+                button.className = "btn btn-danger btn-small";
+                button.type = "button";
+                button.dataset.removePurchaseItem = String(index);
+                button.textContent = "حذف";
+                actions.appendChild(button);
+                row.appendChild(actions);
+                itemsBody.appendChild(row);
+            });
+        }
+        if (totalCell) {
+            totalCell.textContent = money(items.reduce((sum, item) => (
+                sum + (Number(item.quantity || 0) * Number(item.unit_cost || 0))
+            ), 0));
+        }
+        updateItemsJson();
+    }
+
     function requireAny(message, ...inputs) {
         const hasValue = inputs.some((input) => String(input?.value || "").trim());
         if (!hasValue) {
@@ -35,6 +94,37 @@
             input.value = "";
             input.dispatchEvent(new Event("change", { bubbles: true }));
         });
+    }
+
+    function addPurchaseItem() {
+        const variantId = productVariant?.value || "";
+        const quantityValue = Number(quantity?.value || 0);
+        const unitCostValue = Number(unitCost?.value || 0);
+        if (!variantId) {
+            window.alert("اختر الصنف أولا");
+            productVariant?.focus({ preventScroll: true });
+            return;
+        }
+        if (!Number.isInteger(quantityValue) || quantityValue <= 0) {
+            window.alert("أدخل كمية صحيحة");
+            quantity?.focus({ preventScroll: true });
+            return;
+        }
+        if (!unitCost?.value || !Number.isFinite(unitCostValue) || unitCostValue < 0) {
+            window.alert("أدخل سعر شراء صحيح");
+            unitCost?.focus({ preventScroll: true });
+            return;
+        }
+        items.push({
+            product_variant_id: variantId,
+            product_name: selectedText(productVariant),
+            quantity: quantityValue,
+            unit_cost: unitCostValue,
+        });
+        renderItems();
+        if (productVariant) productVariant.value = "";
+        if (quantity) quantity.value = "1";
+        if (unitCost) unitCost.value = "";
     }
 
     async function postForm(endpoint, payload) {
@@ -147,6 +237,21 @@
     }
 
     form.addEventListener("click", (event) => {
+        const addItem = event.target.closest("[data-add-purchase-item]");
+        if (addItem) {
+            event.preventDefault();
+            addPurchaseItem();
+            return;
+        }
+
+        const removeItem = event.target.closest("[data-remove-purchase-item]");
+        if (removeItem) {
+            event.preventDefault();
+            items.splice(Number(removeItem.dataset.removePurchaseItem), 1);
+            renderItems();
+            return;
+        }
+
         const productButton = event.target.closest("[data-complete-quick-product]");
         if (productButton) {
             event.preventDefault();
@@ -160,4 +265,10 @@
             saveSupplier(supplierButton);
         }
     });
+
+    form.addEventListener("submit", () => {
+        updateItemsJson();
+    });
+
+    renderItems();
 })();

@@ -6,7 +6,9 @@
 
 <form method="post" class="card form-grid purchase-direct-form" data-purchase-direct-form>
     {% csrf_token %}
+    {{ form.items_json }}
     {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    {% if form.items_json.errors %}<div class="form-errors">{{ form.items_json.errors }}</div>{% endif %}
 
     <label class="quick-add-field">
         <span>{{ form.product_variant.label }}</span>
@@ -38,6 +40,10 @@
         {% if form.unit_cost.errors %}<small class="error">{{ form.unit_cost.errors|join:', ' }}</small>{% endif %}
     </label>
 
+    <div class="form-actions">
+        <button class="btn btn-light" type="button" data-add-purchase-item>إضافة للفاتورة</button>
+    </div>
+
     <label>
         <span>{{ form.warehouse.label }}</span>
         {{ form.warehouse }}
@@ -49,6 +55,30 @@
         {{ form.cash_account }}
         {% if form.cash_account.errors %}<small class="error">{{ form.cash_account.errors|join:', ' }}</small>{% endif %}
     </label>
+
+    <div class="table-wrap span-2">
+        <table>
+            <thead>
+                <tr>
+                    <th>الصنف</th>
+                    <th>الكمية</th>
+                    <th>سعر الشراء</th>
+                    <th>الإجمالي</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody data-purchase-items-body>
+                <tr class="empty-row"><td colspan="5">لم تتم إضافة أصناف بعد</td></tr>
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th colspan="3">إجمالي الفاتورة</th>
+                    <th data-purchase-total>0.00</th>
+                    <th></th>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
 
     <div class="form-actions">
         <button class="btn btn-primary" type="submit">تسجيل الشراء</button>

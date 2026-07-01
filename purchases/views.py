@@ -408,29 +408,47 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
             supplier=supplier,
         )
 
+    def build_purchase_items(self, form, supplier):
+        posted_items = form.cleaned_data.get('purchase_items') or []
+        if posted_items:
+            items = []
+            for posted in posted_items:
+                try:
+                    product_variant = ProductVariant.objects.get(pk=posted['variant_id'], is_active=True)
+                except ProductVariant.DoesNotExist:
+                    raise ValidationError('الصنف المحدد غير صحيح')
+                items.append({
+                    'product_variant': product_variant,
+                    'quantity': posted['quantity'],
+                    'unit_cost': posted['unit_cost'],
+                })
+            return items
+
+        product_variant = self.get_or_create_product_variant(form, supplier)
+        return [{
+            'product_variant': product_variant,
+            'quantity': form.cleaned_data['quantity'],
+            'unit_cost': form.cleaned_data['unit_cost'],
+        }]
+
     def form_valid(self, form):
         try:
             with transaction.atomic():
                 supplier = self.get_or_create_supplier(form)
-                product_variant = self.get_or_create_product_variant(form, supplier)
+                items = self.build_purchase_items(form, supplier)
                 po = create_purchase_order(
                     supplier=supplier,
                     status=PurchaseOrder.STATUS_ORDERED,
                     order_date=form.cleaned_data.get('order_date'),
                     expected_date=form.cleaned_data.get('expected_date'),
                     notes=form.cleaned_data.get('notes') or '',
-                    items=[{
-                        'product_variant': product_variant,
-                        'quantity': form.cleaned_data['quantity'],
-                        'unit_cost': form.cleaned_data['unit_cost'],
-                    }],
+                    items=items,
                     user=self.request.user,
                 )
-                item = po.items.first()
                 receive_purchase_order_items(
                     purchase_order=po,
                     warehouse=form.cleaned_data['warehouse'],
-                    received_items={item.pk: item.quantity},
+                    received_items={item.pk: item.quantity for item in po.items.all()},
                     user=self.request.user,
                     note=form.cleaned_data.get('notes') or '',
                 )

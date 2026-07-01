@@ -1,3 +1,6 @@
+import json
+from decimal import Decimal, InvalidOperation
+
 from django import forms
 from django.db.models import Q
 
@@ -53,6 +56,7 @@ class SimpleSupplierForm(forms.ModelForm):
 
 
 class PurchaseOrderForm(forms.Form):
+    items_json = forms.CharField(required=False, widget=forms.HiddenInput)
     supplier = forms.ModelChoiceField(queryset=Supplier.objects.filter(is_active=True), label='المورد', required=False)
     new_supplier_name = forms.CharField(required=False, label='مورد جديد')
     new_supplier_phone = forms.CharField(required=False, label='هاتف المورد')
@@ -82,8 +86,8 @@ class PurchaseOrderForm(forms.Form):
     wholesale_price = forms.DecimalField(min_value=0, required=False, label='سعر جملة')
     warehouse = forms.ModelChoiceField(queryset=Warehouse.objects.filter(is_active=True), label='مخزن الإضافة', required=False)
     cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة')
-    quantity = forms.IntegerField(min_value=1, label='الكمية')
-    unit_cost = forms.DecimalField(min_value=0, label='سعر الشراء')
+    quantity = forms.IntegerField(min_value=1, label='الكمية', required=False)
+    unit_cost = forms.DecimalField(min_value=0, label='سعر الشراء', required=False)
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
 
     def __init__(self, *args, **kwargs):
@@ -97,7 +101,20 @@ class PurchaseOrderForm(forms.Form):
             self.add_error('supplier', 'اختر المورد أو أضف مورد جديد')
         if not cleaned.get('warehouse'):
             self.add_error('warehouse', 'اختر المخزن')
+        items = self._clean_items_json(cleaned.get('items_json'))
+        if items:
+            cleaned['purchase_items'] = items
+            return cleaned
         if cleaned.get('product_variant'):
+            if not cleaned.get('quantity'):
+                self.add_error('quantity', 'أدخل الكمية')
+            if cleaned.get('unit_cost') is None:
+                self.add_error('unit_cost', 'أدخل سعر الشراء')
+            cleaned['purchase_items'] = [{
+                'variant_id': str(cleaned['product_variant'].pk),
+                'quantity': cleaned.get('quantity'),
+                'unit_cost': cleaned.get('unit_cost'),
+            }]
             return cleaned
         if not (cleaned.get('new_product_name') or '').strip():
             self.add_error('product_variant', 'اختر الصنف أو اكتب منتج جديد')
@@ -111,7 +128,52 @@ class PurchaseOrderForm(forms.Form):
             self.add_error('new_color', 'اختر اللون أو اكتب لون جديد')
         if not cleaned.get('new_size') and not (cleaned.get('new_size_name') or '').strip():
             self.add_error('new_size', 'اختر المقاس أو اكتب مقاس جديد')
+        if not cleaned.get('quantity'):
+            self.add_error('quantity', 'أدخل الكمية')
+        if cleaned.get('unit_cost') is None:
+            self.add_error('unit_cost', 'أدخل سعر الشراء')
         return cleaned
+
+    def _clean_items_json(self, raw_items):
+        if not raw_items:
+            return []
+        try:
+            posted_items = json.loads(raw_items)
+        except json.JSONDecodeError:
+            raise forms.ValidationError('بيانات الأصناف غير صحيحة')
+        if not isinstance(posted_items, list):
+            raise forms.ValidationError('بيانات الأصناف غير صحيحة')
+
+        items = []
+        for posted in posted_items:
+            if not isinstance(posted, dict):
+                raise forms.ValidationError('بيانات الأصناف غير صحيحة')
+            variant_id = str(posted.get('product_variant_id') or posted.get('variant_id') or '').strip()
+            if not variant_id:
+                raise forms.ValidationError('اختر الصنف لكل بند')
+            try:
+                quantity_decimal = Decimal(str(posted.get('quantity')))
+            except (InvalidOperation, TypeError):
+                raise forms.ValidationError('كمية الشراء غير صحيحة')
+            if not quantity_decimal.is_finite() or quantity_decimal != quantity_decimal.to_integral_value():
+                raise forms.ValidationError('كمية الشراء غير صحيحة')
+            quantity = int(quantity_decimal)
+            if quantity <= 0:
+                raise forms.ValidationError('كمية الشراء يجب أن تكون أكبر من صفر')
+            try:
+                unit_cost = Decimal(str(posted.get('unit_cost')))
+            except (InvalidOperation, TypeError):
+                raise forms.ValidationError('سعر الشراء غير صحيح')
+            if not unit_cost.is_finite():
+                raise forms.ValidationError('سعر الشراء غير صحيح')
+            if unit_cost < 0:
+                raise forms.ValidationError('سعر الشراء لا يمكن أن يكون سالبا')
+            items.append({
+                'variant_id': variant_id,
+                'quantity': quantity,
+                'unit_cost': unit_cost,
+            })
+        return items
 
 
 class PurchaseReceiveForm(forms.Form):

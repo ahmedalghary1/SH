@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -185,6 +186,38 @@ class PurchaseServiceTests(TestCase):
         self.assertEqual(variant.size.name, 'M')
         self.assertEqual(Stock.objects.get(warehouse=warehouse, variant=variant).quantity, 2)
         self.assertEqual(cash.balance, Decimal('800.00'))
+
+    def test_direct_purchase_view_accepts_multiple_items_in_one_invoice(self):
+        self.client.force_login(self.manager)
+        cash = CashAccount.objects.create(name='Multi Purchase Cash', balance=Decimal('2000.00'))
+        warehouse = Warehouse.objects.create(name='Multi Purchase Warehouse', warehouse_type=Warehouse.TYPE_MAIN)
+        product = Product.objects.create(name='Purchase Pants', sku='PUR-PANTS-001')
+        second_variant = ProductVariant.objects.create(product=product, variant_sku='PUR-PANTS-001-BLU-L')
+
+        response = self.client.post(reverse('purchases:order_create'), {
+            'supplier': self.supplier.pk,
+            'product_variant': '',
+            'warehouse': warehouse.pk,
+            'cash_account': cash.pk,
+            'quantity': '',
+            'unit_cost': '',
+            'items_json': json.dumps([
+                {'product_variant_id': self.variant.pk, 'quantity': 2, 'unit_cost': '100.00'},
+                {'product_variant_id': second_variant.pk, 'quantity': 3, 'unit_cost': '50.00'},
+            ]),
+            'notes': 'multi item purchase',
+        }, secure=True)
+
+        self.assertEqual(response.status_code, 302)
+        po = PurchaseOrder.objects.get(notes='multi item purchase')
+        cash.refresh_from_db()
+
+        self.assertEqual(po.items.count(), 2)
+        self.assertEqual(po.total_amount, Decimal('350.00'))
+        self.assertEqual(po.status, PurchaseOrder.STATUS_RECEIVED)
+        self.assertEqual(Stock.objects.get(warehouse=warehouse, variant=self.variant).quantity, 2)
+        self.assertEqual(Stock.objects.get(warehouse=warehouse, variant=second_variant).quantity, 3)
+        self.assertEqual(cash.balance, Decimal('1650.00'))
 
     def test_purchase_quick_product_ajax_creates_variant_without_warehouse(self):
         self.client.force_login(self.manager)
