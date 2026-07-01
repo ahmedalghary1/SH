@@ -5,9 +5,9 @@ from .models import Customer, CustomerInteraction
 
 @admin.register(Customer)
 class CustomerAdmin(admin.ModelAdmin):
-    list_display = ('name', 'customer_type', 'phone', 'company_name', 'credit_limit', 'opening_balance', 'is_active', 'created_by', 'created_at')
-    list_filter = ('customer_type', 'is_active', 'created_at')
-    search_fields = ('name', 'phone', 'company_name', 'tax_number')
+    list_display = ('name', 'customer_type', 'phone', 'company_name', 'sales_representative', 'credit_limit', 'opening_balance', 'is_active', 'created_by', 'created_at')
+    list_filter = ('customer_type', 'sales_representative', 'is_active', 'created_at')
+    search_fields = ('name', 'phone', 'company_name', 'tax_number', 'sales_representative__username')
 
 
 @admin.register(CustomerInteraction)

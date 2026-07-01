@@ -553,6 +553,10 @@
         payload.append("customer_type", document.getElementById("quick-customer-type").value);
         payload.append("phone", document.getElementById("quick-customer-phone").value);
         payload.append("address", document.getElementById("quick-customer-address").value);
+        const quickCustomerSalesRep = document.getElementById("quick-customer-sales-representative");
+        if (quickCustomerSalesRep) {
+            payload.append("sales_representative", quickCustomerSalesRep.value);
+        }
         const data = await fetchJson("/customers/ajax/quick-create/", {
             method: "POST",
             headers: { "X-CSRFToken": getCookie("csrftoken") },

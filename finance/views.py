@@ -325,6 +325,11 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
     form_class = CustomerCollectionForm
     success_url = reverse_lazy('finance:transactions')
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
+
     def get_initial(self):
         initial = super().get_initial()
         customer_id = self.request.GET.get('customer')

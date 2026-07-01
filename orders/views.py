@@ -11,6 +11,7 @@ from django.urls import reverse_lazy
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import DetailView, FormView, ListView, UpdateView, View
 
+from accounts.models import User
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, SalesRequiredMixin, can_view_costs, sales_required
 from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
@@ -230,6 +231,11 @@ class OrderCreateView(SalesRequiredMixin, FormView):
         context['is_quote_mode'] = self.request.GET.get('document') == 'quote' or (
             current_draft and current_draft.document_type == Order.DOCUMENT_QUOTE
         )
+        if self.request.user.is_manager or self.request.user.is_superuser:
+            context['sales_representatives'] = User.objects.filter(
+                role=User.ROLE_SALES,
+                is_active=True,
+            ).order_by('username')
         return context
 
     def get_item_warehouse(self, warehouse_id):

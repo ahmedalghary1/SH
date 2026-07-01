@@ -8,6 +8,17 @@
             <label><span>اسم العميل</span><input id="quick-customer-name"></label>
             <label><span>نوع العميل</span><select id="quick-customer-type"><option value="retail">قطاعي</option><option value="wholesale">جملة</option></select></label>
             <label><span>الهاتف</span><input id="quick-customer-phone"></label>
+            {% if sales_representatives %}
+            <label>
+                <span>مسؤول المبيعات</span>
+                <select id="quick-customer-sales-representative">
+                    <option value="">بدون مسؤول محدد</option>
+                    {% for sales_rep in sales_representatives %}
+                        <option value="{{ sales_rep.pk }}">{{ sales_rep.get_full_name|default:sales_rep.username }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            {% endif %}
             <label class="span-2"><span>العنوان</span><textarea id="quick-customer-address" rows="3"></textarea></label>
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="button" id="quick-customer-save">حفظ العميل</button></div>

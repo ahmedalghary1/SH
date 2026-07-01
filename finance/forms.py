@@ -3,6 +3,7 @@ from django.utils import timezone
 
 from accounts.models import User
 from customers.models import Customer
+from customers.services import visible_customers_for_user
 from orders.models import Order
 from purchases.models import Supplier
 
@@ -46,8 +47,11 @@ class CustomerCollectionForm(forms.Form):
     transaction_date = forms.DateField(label='تاريخ التحصيل', initial=timezone.localdate, widget=forms.DateInput(attrs={'type': 'date'}))
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        visible_customers = visible_customers_for_user(user, Customer.objects.filter(is_active=True))
+        self.fields['customer'].queryset = visible_customers
+        self.fields['order'].queryset = self.fields['order'].queryset.filter(customer__in=visible_customers)
         self.fields['cash_account'].initial = CashAccount.get_cash_drawer()
         self.fields['allowed_discount'].widget = forms.HiddenInput()
         self.fields['order'].widget = forms.HiddenInput()
