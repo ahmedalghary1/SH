@@ -13,7 +13,7 @@ class Customer(models.Model):
     TYPE_PROBLEM = 'problem_customer'
     CUSTOMER_TYPE_CHOICES = [
         (TYPE_B2C, 'عميل فردي'),
-        (TYPE_B2B, 'عميل جملة / شركة'),
+        (TYPE_B2B, 'عميل جملة تجاري'),
         (TYPE_RETAIL, 'قطاعي'),
         (TYPE_WHOLESALE, 'جملة'),
         (TYPE_INACTIVE, 'غير نشط'),

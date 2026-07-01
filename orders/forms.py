@@ -72,7 +72,7 @@ class OrderForm(forms.ModelForm):
         wallet_from = cleaned.get('wallet_from_number')
         wallet_to = cleaned.get('wallet_to_number')
         if order_type == Order.TYPE_B2B and not customer:
-            raise ValidationError('بيانات العميل مطلوبة عند البيع لشركة أو تاجر')
+            raise ValidationError('بيانات العميل مطلوبة عند البيع جملة أو لتاجر')
         if document_type == Order.DOCUMENT_QUOTE:
             return cleaned
         if payment_method == Order.METHOD_CREDIT and not customer:
