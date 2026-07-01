@@ -12,13 +12,8 @@ class Customer(models.Model):
     TYPE_POTENTIAL = 'potential'
     TYPE_PROBLEM = 'problem_customer'
     CUSTOMER_TYPE_CHOICES = [
-        (TYPE_B2C, 'عميل فردي'),
-        (TYPE_B2B, 'عميل جملة تجاري'),
         (TYPE_RETAIL, 'قطاعي'),
         (TYPE_WHOLESALE, 'جملة'),
-        (TYPE_INACTIVE, 'غير نشط'),
-        (TYPE_POTENTIAL, 'محتمل'),
-        (TYPE_PROBLEM, 'عميل يحتاج متابعة'),
     ]
 
     name = models.CharField(max_length=200, db_index=True)

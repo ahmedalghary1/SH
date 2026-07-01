@@ -34,7 +34,6 @@ class CustomerForm(forms.ModelForm):
         self.fields['customer_type'].choices = (
             (Customer.TYPE_RETAIL, 'قطاعي'),
             (Customer.TYPE_WHOLESALE, 'جملة'),
-            (Customer.TYPE_B2B, 'جملة تجاري'),
         )
         self.fields['sales_representative'].required = False
         self.fields['sales_representative'].empty_label = 'بدون مسؤول محدد'
@@ -79,7 +78,6 @@ class SimpleCustomerForm(forms.ModelForm):
         self.fields['customer_type'].choices = (
             (Customer.TYPE_RETAIL, 'قطاعي'),
             (Customer.TYPE_WHOLESALE, 'جملة'),
-            (Customer.TYPE_B2B, 'جملة تجاري'),
         )
         self.fields['sales_representative'].required = False
         self.fields['sales_representative'].empty_label = 'بدون مسؤول محدد'

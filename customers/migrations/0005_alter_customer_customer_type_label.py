@@ -3,6 +3,16 @@
 from django.db import migrations, models
 
 
+def normalize_customer_types(apps, schema_editor):
+    Customer = apps.get_model('customers', 'Customer')
+    Customer.objects.filter(customer_type__in=['b2b', 'wholesale']).update(customer_type='wholesale')
+    Customer.objects.exclude(customer_type='wholesale').update(customer_type='retail')
+
+
+def restore_legacy_customer_types(apps, schema_editor):
+    pass
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -10,18 +20,14 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.RunPython(normalize_customer_types, restore_legacy_customer_types),
         migrations.AlterField(
             model_name='customer',
             name='customer_type',
             field=models.CharField(
                 choices=[
-                    ('b2c', 'عميل فردي'),
-                    ('b2b', 'عميل جملة تجاري'),
                     ('retail', 'قطاعي'),
                     ('wholesale', 'جملة'),
-                    ('inactive', 'غير نشط'),
-                    ('potential', 'محتمل'),
-                    ('problem_customer', 'عميل يحتاج متابعة'),
                 ],
                 db_index=True,
                 default='retail',
