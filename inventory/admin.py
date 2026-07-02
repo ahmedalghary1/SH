@@ -22,5 +22,6 @@ class StockMovementAdmin(admin.ModelAdmin):
     list_display = ('movement_type', 'variant', 'from_warehouse', 'to_warehouse', 'quantity', 'created_by', 'created_at')
     list_filter = ('movement_type', 'created_at')
     search_fields = ('variant__product__name', 'variant__variant_sku')
+    
 
-# Register your models here.
+
