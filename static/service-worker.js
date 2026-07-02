@@ -1,4 +1,4 @@
-const CACHE_VERSION = "sh-pwa-v2026-07-02-06";
+const CACHE_VERSION = "sh-pwa-v2026-07-02-07";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const OFFLINE_URL = "/offline/";
@@ -21,6 +21,7 @@ const CORE_ASSETS = [
   "/static/js/pwa/sync-queue.js",
   "/static/js/pwa/sync-engine.js",
   "/static/js/pwa/offline-forms.js",
+  "/static/js/pwa/offline-list-view.js",
   "/static/images/sh-family-Logo.png",
   "/static/fonts/cairo/Cairo-400.ttf",
   "/static/fonts/cairo/Cairo-600.ttf",

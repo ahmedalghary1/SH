@@ -33,6 +33,7 @@
 {% if request.user.is_authenticated %}
 <script type="module" src="{% static 'js/pwa/sync-engine.js' %}"></script>
 <script type="module" src="{% static 'js/pwa/offline-forms.js' %}"></script>
+<script type="module" src="{% static 'js/pwa/offline-list-view.js' %}"></script>
 {% endif %}
 {% block extra_js %}{% endblock %}
 </body>

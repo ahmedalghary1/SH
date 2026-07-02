@@ -5127,3 +5127,12 @@ tbody tr:hover {
     color: var(--muted-text);
     word-break: break-word;
 }
+
+.offline-row td {
+    background: #fff7e6;
+}
+
+.offline-card {
+    border-color: #f3b44b;
+    background: #fffaf0;
+}
