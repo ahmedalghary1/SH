@@ -10,9 +10,14 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RenameIndex(
-            model_name='customer',
-            new_name='customers_c_sales_r_0449f9_idx',
-            old_name='customers_c_sales__e469cc_idx',
+        migrations.SeparateDatabaseAndState(
+            database_operations=[],
+            state_operations=[
+                migrations.RenameIndex(
+                    model_name='customer',
+                    new_name='customers_c_sales_r_0449f9_idx',
+                    old_name='customers_c_sales__e469cc_idx',
+                ),
+            ],
         ),
     ]
