@@ -12,20 +12,75 @@ import {
 } from "./db.js";
 import { processQueue } from "./sync-engine.js";
 
-function formDataToObject(formData) {
-    const data = {};
-    formData.forEach((value, key) => {
-        if (value instanceof File) return;
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-            data[key] = Array.isArray(data[key]) ? [...data[key], value] : [data[key], value];
-        } else {
-            data[key] = value;
+const SERVER_PING_URL = "/api/sync/ping/";
+const SERVER_REACHABLE_TTL = 5000;
+const SERVER_PING_TIMEOUT = 2500;
+const MAX_OFFLINE_FILE_BYTES = 5 * 1024 * 1024;
+const SERVER_ENTITY_PREFIX = {
+    sales: "order",
+    returns: "return",
+    customers: "customer",
+    products: "product",
+    stock: "stock",
+    cash: "payment",
+    driver_actions: "driver_action",
+};
+
+let serverReachableUntil = 0;
+
+function appendValue(target, key, value) {
+    if (Object.prototype.hasOwnProperty.call(target, key)) {
+        target[key] = Array.isArray(target[key]) ? [...target[key], value] : [target[key], value];
+    } else {
+        target[key] = value;
+    }
+}
+
+function fileToPayload(file) {
+    return new Promise((resolve, reject) => {
+        if (!file || !file.size) {
+            resolve(null);
+            return;
         }
+        if (file.size > MAX_OFFLINE_FILE_BYTES) {
+            reject(new Error(`File ${file.name} is larger than 5 MB and cannot be saved offline.`));
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            const dataUrl = String(reader.result || "");
+            resolve({
+                name: file.name,
+                type: file.type || "application/octet-stream",
+                size: file.size,
+                last_modified: file.lastModified || null,
+                data: dataUrl.includes(",") ? dataUrl.split(",", 2)[1] : dataUrl,
+            });
+        };
+        reader.onerror = () => reject(reader.error || new Error("Could not read offline file."));
+        reader.readAsDataURL(file);
     });
+}
+
+async function formDataToObject(formData) {
+    const data = {};
+    const files = {};
+    const fileTasks = [];
+    formData.forEach((value, key) => {
+        if (value instanceof File) {
+            fileTasks.push(fileToPayload(value).then((payload) => {
+                if (payload) appendValue(files, key, payload);
+            }));
+            return;
+        }
+        appendValue(data, key, value);
+    });
+    await Promise.all(fileTasks);
+    if (Object.keys(files).length) data._files = files;
     return data;
 }
 
-function serializeForm(form, submitter = null) {
+async function serializeForm(form, submitter = null) {
     const formData = new FormData(form);
     if (submitter?.name) {
         formData.set(submitter.name, submitter.value || "");
@@ -33,25 +88,44 @@ function serializeForm(form, submitter = null) {
     return formDataToObject(formData);
 }
 
-function hasSelectedFiles(form) {
-    return Array.from(form.querySelectorAll('input[type="file"]')).some((input) => input.files?.length);
-}
-
 function pathFromAction(action) {
     return new URL(action || window.location.href, window.location.origin).pathname;
 }
 
+function serverIdFromPath(path) {
+    const match = String(path || "").match(/\/(\d+)(?:\/|$)/);
+    return match ? match[1] : "";
+}
+
+function localUuidFor(classification, serverId) {
+    if (!serverId) return uuid();
+    const prefix = SERVER_ENTITY_PREFIX[classification.entity_name] || classification.entity_type || classification.entity_name;
+    return `server-${prefix}-${serverId}`;
+}
+
 function operationTypeForPath(path) {
-    if (path.includes("/delete/") || path.includes("delete")) return "delete";
-    if (path.includes("/update/") || path.includes("/edit/") || path.includes("/status/") || path.includes("/confirm/")) return "update";
+    if (path.includes("/delete/") || path.includes("/deactivate/") || path.includes("delete")) return "delete";
+    if (
+        path.includes("/update/")
+        || path.includes("/edit/")
+        || path.includes("/status/")
+        || path.includes("/confirm/")
+        || path.includes("/cancel/")
+        || path.includes("/return/")
+        || path.includes("/approve/")
+        || path.includes("/reject/")
+        || path.includes("/complete/")
+    ) return "update";
     return "create";
 }
 
 function classifyPath(path) {
     if (path.startsWith("/orders/")) return { entity_name: "sales", entity_type: "order", action_type: "create_invoice" };
+    if (path.startsWith("/invoices/") && path.includes("/payments/add/")) return { entity_name: "cash", entity_type: "payment", action_type: "cash_transaction" };
+    if (path.includes("/interactions/")) return null;
     if (path.startsWith("/customers/")) return { entity_name: "customers", entity_type: "customer", action_type: "save_customer" };
-    if (path.startsWith("/inventory/")) return { entity_name: "stock", entity_type: "stock", action_type: "stock_movement" };
-    if (path.startsWith("/finance/")) return { entity_name: "cash", entity_type: "payment", action_type: "cash_transaction" };
+    if (path.startsWith("/inventory/movements/")) return { entity_name: "stock", entity_type: "stock", action_type: "stock_movement" };
+    if (path.startsWith("/finance/transactions/")) return { entity_name: "cash", entity_type: "payment", action_type: "cash_transaction" };
     if (path.startsWith("/sales-reps/")) return { entity_name: "driver_actions", entity_type: "driver_action", action_type: "driver_action" };
     if (path.startsWith("/returns/")) return { entity_name: "returns", entity_type: "return", action_type: "sales_return" };
     if (path.startsWith("/products/")) return { entity_name: "products", entity_type: "product", action_type: "save_product" };
@@ -99,12 +173,14 @@ function parseItemsJson(value) {
     }
 }
 
-function customerPayload(fields, localUuid) {
+function customerPayload(fields, localUuid, serverId = "") {
     return {
         id: localUuid,
         local_uuid: localUuid,
+        server_id: serverId || fields.server_id || "",
         customer: {
             local_uuid: localUuid,
+            server_id: serverId || fields.server_id || "",
             name: fields.name || fields.customer_name || "",
             phone: fields.phone || "",
             whatsapp: fields.whatsapp || "",
@@ -125,19 +201,30 @@ function customerPayload(fields, localUuid) {
     };
 }
 
-function orderPayload(fields, path, localUuid) {
+function statusForOrderPath(path, fields = {}) {
+    if (fields.status) return fields.status;
+    if (path.includes("/confirm/")) return "confirmed";
+    if (path.includes("/cancel/")) return "cancelled";
+    if (path.includes("/return/")) return "returned";
+    return "";
+}
+
+function orderPayload(fields, path, localUuid, serverId = "") {
     const items = parseItemsJson(fields.items_json);
     return {
         id: localUuid,
         local_uuid: localUuid,
+        server_id: serverId || fields.server_id || "",
         order: {
             local_uuid: localUuid,
+            server_id: serverId || fields.server_id || "",
             customer_server_id: /^\d+$/.test(String(fields.customer || "")) ? fields.customer : "",
             customer_local_uuid: /^\d+$/.test(String(fields.customer || "")) ? "" : fields.customer || "",
             document_type: fields.document_type || "sale",
             order_type: fields.order_type || "b2c",
             payment_method: fields.payment_method || "cash",
             warehouse: fields.warehouse || "",
+            status: statusForOrderPath(path, fields),
             paid_amount: fields.paid_amount || "0",
             discount: fields.discount_amount || "0",
             discount_amount: fields.discount_amount || "0",
@@ -157,13 +244,15 @@ function orderPayload(fields, path, localUuid) {
     };
 }
 
-function genericPayload(fields, path, localUuid, entityType) {
+function genericPayload(fields, path, localUuid, entityType, serverId = "") {
     return {
         id: localUuid,
         local_uuid: localUuid,
+        server_id: serverId || fields.server_id || "",
         [entityType]: {
             ...fields,
             local_uuid: localUuid,
+            server_id: serverId || fields.server_id || "",
             updated_at: nowIso(),
         },
         form: fields,
@@ -183,10 +272,19 @@ async function applyOptimisticStockMutation(classification, payload) {
     }
     if (classification.entity_name !== "stock") return;
     const movement = payload.stock || {};
+    const path = payload.original_url || "";
     const quantity = Number(movement.quantity || 0);
     if (!quantity) return;
-    if (movement.warehouse && movement.variant) {
-        await updateStockQuantity({ variant_id: movement.variant, warehouse_id: movement.warehouse, delta: quantity });
+    if (path.includes("/transfer/") && movement.from_warehouse && movement.to_warehouse && movement.variant) {
+        await updateStockQuantity({ variant_id: movement.variant, warehouse_id: movement.from_warehouse, delta: -quantity });
+        await updateStockQuantity({ variant_id: movement.variant, warehouse_id: movement.to_warehouse, delta: quantity });
+    } else if (path.includes("/representative-issue/") && movement.from_warehouse && movement.variant) {
+        await updateStockQuantity({ variant_id: movement.variant, warehouse_id: movement.from_warehouse, delta: -quantity });
+    } else if (path.includes("/representative-return/") && movement.to_warehouse && movement.variant) {
+        await updateStockQuantity({ variant_id: movement.variant, warehouse_id: movement.to_warehouse, delta: quantity });
+    } else if (movement.warehouse && movement.variant) {
+        const delta = path.includes("/out/") ? -quantity : quantity;
+        await updateStockQuantity({ variant_id: movement.variant, warehouse_id: movement.warehouse, delta });
     }
 }
 
@@ -196,19 +294,21 @@ async function queueFormSubmission(form, submitter = null) {
     const classification = classifyPath(path);
     if (!classification) return false;
 
-    const fields = serializeForm(form, submitter);
-    const localUuid = uuid();
+    const fields = await serializeForm(form, submitter);
+    const serverId = serverIdFromPath(path);
+    const localUuid = localUuidFor(classification, serverId);
     const operationType = operationTypeForPath(path);
     let payload;
     if (classification.entity_name === "customers") {
-        payload = customerPayload(fields, localUuid);
+        payload = customerPayload(fields, localUuid, serverId);
     } else if (classification.entity_name === "sales") {
-        payload = orderPayload(fields, path, localUuid);
+        payload = orderPayload(fields, path, localUuid, serverId);
     } else {
-        payload = genericPayload(fields, path, localUuid, classification.entity_type);
+        payload = genericPayload(fields, path, localUuid, classification.entity_type, serverId);
     }
     payload.source = "pwa-form";
     payload.original_url = path;
+    payload.server_id = serverId || payload.server_id || "";
 
     await applyOptimisticStockMutation(classification, payload);
     await queueEntityOperation(classification.entity_name, classification.action_type, payload, {
@@ -229,7 +329,7 @@ function shouldCaptureForm(form) {
 
 async function handleQuickCustomer(options = {}) {
     const body = options.body instanceof FormData ? options.body : new FormData();
-    const fields = formDataToObject(body);
+    const fields = await formDataToObject(body);
     const localUuid = uuid();
     const payload = customerPayload(fields, localUuid);
     payload.source = "pwa-ajax";
@@ -250,6 +350,62 @@ async function handleQuickCustomer(options = {}) {
             customer_type: payload.customer.customer_type,
         },
     };
+}
+
+async function isServerReachable() {
+    if (!navigator.onLine) return false;
+    if (Date.now() < serverReachableUntil) return true;
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), SERVER_PING_TIMEOUT);
+    try {
+        const response = await fetch(`${SERVER_PING_URL}?t=${Date.now()}`, {
+            cache: "no-store",
+            credentials: "same-origin",
+            headers: { Accept: "application/json" },
+            signal: controller.signal,
+        });
+        const reachable = response.ok;
+        if (reachable) serverReachableUntil = Date.now() + SERVER_REACHABLE_TTL;
+        return reachable;
+    } catch (error) {
+        return false;
+    } finally {
+        window.clearTimeout(timeout);
+    }
+}
+
+function submitNormally(form, submitter = null) {
+    const original = {
+        action: form.getAttribute("action"),
+        method: form.getAttribute("method"),
+        enctype: form.getAttribute("enctype"),
+        target: form.getAttribute("target"),
+    };
+    const hidden = [];
+
+    if (submitter) {
+        if (submitter.hasAttribute("formaction")) form.action = submitter.formAction;
+        if (submitter.hasAttribute("formmethod")) form.method = submitter.formMethod;
+        if (submitter.hasAttribute("formenctype")) form.enctype = submitter.formEnctype;
+        if (submitter.hasAttribute("formtarget")) form.target = submitter.formTarget;
+        if (submitter.name) {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = submitter.name;
+            input.value = submitter.value || "";
+            form.appendChild(input);
+            hidden.push(input);
+        }
+    }
+
+    HTMLFormElement.prototype.submit.call(form);
+
+    hidden.forEach((input) => input.remove());
+    Object.entries(original).forEach(([key, value]) => {
+        if (value === null) form.removeAttribute(key);
+        else form.setAttribute(key, value);
+    });
 }
 
 export async function handleJsonRequest(url, options = {}) {
@@ -300,20 +456,23 @@ export async function handleJsonRequest(url, options = {}) {
 }
 
 document.addEventListener("submit", async (event) => {
-    if (navigator.onLine || event.defaultPrevented) return;
+    if (event.defaultPrevented) return;
     const form = event.target;
     if (!(form instanceof HTMLFormElement) || !shouldCaptureForm(form)) return;
 
     event.preventDefault();
-    if (hasSelectedFiles(form)) {
-        showOfflineNotice("This form contains files and cannot be saved offline.", true);
+    const submitter = event.submitter;
+
+    if (await isServerReachable()) {
+        submitNormally(form, submitter);
         return;
     }
+
     try {
-        const queued = await queueFormSubmission(form, event.submitter);
+        const queued = await queueFormSubmission(form, submitter);
         if (queued) {
             form.dataset.offlineQueued = "true";
-            showOfflineNotice("Offline operation saved. It will sync automatically.");
+            showOfflineNotice("Saved offline. It will sync automatically when the server is available.");
         }
     } catch (error) {
         showOfflineNotice(`Offline save failed: ${error.message || error}`, true);

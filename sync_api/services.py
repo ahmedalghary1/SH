@@ -1,7 +1,10 @@
+import base64
+import binascii
 import hashlib
 import json
 from decimal import Decimal
 
+from django.core.files.base import ContentFile
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
@@ -15,14 +18,17 @@ from finance.services import (
     collect_customer_balance_payment,
     collect_order_payment,
     record_customer_refund_payment,
+    record_supplier_payment,
     record_transaction,
     transfer_between_accounts,
 )
 from inventory.models import Stock, StockMovement, Warehouse
 from inventory.services import adjust_stock, stock_in, stock_out, transfer_stock
+from invoices.models import Invoice
 from orders.models import Order, OrderItem
-from orders.services import create_order
-from products.models import Product, ProductVariant
+from orders.services import cancel_order, confirm_order, create_order, return_order
+from products.models import Category, Color, Product, ProductVariant, Size
+from purchases.models import Supplier
 from returns.models import SalesReturn
 from returns.services import add_exchange_item, add_return_item, create_sales_return
 from sales_reps import services as sales_rep_services
@@ -377,9 +383,19 @@ def process_order(operation, user):
     if existing_order is not None and operation.get('operation_type') != 'create':
         if _server_is_newer(existing_order, local_timestamp):
             return response_success(operation['local_uuid'], existing_order.pk, 'Order', resolution='server_newer_ignored')
+        requested_status = order_data.get('status')
+        if requested_status == Order.STATUS_CONFIRMED and existing_order.status == Order.STATUS_DRAFT:
+            confirm_order(order=existing_order, user=user)
+            return response_success(operation['local_uuid'], existing_order.pk, 'Order', resolution='local_applied')
+        if requested_status == Order.STATUS_CANCELLED:
+            cancel_order(order=existing_order, user=user)
+            return response_success(operation['local_uuid'], existing_order.pk, 'Order', resolution='local_applied')
+        if requested_status == Order.STATUS_RETURNED:
+            return_order(order=existing_order, user=user)
+            return response_success(operation['local_uuid'], existing_order.pk, 'Order', resolution='local_applied')
         existing_order.notes = order_data.get('notes') or existing_order.notes
-        if order_data.get('status') in dict(Order.STATUS_CHOICES):
-            existing_order.status = order_data['status']
+        if requested_status in dict(Order.STATUS_CHOICES):
+            existing_order.status = requested_status
         existing_order.save(update_fields=['notes', 'status', 'updated_at'])
         return response_success(operation['local_uuid'], existing_order.pk, 'Order', resolution='local_applied')
 
@@ -457,7 +473,27 @@ def process_payment(operation, user):
         )
         return response_success(operation['local_uuid'], out_tx.pk, 'PaymentTransaction', resolution='local_applied')
 
+    if 'supplier-payment' in path:
+        supplier = _model_by_pk(Supplier, payment.get('supplier'))
+        if supplier is None:
+            raise ValidationError('Cannot sync supplier payment without a supplier')
+        tx = record_supplier_payment(
+            supplier=supplier,
+            amount=amount,
+            user=user,
+            cash_account=cash_account,
+            notes=payment.get('notes') or '',
+            transaction_date=transaction_date,
+        )
+        return response_success(operation['local_uuid'], tx.pk, 'PaymentTransaction', resolution='local_applied')
+
     order_id = payment.get('order_server_id') or payment.get('order')
+    if not order_id and '/invoices/' in path and '/payments/add/' in path:
+        parts = [part for part in path.split('/') if part]
+        invoice_id = parts[1] if len(parts) > 1 and parts[0] == 'invoices' else None
+        invoice = _model_by_pk(Invoice, invoice_id)
+        if invoice:
+            order_id = invoice.order_id
     if not _is_int(order_id) and payment.get('order_local_uuid'):
         order_id = _find_synced_object_id(device_id=operation.get('device_id') or '', entity_type='order', local_uuid=payment['order_local_uuid'])
     customer = _customer_from_payload(payment, operation.get('device_id') or '')
@@ -585,7 +621,7 @@ def process_stock(operation, user):
     quantity = int(data.get('quantity') or 0)
     note = data.get('note') or data.get('notes') or ''
 
-    if 'stock-in' in path:
+    if 'stock-in' in path or '/movements/in/' in path:
         movement = stock_in(
             variant=variant,
             warehouse=Warehouse.objects.get(pk=data.get('warehouse')),
@@ -593,7 +629,7 @@ def process_stock(operation, user):
             user=user,
             note=note,
         )
-    elif 'stock-out' in path:
+    elif 'stock-out' in path or '/movements/out/' in path:
         movement = stock_out(
             variant=variant,
             warehouse=Warehouse.objects.get(pk=data.get('warehouse')),
@@ -647,12 +683,355 @@ def process_stock(operation, user):
     return response_success(operation['local_uuid'], movement.pk, 'StockMovement', resolution='local_applied')
 
 
+def _first_value(value, default=''):
+    if isinstance(value, list):
+        for item in value:
+            if item not in (None, ''):
+                return item
+        return default
+    return default if value is None else value
+
+
+def _list_values(value):
+    if isinstance(value, list):
+        return [item for item in value if item not in (None, '')]
+    if value in (None, ''):
+        return []
+    return [value]
+
+
+def _decimal_value(value, default='0'):
+    return Decimal(str(_first_value(value, default) or default))
+
+
+def _int_value(value, default=0):
+    return int(_first_value(value, default) or default)
+
+
+def _bool_value(value, default=True):
+    raw = _first_value(value, default)
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _related_by_id(model, value):
+    return _model_by_pk(model, _first_value(value))
+
+
+def _file_payload(data, field_name='image', index=0):
+    files = data.get('_files') or {}
+    payload = files.get(field_name)
+    if isinstance(payload, list):
+        payload = payload[index] if len(payload) > index else None
+    if not isinstance(payload, dict) or not payload.get('data'):
+        return None
+    name = str(payload.get('name') or f'offline-{timezone.now().timestamp()}').replace('\\', '/').split('/')[-1]
+    try:
+        content = base64.b64decode(payload['data'])
+    except (TypeError, ValueError, binascii.Error):
+        return None
+    return name, ContentFile(content)
+
+
+def _save_payload_file(instance, field_name, file_payload):
+    if not file_payload:
+        return False
+    name, content = file_payload
+    getattr(instance, field_name).save(name, content, save=False)
+    return True
+
+
+def _category_from_product_data(data):
+    category = _related_by_id(Category, data.get('category'))
+    new_name = str(_first_value(data.get('new_category_name')) or '').strip()
+    if category is None and new_name:
+        category, _ = Category.objects.get_or_create(name=new_name, defaults={'is_active': True})
+    return category
+
+
+def _supplier_from_product_data(data):
+    return _related_by_id(Supplier, data.get('supplier'))
+
+
+def _color_from_product_data(data):
+    color = _related_by_id(Color, data.get('color'))
+    new_name = str(_first_value(data.get('new_color_name')) or '').strip()
+    if color is None and new_name:
+        color, _ = Color.objects.get_or_create(name=new_name)
+    return color
+
+
+def _size_from_product_data(data):
+    size = _related_by_id(Size, data.get('size'))
+    new_name = str(_first_value(data.get('new_size_name')) or '').strip()
+    if size is None and new_name:
+        size, _ = Size.objects.get_or_create(name=new_name, defaults={'sort_order': 0})
+    return size
+
+
+def _warehouse_from_product_data(data):
+    warehouse = _related_by_id(Warehouse, data.get('warehouse'))
+    new_name = str(_first_value(data.get('new_warehouse_name')) or '').strip()
+    if warehouse is None and new_name:
+        warehouse, _ = Warehouse.objects.get_or_create(
+            name=new_name,
+            defaults={'warehouse_type': Warehouse.TYPE_MAIN, 'is_active': True},
+        )
+    return warehouse
+
+
+def _offline_variant_sku(product, color=None, size=None):
+    base = f'{product.sku}-{getattr(color, "pk", None) or "0"}-{getattr(size, "pk", None) or "0"}'
+    sku = base
+    counter = 2
+    while ProductVariant.objects.filter(variant_sku=sku).exists():
+        sku = f'{base}-{counter}'
+        counter += 1
+    return sku
+
+
+def _has_initial_variant_data(data):
+    return any(_first_value(data.get(field)) not in ('', None) for field in (
+        'color',
+        'new_color_name',
+        'size',
+        'new_size_name',
+        'cost_price',
+        'retail_price',
+        'wholesale_price',
+    ))
+
+
+def _sync_initial_variant_and_stock(product, data, user):
+    if not _has_initial_variant_data(data):
+        return None
+    color = _color_from_product_data(data)
+    size = _size_from_product_data(data)
+    variant = ProductVariant.objects.filter(product=product, color=color, size=size).first()
+    fields = {
+        'cost_price': _decimal_value(data.get('cost_price')),
+        'retail_price': _decimal_value(data.get('retail_price')),
+        'wholesale_price': _decimal_value(data.get('wholesale_price')),
+    }
+    fields['sale_price'] = fields['retail_price']
+    if variant is None:
+        variant = ProductVariant.objects.create(
+            product=product,
+            color=color,
+            size=size,
+            variant_sku=str(_first_value(data.get('variant_sku')) or '') or _offline_variant_sku(product, color, size),
+            **fields,
+        )
+    else:
+        for field, value in fields.items():
+            setattr(variant, field, value)
+        variant.save(update_fields=[*fields.keys(), 'updated_at'])
+
+    variant_file = _file_payload(data, 'image', index=1)
+    if variant_file and _save_payload_file(variant, 'image', variant_file):
+        variant.save(update_fields=['image', 'updated_at'])
+
+    quantity = _int_value(data.get('quantity'))
+    warehouse = _warehouse_from_product_data(data)
+    if quantity > 0 and warehouse:
+        stock_in(
+            variant=variant,
+            warehouse=warehouse,
+            quantity=quantity,
+            user=user,
+            note='Offline product initial quantity',
+        )
+        stock, _ = Stock.objects.get_or_create(warehouse=warehouse, variant=variant, defaults={'quantity': 0})
+        stock.min_quantity = _int_value(data.get('min_quantity'))
+        stock.save(update_fields=['min_quantity', 'updated_at'])
+    return variant
+
+
+def _sync_product_variants_from_update(product, data):
+    for variant_id in _list_values(data.get('variant_id')):
+        variant = ProductVariant.objects.filter(pk=variant_id, product=product).first()
+        if variant is None:
+            continue
+        changed = []
+        retail_price = data.get(f'variant_{variant_id}_retail_price')
+        wholesale_price = data.get(f'variant_{variant_id}_wholesale_price')
+        if retail_price not in (None, ''):
+            variant.retail_price = _decimal_value(retail_price)
+            variant.sale_price = variant.retail_price
+            changed.extend(['retail_price', 'sale_price'])
+        if wholesale_price not in (None, ''):
+            variant.wholesale_price = _decimal_value(wholesale_price)
+            changed.append('wholesale_price')
+        if changed:
+            variant.save(update_fields=[*set(changed), 'updated_at'])
+
+
+def _sync_product_stock_from_update(product, data, user):
+    for stock_id in _list_values(data.get('stock_id')):
+        stock = Stock.objects.select_related('warehouse', 'variant').filter(pk=stock_id, variant__product=product).first()
+        if stock is None:
+            continue
+        target_warehouse = _related_by_id(Warehouse, data.get(f'stock_{stock_id}_warehouse')) or stock.warehouse
+        quantity = _int_value(data.get(f'stock_{stock_id}_quantity'), stock.quantity)
+        min_quantity = _int_value(data.get(f'stock_{stock_id}_min_quantity'), stock.min_quantity)
+        if target_warehouse != stock.warehouse and stock.quantity > 0:
+            transfer_stock(
+                variant=stock.variant,
+                from_warehouse=stock.warehouse,
+                to_warehouse=target_warehouse,
+                quantity=stock.quantity,
+                user=user,
+                note=f'Offline product stock warehouse change {product.sku}',
+            )
+            stock = Stock.objects.filter(warehouse=target_warehouse, variant=stock.variant).first() or stock
+        if stock.quantity != quantity:
+            adjust_stock(
+                variant=stock.variant,
+                warehouse=target_warehouse,
+                new_quantity=quantity,
+                user=user,
+                note=f'Offline product stock quantity change {product.sku}',
+            )
+            stock.refresh_from_db()
+        stock.min_quantity = min_quantity
+        stock.save(update_fields=['min_quantity', 'updated_at'])
+
+
+def _process_category(operation, data):
+    category = _related_by_id(Category, data.get('server_id') or data.get('id'))
+    if operation.get('operation_type') == 'delete':
+        if category is None:
+            return response_success(operation['local_uuid'], None, 'Category', resolution='server_deleted')
+        category.is_active = False
+        category.save(update_fields=['is_active'])
+        return response_success(operation['local_uuid'], category.pk, 'Category', resolution='local_deleted')
+    fields = {
+        'name': _first_value(data.get('name')) or 'Offline category',
+        'is_active': _bool_value(data.get('is_active'), True),
+    }
+    if category is None:
+        category = Category.objects.create(**fields)
+    else:
+        for field, value in fields.items():
+            setattr(category, field, value)
+        category.save(update_fields=list(fields.keys()))
+    return response_success(operation['local_uuid'], category.pk, 'Category', resolution='local_applied')
+
+
+def _process_color(operation, data):
+    color = _related_by_id(Color, data.get('server_id') or data.get('id'))
+    name = _first_value(data.get('name')) or 'Offline color'
+    if color is None and name:
+        color = Color.objects.filter(name=name).first()
+    if operation.get('operation_type') == 'delete':
+        return response_success(operation['local_uuid'], getattr(color, 'pk', None), 'Color', resolution='server_deleted')
+    fields = {
+        'name': name,
+        'hex_code': _first_value(data.get('hex_code')) or None,
+    }
+    if color is None:
+        color = Color.objects.create(**fields)
+    else:
+        for field, value in fields.items():
+            setattr(color, field, value)
+        color.save(update_fields=list(fields.keys()))
+    return response_success(operation['local_uuid'], color.pk, 'Color', resolution='local_applied')
+
+
+def _process_size(operation, data):
+    size = _related_by_id(Size, data.get('server_id') or data.get('id'))
+    name = _first_value(data.get('name')) or 'Offline size'
+    if size is None and name:
+        size = Size.objects.filter(name=name).first()
+    if operation.get('operation_type') == 'delete':
+        return response_success(operation['local_uuid'], getattr(size, 'pk', None), 'Size', resolution='server_deleted')
+    fields = {
+        'name': name,
+        'sort_order': _int_value(data.get('sort_order')),
+    }
+    if size is None:
+        size = Size.objects.create(**fields)
+    else:
+        for field, value in fields.items():
+            setattr(size, field, value)
+        size.save(update_fields=list(fields.keys()))
+    return response_success(operation['local_uuid'], size.pk, 'Size', resolution='local_applied')
+
+
+def _process_product_variant(operation, data):
+    variant = _related_by_id(ProductVariant, data.get('server_id') or data.get('id'))
+    if operation.get('operation_type') == 'delete':
+        if variant is None:
+            return response_success(operation['local_uuid'], None, 'ProductVariant', resolution='server_deleted')
+        variant.is_active = False
+        variant.save(update_fields=['is_active', 'updated_at'])
+        return response_success(operation['local_uuid'], variant.pk, 'ProductVariant', resolution='local_deleted')
+
+    product = _related_by_id(Product, data.get('product')) or getattr(variant, 'product', None)
+    if product is None:
+        raise ValidationError('Cannot sync product variant without a product')
+    color = _color_from_product_data(data)
+    size = _size_from_product_data(data)
+    fields = {
+        'product': product,
+        'color': color,
+        'size': size,
+        'cost_price': _decimal_value(data.get('cost_price')),
+        'retail_price': _decimal_value(data.get('retail_price')),
+        'wholesale_price': _decimal_value(data.get('wholesale_price')),
+        'is_active': _bool_value(data.get('is_active'), True),
+    }
+    fields['sale_price'] = fields['retail_price']
+    if variant is None:
+        variant = ProductVariant.objects.create(
+            variant_sku=str(_first_value(data.get('variant_sku')) or '') or _offline_variant_sku(product, color, size),
+            **fields,
+        )
+    else:
+        for field, value in fields.items():
+            setattr(variant, field, value)
+        variant.save(update_fields=[*fields.keys(), 'sale_price', 'updated_at'])
+    if _save_payload_file(variant, 'image', _file_payload(data, 'image', index=0)):
+        variant.save(update_fields=['image', 'updated_at'])
+    return response_success(operation['local_uuid'], variant.pk, 'ProductVariant', resolution='local_applied')
+
+
+def _process_bulk_price_update(operation, data):
+    updated = 0
+    for variant_id in _list_values(data.get('variant_id')):
+        variant = _related_by_id(ProductVariant, variant_id)
+        if variant is None:
+            continue
+        price = data.get(f'price_{variant_id}')
+        if price in (None, ''):
+            continue
+        variant.sale_price = _decimal_value(price)
+        variant.retail_price = variant.sale_price
+        variant.save(update_fields=['sale_price', 'retail_price', 'updated_at'])
+        updated += 1
+    return response_success(operation['local_uuid'], None, 'ProductVariant', updated=updated, resolution='local_applied')
+
+
 @transaction.atomic
 def process_product(operation, user):
-    product_data = operation['payload'].get('product') or _form_payload(operation)
+    payload = operation.get('payload') or {}
+    product_data = payload.get('product') or _form_payload(operation)
+    path = payload.get('original_url') or ''
+    if '/products/bulk-price-update/' in path:
+        return _process_bulk_price_update(operation, product_data)
+    if '/products/categories/' in path:
+        return _process_category(operation, product_data)
+    if '/products/colors/' in path:
+        return _process_color(operation, product_data)
+    if '/products/sizes/' in path:
+        return _process_size(operation, product_data)
+    if '/products/variants/' in path:
+        return _process_product_variant(operation, product_data)
+
     local_timestamp = _payload_timestamp(operation, product_data)
-    product = _model_by_pk(Product, product_data.get('server_id') or product_data.get('id'))
-    sku = product_data.get('sku') or product_data.get('product_sku')
+    product = _model_by_pk(Product, _first_value(product_data.get('server_id') or product_data.get('id')))
+    sku = str(_first_value(product_data.get('sku') or product_data.get('product_sku')) or '').strip()
     if product is None and sku:
         product = Product.objects.filter(sku=sku).first()
     if operation.get('operation_type') == 'delete':
@@ -665,16 +1044,42 @@ def process_product(operation, user):
         return response_success(operation['local_uuid'], product.pk, 'Product', resolution='server_newer_ignored')
     if product is None:
         product = Product.objects.create(
-            name=product_data.get('name') or product_data.get('new_product_name') or 'Offline product',
+            name=_first_value(product_data.get('name') or product_data.get('new_product_name')) or 'Offline product',
             sku=sku or f"offline-{operation['local_uuid']}",
-            retail_price=Decimal(str(product_data.get('retail_price') or 0)),
-            wholesale_price=Decimal(str(product_data.get('wholesale_price') or 0)),
+            category=_category_from_product_data(product_data),
+            supplier=_supplier_from_product_data(product_data),
+            material=_first_value(product_data.get('material')) or '',
+            pieces_per_dozen=_int_value(product_data.get('pieces_per_dozen'), 12),
+            retail_price=_decimal_value(product_data.get('retail_price')),
+            wholesale_price=_decimal_value(product_data.get('wholesale_price')),
         )
     else:
-        product.name = product_data.get('name') or product.name
-        product.retail_price = Decimal(str(product_data.get('retail_price') or product.retail_price or 0))
-        product.wholesale_price = Decimal(str(product_data.get('wholesale_price') or product.wholesale_price or 0))
-        product.save(update_fields=['name', 'retail_price', 'wholesale_price', 'updated_at'])
+        product.name = _first_value(product_data.get('name')) or product.name
+        if sku:
+            product.sku = sku
+        category = _category_from_product_data(product_data)
+        if category is not None:
+            product.category = category
+        supplier = _supplier_from_product_data(product_data)
+        if supplier is not None or 'supplier' in product_data:
+            product.supplier = supplier
+        product.material = _first_value(product_data.get('material')) or product.material
+        product.pieces_per_dozen = _int_value(product_data.get('pieces_per_dozen'), product.pieces_per_dozen)
+        product.retail_price = _decimal_value(product_data.get('retail_price'), product.retail_price)
+        product.wholesale_price = _decimal_value(product_data.get('wholesale_price'), product.wholesale_price)
+
+    update_fields = [
+        'name', 'sku', 'category', 'supplier', 'material', 'pieces_per_dozen',
+        'retail_price', 'wholesale_price', 'updated_at',
+    ]
+    if _save_payload_file(product, 'image', _file_payload(product_data, 'image', index=0)):
+        update_fields.append('image')
+    product.save(update_fields=[field for field in update_fields if hasattr(product, field)])
+
+    _sync_initial_variant_and_stock(product, product_data, user)
+    if operation.get('operation_type') != 'create':
+        _sync_product_variants_from_update(product, product_data)
+        _sync_product_stock_from_update(product, product_data, user)
     return response_success(operation['local_uuid'], product.pk, 'Product', resolution='local_applied')
 
 

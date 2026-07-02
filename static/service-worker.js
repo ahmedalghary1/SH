@@ -1,4 +1,4 @@
-const CACHE_VERSION = "sh-pwa-v2026-07-02-03";
+const CACHE_VERSION = "sh-pwa-v2026-07-02-04";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const OFFLINE_URL = "/offline/";
@@ -268,6 +268,7 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
 
   if (isNavigationRequest(request)) {
+    if (request.method !== "GET") return;
     event.respondWith(cacheFirst(request));
     return;
   }
