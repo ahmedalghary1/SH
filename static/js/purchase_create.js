@@ -192,20 +192,22 @@
         try {
             const data = await postForm("/purchases/orders/ajax/quick-create-product/", payload);
             selectNewOption(field("id_product_variant"), data);
-            clearFields(
-                productName,
-                productSku,
-                category,
-                categoryName,
-                color,
-                colorName,
-                size,
-                sizeName,
-                field("id_pieces_per_dozen"),
-                field("id_retail_price"),
-                field("id_wholesale_price"),
-            );
-            if (field("id_pieces_per_dozen")) field("id_pieces_per_dozen").value = "12";
+            if (!data?.offline) {
+                clearFields(
+                    productName,
+                    productSku,
+                    category,
+                    categoryName,
+                    color,
+                    colorName,
+                    size,
+                    sizeName,
+                    field("id_pieces_per_dozen"),
+                    field("id_retail_price"),
+                    field("id_wholesale_price"),
+                );
+                if (field("id_pieces_per_dozen")) field("id_pieces_per_dozen").value = "12";
+            }
             closeModal(button.closest(".modal"));
         } catch (error) {
             window.alert(error.message);
@@ -227,7 +229,7 @@
         try {
             const data = await postForm("/purchases/orders/ajax/quick-create-supplier/", payload);
             selectNewOption(field("id_supplier"), data);
-            clearFields(supplierName, supplierPhone);
+            if (!data?.offline) clearFields(supplierName, supplierPhone);
             closeModal(button.closest(".modal"));
         } catch (error) {
             window.alert(error.message);

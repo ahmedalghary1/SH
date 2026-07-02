@@ -88,7 +88,7 @@
             const data = await postQuickCreate(item);
             selectNewOption(document.getElementById(item.selectId), data);
             const nameInput = document.getElementById(item.nameId);
-            if (nameInput) nameInput.value = "";
+            if (nameInput && !data?.offline) nameInput.value = "";
             if (typeof closeModal === "function") {
                 closeModal(document.getElementById(item.modalId));
             } else {

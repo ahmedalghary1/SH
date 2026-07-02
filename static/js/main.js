@@ -21,6 +21,40 @@ if ("serviceWorker" in navigator) {
     });
 }
 
+function showPwaNotice(message, isError = false) {
+    let notice = document.querySelector("[data-pwa-notice]");
+    if (!notice) {
+        notice = document.createElement("div");
+        notice.dataset.pwaNotice = "true";
+        notice.style.position = "fixed";
+        notice.style.insetInlineStart = "18px";
+        notice.style.bottom = "18px";
+        notice.style.zIndex = "2200";
+        notice.style.maxWidth = "360px";
+        notice.style.padding = "12px 14px";
+        notice.style.borderRadius = "8px";
+        notice.style.boxShadow = "0 8px 24px rgba(0,0,0,.16)";
+        notice.style.fontWeight = "600";
+        document.body.appendChild(notice);
+    }
+    notice.textContent = message;
+    notice.style.background = isError ? "#8b1e2d" : "#123c69";
+    notice.style.color = "#fff";
+    notice.hidden = false;
+    window.clearTimeout(showPwaNotice.timer);
+    showPwaNotice.timer = window.setTimeout(() => {
+        notice.hidden = true;
+    }, 5200);
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("offline_saved") !== "1") return;
+    showPwaNotice("\u062a\u0645 \u0627\u0644\u062d\u0641\u0638 \u0645\u062d\u0644\u064a\u0627. \u0633\u062a\u062a\u0645 \u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629 \u062a\u0644\u0642\u0627\u0626\u064a\u0627 \u0639\u0646\u062f \u0639\u0648\u062f\u0629 \u0627\u0644\u0627\u062a\u0635\u0627\u0644.");
+    url.searchParams.delete("offline_saved");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+});
+
 let deferredPwaInstallPrompt = null;
 
 window.addEventListener("beforeinstallprompt", (event) => {

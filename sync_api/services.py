@@ -448,11 +448,48 @@ def process_order(operation, user):
     return response_success(operation['local_uuid'], order.pk, 'Order', resolution='local_applied')
 
 
+def _process_cash_account(operation, data):
+    account = _model_by_pk(CashAccount, data.get('server_id') or data.get('id'))
+    name = str(data.get('name') or '').strip() or 'Offline cash account'
+    if account is None and name:
+        account = CashAccount.objects.filter(name=name).order_by('-created_at').first()
+
+    if operation.get('operation_type') == 'delete':
+        if account is None:
+            return response_success(operation['local_uuid'], None, 'CashAccount', resolution='server_deleted')
+        account.is_active = False
+        account.save(update_fields=['is_active', 'updated_at'])
+        return response_success(operation['local_uuid'], account.pk, 'CashAccount', resolution='local_deleted')
+
+    account_type = data.get('account_type') or CashAccount.TYPE_CASH
+    valid_types = {choice[0] for choice in CashAccount.ACCOUNT_TYPE_CHOICES}
+    if account_type not in valid_types:
+        account_type = CashAccount.TYPE_CASH
+    fields = {
+        'name': name,
+        'account_type': account_type,
+        'assigned_user': _model_by_pk(User, data.get('assigned_user')),
+        'balance': Decimal(str(data.get('balance') or 0)),
+        'allow_overdraft': _bool_value(data.get('allow_overdraft'), False),
+        'is_active': _bool_value(data.get('is_active'), True),
+    }
+    if account is None:
+        account = CashAccount.objects.create(**fields)
+    else:
+        for field, value in fields.items():
+            setattr(account, field, value)
+        account.save(update_fields=[*fields.keys(), 'updated_at'])
+    return response_success(operation['local_uuid'], account.pk, 'CashAccount', resolution='local_applied')
+
+
 @transaction.atomic
 def process_payment(operation, user):
     payload = operation.get('payload') or {}
     payment = payload.get('payment') or _form_payload(operation)
     path = payload.get('original_url') or ''
+    if '/finance/accounts/' in path:
+        return _process_cash_account(operation, payment)
+
     amount = Decimal(str(payment.get('amount') or 0))
     cash_account = _model_by_pk(CashAccount, payment.get('cash_account')) or CashAccount.get_default()
     transaction_date = _date_value(payment.get('transaction_date'))
@@ -622,6 +659,9 @@ def process_stock(operation, user):
     payload = operation.get('payload') or {}
     data = payload.get('stock') or _form_payload(operation)
     path = payload.get('original_url') or ''
+    if '/inventory/warehouses/' in path:
+        return _process_warehouse(operation, data)
+
     variant = _model_by_pk(ProductVariant, data.get('variant') or data.get('product_variant'))
     if variant is None:
         raise ValidationError('Missing product variant for stock sync')
@@ -966,6 +1006,35 @@ def _process_size(operation, data):
     return response_success(operation['local_uuid'], size.pk, 'Size', resolution='local_applied')
 
 
+def _process_warehouse(operation, data):
+    warehouse = _related_by_id(Warehouse, data.get('server_id') or data.get('id'))
+    name = _first_value(data.get('name') or data.get('new_warehouse_name')) or 'Offline warehouse'
+    if warehouse is None and name:
+        warehouse = Warehouse.objects.filter(name=name).first()
+    if operation.get('operation_type') == 'delete':
+        if warehouse is None:
+            return response_success(operation['local_uuid'], None, 'Warehouse', resolution='server_deleted')
+        warehouse.is_active = False
+        warehouse.save(update_fields=['is_active', 'updated_at'])
+        return response_success(operation['local_uuid'], warehouse.pk, 'Warehouse', resolution='local_deleted')
+
+    warehouse_type = _first_value(data.get('warehouse_type')) or Warehouse.TYPE_MAIN
+    if warehouse_type not in {Warehouse.TYPE_MAIN, Warehouse.TYPE_STORE, Warehouse.TYPE_REPRESENTATIVE}:
+        warehouse_type = Warehouse.TYPE_MAIN
+    fields = {
+        'name': name,
+        'warehouse_type': warehouse_type,
+        'is_active': _bool_value(data.get('is_active'), True),
+    }
+    if warehouse is None:
+        warehouse = Warehouse.objects.create(**fields)
+    else:
+        for field, value in fields.items():
+            setattr(warehouse, field, value)
+        warehouse.save(update_fields=[*fields.keys(), 'updated_at'])
+    return response_success(operation['local_uuid'], warehouse.pk, 'Warehouse', resolution='local_applied')
+
+
 def _process_product_variant(operation, data):
     variant = _related_by_id(ProductVariant, data.get('server_id') or data.get('id'))
     if operation.get('operation_type') == 'delete':
@@ -1027,12 +1096,14 @@ def process_product(operation, user):
     path = payload.get('original_url') or ''
     if '/products/bulk-price-update/' in path:
         return _process_bulk_price_update(operation, product_data)
-    if '/products/categories/' in path:
+    if '/products/categories/' in path or '/products/ajax/quick-create-category/' in path:
         return _process_category(operation, product_data)
-    if '/products/colors/' in path:
+    if '/products/colors/' in path or '/products/ajax/quick-create-color/' in path:
         return _process_color(operation, product_data)
-    if '/products/sizes/' in path:
+    if '/products/sizes/' in path or '/products/ajax/quick-create-size/' in path:
         return _process_size(operation, product_data)
+    if '/products/ajax/quick-create-warehouse/' in path:
+        return _process_warehouse(operation, product_data)
     if '/products/variants/' in path:
         return _process_product_variant(operation, product_data)
 
@@ -1160,6 +1231,10 @@ def _supplier_from_purchase_data(data):
         or _first_value(data.get('supplier_name'))
     )
     phone = _first_value(data.get('new_supplier_phone')) or _first_value(data.get('phone')) or ''
+    if supplier is None and phone:
+        supplier = Supplier.objects.filter(phone=str(phone).strip()).order_by('-created_at').first()
+    if supplier is None and name:
+        supplier = Supplier.objects.filter(name=str(name).strip()).order_by('-created_at').first()
     if supplier is None and name:
         supplier = Supplier.objects.create(
             name=str(name).strip(),
@@ -1248,7 +1323,7 @@ def _purchase_items(data, supplier=None):
     for item in _json_items(data.get('items_json')):
         variant = _related_by_id(ProductVariant, item.get('product_variant_id') or item.get('variant_id'))
         if variant is None:
-            raise ValidationError('Invalid purchase product variant')
+            variant = _purchase_variant_from_data(data, supplier=supplier)
         items.append({
             'product_variant': variant,
             'quantity': int(item.get('quantity') or 0),
@@ -1268,6 +1343,17 @@ def process_purchase(operation, user):
     payload = operation.get('payload') or {}
     data = payload.get('purchase') or _form_payload(operation)
     path = payload.get('original_url') or ''
+
+    if '/purchases/orders/ajax/quick-create-supplier/' in path:
+        supplier = _supplier_from_purchase_data(data)
+        if supplier is None:
+            raise ValidationError('Cannot sync supplier without a name')
+        return response_success(operation['local_uuid'], supplier.pk, 'Supplier', resolution='local_applied')
+
+    if '/purchases/orders/ajax/quick-create-product/' in path:
+        supplier = _supplier_from_purchase_data(data)
+        variant = _purchase_variant_from_data(data, supplier=supplier)
+        return response_success(operation['local_uuid'], variant.pk, 'ProductVariant', resolution='local_applied')
 
     if '/purchases/suppliers/' in path and '/raw-purchase/' not in path:
         supplier = _supplier_from_purchase_data(data)

@@ -126,7 +126,9 @@ function classifyPath(path) {
     if (path.startsWith("/invoices/") && path.includes("/payments/add/")) return { entity_name: "cash", entity_type: "payment", action_type: "cash_transaction" };
     if (path.includes("/interactions/")) return null;
     if (path.startsWith("/customers/")) return { entity_name: "customers", entity_type: "customer", action_type: "save_customer" };
+    if (path.startsWith("/inventory/warehouses/")) return { entity_name: "stock", entity_type: "stock", action_type: "save_warehouse" };
     if (path.startsWith("/inventory/movements/")) return { entity_name: "stock", entity_type: "stock", action_type: "stock_movement" };
+    if (path.startsWith("/finance/accounts/")) return { entity_name: "cash", entity_type: "payment", action_type: "save_cash_account" };
     if (path.startsWith("/finance/transactions/")) return { entity_name: "cash", entity_type: "payment", action_type: "cash_transaction" };
     if (path.startsWith("/sales-reps/")) return { entity_name: "driver_actions", entity_type: "driver_action", action_type: "driver_action" };
     if (path.startsWith("/returns/")) return { entity_name: "returns", entity_type: "return", action_type: "sales_return" };
@@ -334,8 +336,13 @@ function shouldCaptureForm(form) {
     return Boolean(classifyPath(path));
 }
 
+function escapeSelector(value) {
+    if (window.CSS?.escape) return window.CSS.escape(value);
+    return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+}
+
 function getField(form, nameOrId) {
-    return form.elements[nameOrId] || form.querySelector(`#${CSS.escape(nameOrId)}`);
+    return form.elements[nameOrId] || form.querySelector(`#${escapeSelector(nameOrId)}`);
 }
 
 function validateOfflineForm(form, submitter = null) {
@@ -538,20 +545,21 @@ export async function handleJsonRequest(url, options = {}) {
 async function handleCapturedSubmit(form, submitter = null) {
     window.setTimeout(async () => {
         pendingSubmissions.delete(form);
-        if (!form.isConnected) return;
-        if (typeof form.reportValidity === "function" && !form.reportValidity()) return;
-        if (!validateOfflineForm(form, submitter)) return;
-
-        if (await isServerReachable()) {
-            submitNormally(form, submitter);
-            return;
-        }
-
         try {
+            if (!form.isConnected) return;
+            if (typeof form.reportValidity === "function" && !form.reportValidity()) return;
+            if (!validateOfflineForm(form, submitter)) return;
+
+            if (await isServerReachable()) {
+                submitNormally(form, submitter);
+                return;
+            }
+
             const queued = await queueFormSubmission(form, submitter);
             if (queued) {
                 form.dataset.offlineQueued = "true";
                 showOfflineNotice("تم الحفظ محليا. ستتم المزامنة تلقائيا عند عودة الاتصال.");
+                return;
             }
         } catch (error) {
             showOfflineNotice(`تعذر الحفظ المحلي: ${error.message || error}`, true);
