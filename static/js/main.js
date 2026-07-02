@@ -13,6 +13,32 @@ function getCookie(name) {
     return cookieValue;
 }
 
+if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/service-worker.js", { scope: "/" }).catch((error) => {
+            console.warn("Service worker registration failed", error);
+        });
+    });
+}
+
+let deferredPwaInstallPrompt = null;
+
+window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    deferredPwaInstallPrompt = event;
+    document.querySelectorAll("[data-pwa-install]").forEach((button) => {
+        button.hidden = false;
+    });
+});
+
+window.addEventListener("appinstalled", () => {
+    deferredPwaInstallPrompt = null;
+    document.querySelectorAll("[data-pwa-install]").forEach((button) => {
+        button.hidden = true;
+    });
+    window.SHSync?.bootstrapNow?.();
+});
+
 document.addEventListener("submit", (event) => {
     const form = event.target;
     const message = form.getAttribute("data-confirm");
@@ -407,6 +433,13 @@ function setupStockWarehouseFilters(root = document) {
                     selectedValue,
                 );
             } catch (error) {
+                const offlinePayload = await window.SHOffline?.handleJsonRequest?.(`/inventory/ajax/variant-warehouses/?variant_id=${encodeURIComponent(variantId)}&scope=${encodeURIComponent(scope)}`).catch(() => null);
+                if (offlinePayload?.success) {
+                    const warehouses = offlinePayload.data?.warehouses || [];
+                    warehouseSelect.disabled = warehouses.length === 0;
+                    setWarehouseOptions(warehouseSelect, warehouses, warehouses.length ? initialPlaceholder : "Offline stock", selectedValue);
+                    return;
+                }
                 warehouseSelect.disabled = true;
                 setWarehouseOptions(warehouseSelect, [], "تعذر تحميل المخازن");
             }
@@ -441,6 +474,26 @@ document.addEventListener("click", (event) => {
     const closeButton = event.target.closest("[data-close-modal]");
     if (closeButton) {
         closeModal(closeButton.closest(".modal"));
+    }
+
+    const installButton = event.target.closest("[data-pwa-install]");
+    if (installButton && deferredPwaInstallPrompt) {
+        deferredPwaInstallPrompt.prompt();
+        deferredPwaInstallPrompt.userChoice.finally(() => {
+            deferredPwaInstallPrompt = null;
+            installButton.hidden = true;
+        });
+    }
+
+    const syncButton = event.target.closest("[data-pwa-sync]");
+    if (syncButton) {
+        syncButton.disabled = true;
+        Promise.resolve()
+            .then(() => window.SHSync?.bootstrapNow?.())
+            .then(() => window.SHSync?.processQueue?.())
+            .finally(() => {
+                syncButton.disabled = false;
+            });
     }
 
 });

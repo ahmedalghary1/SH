@@ -36,6 +36,10 @@
     }
 
     async function fetchJson(url) {
+        if (!navigator.onLine && window.SHOffline?.handleJsonRequest) {
+            const payload = await window.SHOffline.handleJsonRequest(url);
+            return payload.data;
+        }
         const response = await fetch(url);
         const payload = await response.json();
         if (!response.ok || !payload.success) {

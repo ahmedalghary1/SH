@@ -37,6 +37,7 @@ class Stock(models.Model):
     variant = models.ForeignKey(ProductVariant, on_delete=models.CASCADE)
     quantity = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     min_quantity = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
 
     class Meta:
         indexes = [
@@ -123,6 +124,7 @@ class StockMovement(models.Model):
     note = models.TextField(blank=True, null=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
 
     class Meta:
         indexes = [

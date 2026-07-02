@@ -4,7 +4,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#123c69">
     <title>{% block title %}نظام إدارة الملابس{% endblock %}</title>
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="{% static 'icons/icon-192.png' %}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
@@ -30,6 +33,10 @@
     {% block auth_content %}{% endblock %}
 {% endif %}
 <script src="{% static 'js/main.js' %}"></script>
+{% if request.user.is_authenticated %}
+<script type="module" src="{% static 'js/pwa/sync-engine.js' %}"></script>
+<script type="module" src="{% static 'js/pwa/offline-forms.js' %}"></script>
+{% endif %}
 {% block extra_js %}{% endblock %}
 </body>
 </html>

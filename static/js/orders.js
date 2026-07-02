@@ -281,6 +281,13 @@
             }
             return response.json();
         } catch (error) {
+            if (window.SHOffline?.handleJsonRequest) {
+                try {
+                    return await window.SHOffline.handleJsonRequest(url, options);
+                } catch (offlineError) {
+                    console.error('Offline fallback error:', offlineError);
+                }
+            }
             console.error('Fetch error:', error);
             throw error;
         }

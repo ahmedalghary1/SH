@@ -1,0 +1,53 @@
+{% load static %}
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Offline - SH</title>
+    <meta name="theme-color" content="#123c69">
+    <link rel="stylesheet" href="{% static 'css/main.css' %}">
+    <style>
+        body {
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            background: #f7f9fc;
+            margin: 0;
+        }
+        .offline-panel {
+            width: min(520px, calc(100vw - 32px));
+            background: #fff;
+            border: 1px solid #d8e0ea;
+            border-radius: 8px;
+            padding: 28px;
+            box-shadow: 0 12px 32px rgba(18, 60, 105, 0.12);
+            text-align: center;
+        }
+        .offline-logo {
+            width: 84px;
+            height: 84px;
+            object-fit: contain;
+            margin-bottom: 16px;
+        }
+        .offline-actions {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 22px;
+            flex-wrap: wrap;
+        }
+    </style>
+</head>
+<body>
+    <main class="offline-panel">
+        <img class="offline-logo" src="{% static 'images/sh-family-Logo.png' %}" alt="SH">
+        <h1>التطبيق يعمل بدون اتصال</h1>
+        <p>يمكنك متابعة البيع والتسجيل من الصفحات المحفوظة. سيتم إرسال العمليات المعلقة تلقائيا عند عودة الإنترنت.</p>
+        <div class="offline-actions">
+            <button class="btn btn-primary" type="button" onclick="location.reload()">إعادة المحاولة</button>
+            <button class="btn btn-light" type="button" onclick="history.back()">رجوع</button>
+        </div>
+    </main>
+</body>
+</html>

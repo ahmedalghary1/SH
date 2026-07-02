@@ -1,0 +1,25 @@
+{
+  "name": "SH Clothing Management",
+  "short_name": "SH",
+  "description": "Offline-first sales, inventory, customer, finance, and representative management.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#123c69",
+  "background_color": "#f7f9fc",
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

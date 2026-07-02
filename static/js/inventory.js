@@ -31,6 +31,13 @@
                         selectedValue,
                     );
                 } catch (error) {
+                    const offlinePayload = await window.SHOffline?.handleJsonRequest?.(`/inventory/ajax/variant-warehouses/?variant_id=${encodeURIComponent(variantId)}&scope=${encodeURIComponent(scope)}`).catch(() => null);
+                    if (offlinePayload?.success) {
+                        const warehouses = offlinePayload.data?.warehouses || [];
+                        warehouseSelect.disabled = warehouses.length === 0;
+                        setWarehouseOptions(warehouseSelect, warehouses, warehouses.length ? initialPlaceholder : "Offline stock", selectedValue);
+                        return;
+                    }
                     warehouseSelect.disabled = true;
                     setWarehouseOptions(warehouseSelect, [], "تعذر تحميل المخازن");
                 }

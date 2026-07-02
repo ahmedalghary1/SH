@@ -30,6 +30,8 @@ from django.utils import timezone
 from django.utils._os import safe_join
 from django.views.static import serve as static_serve
 
+from .pwa import manifest_view, offline_view, service_worker_view
+
 
 def _check_database():
     """Test basic DB connectivity."""
@@ -180,6 +182,9 @@ if settings.SERVE_MEDIA_WITH_DJANGO:
     ]
 
 urlpatterns = static_urlpatterns + media_urlpatterns + [
+    path('manifest.json', manifest_view, name='pwa_manifest'),
+    path('service-worker.js', service_worker_view, name='pwa_service_worker'),
+    path('offline/', offline_view, name='pwa_offline'),
     path('health/', health_check, name='health_check'),
     path('admin/', admin.site.urls),
     path('', include('dashboard.urls')),
