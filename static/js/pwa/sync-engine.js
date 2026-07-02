@@ -17,6 +17,7 @@ const ENDPOINTS = {
     stock: "/api/sync/stock/",
     cash: "/api/sync/cash/",
     driver_actions: "/api/sync/driver-actions/",
+    purchases: "/api/sync/purchases/",
 };
 
 const DEFAULT_ENTITY_TYPES = {
@@ -27,6 +28,7 @@ const DEFAULT_ENTITY_TYPES = {
     stock: "stock",
     cash: "payment",
     driver_actions: "driver_action",
+    purchases: "purchase",
 };
 
 const APP_SHELL_URLS = [

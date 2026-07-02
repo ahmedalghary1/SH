@@ -278,3 +278,8 @@ def browser_sync_returns_view(request):
 @login_required
 def browser_sync_driver_actions_view(request):
     return _browser_push(request, 'driver_action')
+
+
+@login_required
+def browser_sync_purchases_view(request):
+    return _browser_push(request, 'purchase')

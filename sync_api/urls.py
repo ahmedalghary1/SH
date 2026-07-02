@@ -22,4 +22,5 @@ urlpatterns = [
     path('sync/cash/', views.browser_sync_cash_view, name='sync_browser_cash'),
     path('sync/returns/', views.browser_sync_returns_view, name='sync_browser_returns'),
     path('sync/driver-actions/', views.browser_sync_driver_actions_view, name='sync_browser_driver_actions'),
+    path('sync/purchases/', views.browser_sync_purchases_view, name='sync_browser_purchases'),
 ]

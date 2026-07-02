@@ -28,7 +28,14 @@ from invoices.models import Invoice
 from orders.models import Order, OrderItem
 from orders.services import cancel_order, confirm_order, create_order, return_order
 from products.models import Category, Color, Product, ProductVariant, Size
-from purchases.models import Supplier
+from purchases.models import PurchaseOrder, Supplier
+from purchases.services import (
+    cancel_purchase_order,
+    create_purchase_order,
+    create_purchase_return,
+    pay_supplier,
+    receive_purchase_order_items,
+)
 from returns.models import SalesReturn
 from returns.services import add_exchange_item, add_return_item, create_sales_return
 from sales_reps import services as sales_rep_services
@@ -1138,6 +1145,206 @@ def process_driver_action(operation, user):
     return response_success(operation['local_uuid'], collection.pk, 'SalesRepCollection', resolution='local_applied')
 
 
+def _first_int_from_path(path):
+    for part in str(path or '').split('/'):
+        if _is_int(part):
+            return part
+    return None
+
+
+def _supplier_from_purchase_data(data):
+    supplier = _related_by_id(Supplier, data.get('supplier') or data.get('server_id') or data.get('id'))
+    name = (
+        _first_value(data.get('new_supplier_name'))
+        or _first_value(data.get('name'))
+        or _first_value(data.get('supplier_name'))
+    )
+    phone = _first_value(data.get('new_supplier_phone')) or _first_value(data.get('phone')) or ''
+    if supplier is None and name:
+        supplier = Supplier.objects.create(
+            name=str(name).strip(),
+            phone=str(phone).strip() or None,
+            email=_first_value(data.get('email')) or '',
+            address=_first_value(data.get('address')) or '',
+            company_name=_first_value(data.get('company_name')) or '',
+            notes=_first_value(data.get('notes')) or '',
+            is_active=True,
+        )
+    if supplier is not None and (data.get('name') or data.get('phone') or data.get('company_name')):
+        supplier.name = _first_value(data.get('name'), supplier.name) or supplier.name
+        supplier.phone = _first_value(data.get('phone'), supplier.phone) or supplier.phone
+        supplier.email = _first_value(data.get('email'), supplier.email) or supplier.email
+        supplier.address = _first_value(data.get('address'), supplier.address) or supplier.address
+        supplier.company_name = _first_value(data.get('company_name'), supplier.company_name) or supplier.company_name
+        supplier.notes = _first_value(data.get('notes'), supplier.notes) or supplier.notes
+        supplier.is_active = _bool_value(data.get('is_active'), True)
+        supplier.save(update_fields=['name', 'phone', 'email', 'address', 'company_name', 'notes', 'is_active', 'updated_at'])
+    return supplier
+
+
+def _purchase_category(data):
+    category = _related_by_id(Category, data.get('new_category') or data.get('category'))
+    name = _first_value(data.get('new_category_name')) or ''
+    if category is None and name:
+        category, _ = Category.objects.get_or_create(name=name, defaults={'is_active': True})
+    return category
+
+
+def _purchase_color(data):
+    color = _related_by_id(Color, data.get('new_color') or data.get('color'))
+    name = _first_value(data.get('new_color_name')) or ''
+    if color is None and name:
+        color, _ = Color.objects.get_or_create(name=name)
+    return color
+
+
+def _purchase_size(data):
+    size = _related_by_id(Size, data.get('new_size') or data.get('size'))
+    name = _first_value(data.get('new_size_name')) or ''
+    if size is None and name:
+        size, _ = Size.objects.get_or_create(name=name, defaults={'sort_order': 0})
+    return size
+
+
+def _purchase_variant_from_data(data, supplier=None):
+    variant = _related_by_id(ProductVariant, data.get('product_variant') or data.get('variant_id'))
+    if variant:
+        return variant
+
+    name = str(_first_value(data.get('new_product_name')) or '').strip()
+    sku = str(_first_value(data.get('new_product_sku')) or '').strip()
+    if not name or not sku:
+        raise ValidationError('Cannot sync purchase without a product variant')
+    product = Product.objects.filter(sku=sku).first()
+    if product is None:
+        product = Product.objects.create(
+            name=name,
+            sku=sku,
+            category=_purchase_category(data),
+            supplier=supplier,
+            pieces_per_dozen=_int_value(data.get('pieces_per_dozen'), 12),
+            retail_price=_decimal_value(data.get('retail_price')),
+            wholesale_price=_decimal_value(data.get('wholesale_price')),
+        )
+    color = _purchase_color(data)
+    size = _purchase_size(data)
+    variant = ProductVariant.objects.filter(product=product, color=color, size=size).first()
+    if variant is None:
+        variant = ProductVariant.objects.create(
+            product=product,
+            color=color,
+            size=size,
+            variant_sku=_offline_variant_sku(product, color, size),
+            cost_price=_decimal_value(data.get('unit_cost')),
+            sale_price=_decimal_value(data.get('retail_price')),
+            retail_price=_decimal_value(data.get('retail_price')),
+            wholesale_price=_decimal_value(data.get('wholesale_price')),
+        )
+    return variant
+
+
+def _purchase_items(data, supplier=None):
+    items = []
+    for item in _json_items(data.get('items_json')):
+        variant = _related_by_id(ProductVariant, item.get('product_variant_id') or item.get('variant_id'))
+        if variant is None:
+            raise ValidationError('Invalid purchase product variant')
+        items.append({
+            'product_variant': variant,
+            'quantity': int(item.get('quantity') or 0),
+            'unit_cost': Decimal(str(item.get('unit_cost') or 0)),
+        })
+    if items:
+        return items
+    return [{
+        'product_variant': _purchase_variant_from_data(data, supplier=supplier),
+        'quantity': _int_value(data.get('quantity'), 1),
+        'unit_cost': _decimal_value(data.get('unit_cost')),
+    }]
+
+
+@transaction.atomic
+def process_purchase(operation, user):
+    payload = operation.get('payload') or {}
+    data = payload.get('purchase') or _form_payload(operation)
+    path = payload.get('original_url') or ''
+
+    if '/purchases/suppliers/' in path and '/raw-purchase/' not in path:
+        supplier = _supplier_from_purchase_data(data)
+        if supplier is None:
+            raise ValidationError('Cannot sync supplier without a name')
+        if operation.get('operation_type') == 'delete':
+            supplier.is_active = False
+            supplier.save(update_fields=['is_active', 'updated_at'])
+            return response_success(operation['local_uuid'], supplier.pk, 'Supplier', resolution='local_deleted')
+        return response_success(operation['local_uuid'], supplier.pk, 'Supplier', resolution='local_applied')
+
+    if '/purchases/orders/return/' in path:
+        movement = create_purchase_return(
+            supplier=_related_by_id(Supplier, data.get('supplier')),
+            product_variant=_related_by_id(ProductVariant, data.get('product_variant')),
+            warehouse=_related_by_id(Warehouse, data.get('warehouse')),
+            quantity=_int_value(data.get('quantity'), 1),
+            unit_cost=_decimal_value(data.get('unit_cost')),
+            user=user,
+            notes=_first_value(data.get('notes')) or '',
+        )
+        return response_success(operation['local_uuid'], movement.pk, 'StockMovement', resolution='local_applied')
+
+    order_id = data.get('server_id') or data.get('id') or _first_int_from_path(path)
+    purchase_order = _model_by_pk(PurchaseOrder, order_id)
+    if '/pay/' in path:
+        if purchase_order is None:
+            raise ValidationError('Cannot sync supplier payment without a purchase order')
+        tx = pay_supplier(
+            purchase_order=purchase_order,
+            cash_account=_related_by_id(CashAccount, data.get('cash_account')),
+            amount=_decimal_value(data.get('amount')),
+            user=user,
+            notes=_first_value(data.get('notes')) or '',
+        )
+        return response_success(operation['local_uuid'], tx.pk, 'PaymentTransaction', resolution='local_applied')
+
+    if '/cancel/' in path or operation.get('operation_type') == 'delete':
+        if purchase_order is None:
+            return response_success(operation['local_uuid'], None, 'PurchaseOrder', resolution='server_deleted')
+        cancel_purchase_order(purchase_order=purchase_order, user=user)
+        return response_success(operation['local_uuid'], purchase_order.pk, 'PurchaseOrder', resolution='local_deleted')
+
+    supplier = _supplier_from_purchase_data(data)
+    if supplier is None:
+        raise ValidationError('Cannot sync purchase without a supplier')
+    items = _purchase_items(data, supplier=supplier)
+    purchase_order = create_purchase_order(
+        supplier=supplier,
+        status=PurchaseOrder.STATUS_ORDERED,
+        order_date=_date_value(data.get('order_date')),
+        expected_date=_date_value(data.get('expected_date')),
+        notes=_first_value(data.get('notes')) or '',
+        items=items,
+        user=user,
+    )
+    warehouse = _related_by_id(Warehouse, data.get('warehouse'))
+    if warehouse:
+        receive_purchase_order_items(
+            purchase_order=purchase_order,
+            warehouse=warehouse,
+            received_items={item.pk: item.quantity for item in purchase_order.items.all()},
+            user=user,
+            note=_first_value(data.get('notes')) or '',
+        )
+    cash_account = _related_by_id(CashAccount, data.get('cash_account'))
+    if cash_account and purchase_order.total_amount > 0:
+        pay_supplier(
+            purchase_order=purchase_order,
+            cash_account=cash_account,
+            amount=purchase_order.total_amount,
+            user=user,
+            notes=_first_value(data.get('notes')) or f'Offline purchase {purchase_order.purchase_number}',
+        )
+    return response_success(operation['local_uuid'], purchase_order.pk, 'PurchaseOrder', resolution='local_applied')
+
+
 PROCESSORS = {
     'customer': process_customer,
     'order': process_order,
@@ -1146,6 +1353,7 @@ PROCESSORS = {
     'stock': process_stock,
     'product': process_product,
     'driver_action': process_driver_action,
+    'purchase': process_purchase,
 }
 
 

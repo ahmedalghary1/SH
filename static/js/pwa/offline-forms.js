@@ -24,9 +24,11 @@ const SERVER_ENTITY_PREFIX = {
     stock: "stock",
     cash: "payment",
     driver_actions: "driver_action",
+    purchases: "purchase",
 };
 
 let serverReachableUntil = 0;
+const pendingSubmissions = new WeakSet();
 
 function appendValue(target, key, value) {
     if (Object.prototype.hasOwnProperty.call(target, key)) {
@@ -129,6 +131,7 @@ function classifyPath(path) {
     if (path.startsWith("/sales-reps/")) return { entity_name: "driver_actions", entity_type: "driver_action", action_type: "driver_action" };
     if (path.startsWith("/returns/")) return { entity_name: "returns", entity_type: "return", action_type: "sales_return" };
     if (path.startsWith("/products/")) return { entity_name: "products", entity_type: "product", action_type: "save_product" };
+    if (path.startsWith("/purchases/")) return { entity_name: "purchases", entity_type: "purchase", action_type: "purchase_action" };
     return null;
 }
 
@@ -164,13 +167,17 @@ function requestBackgroundSync() {
         .catch(() => {});
 }
 
-function parseItemsJson(value) {
+function parseItems(value) {
     try {
         const parsed = JSON.parse(value || "[]");
         return Array.isArray(parsed) ? parsed : [];
     } catch (error) {
         return [];
     }
+}
+
+function parseItemsJson(value) {
+    return parseItems(value);
 }
 
 function customerPayload(fields, localUuid, serverId = "") {
@@ -327,6 +334,79 @@ function shouldCaptureForm(form) {
     return Boolean(classifyPath(path));
 }
 
+function getField(form, nameOrId) {
+    return form.elements[nameOrId] || form.querySelector(`#${CSS.escape(nameOrId)}`);
+}
+
+function validateOfflineForm(form, submitter = null) {
+    const action = submitter?.formAction || form.action || window.location.href;
+    const path = pathFromAction(action);
+
+    if (form.id === "order-form" && !submitter?.matches("[data-delete-draft]")) {
+        const items = parseItems(getField(form, "items_json")?.value || getField(form, "items-json")?.value);
+        if (!items.length) {
+            showOfflineNotice("أضف منتجا واحدا على الأقل قبل الحفظ أوفلاين.", true);
+            return false;
+        }
+        const warehouse = getField(form, "warehouse") || getField(form, "id_warehouse");
+        if (!warehouse?.value) {
+            showOfflineNotice("اختر المخزن قبل حفظ الفاتورة أوفلاين.", true);
+            return false;
+        }
+    }
+
+    if (path.startsWith("/products/") && !path.includes("/bulk-price-update/")) {
+        const name = getField(form, "name") || getField(form, "id_name");
+        const sku = getField(form, "sku") || getField(form, "id_sku");
+        if (name && !String(name.value || "").trim()) {
+            showOfflineNotice("اكتب اسم المنتج قبل الحفظ أوفلاين.", true);
+            return false;
+        }
+        if (sku && !String(sku.value || "").trim()) {
+            showOfflineNotice("اكتب كود المنتج قبل الحفظ أوفلاين.", true);
+            return false;
+        }
+    }
+
+    if (path.startsWith("/customers/")) {
+        const name = getField(form, "name") || getField(form, "id_name");
+        const phone = getField(form, "phone") || getField(form, "id_phone");
+        if (name && !String(name.value || "").trim()) {
+            showOfflineNotice("اكتب اسم العميل قبل الحفظ أوفلاين.", true);
+            return false;
+        }
+        if (phone && !String(phone.value || "").trim()) {
+            showOfflineNotice("اكتب رقم الهاتف قبل الحفظ أوفلاين.", true);
+            return false;
+        }
+    }
+
+    if (path.startsWith("/purchases/suppliers/")) {
+        const name = getField(form, "name") || getField(form, "id_name");
+        if (name && !String(name.value || "").trim()) {
+            showOfflineNotice("اكتب اسم المورد قبل الحفظ أوفلاين.", true);
+            return false;
+        }
+    }
+
+    if (path === "/purchases/orders/" || path === "/purchases/orders/create/") {
+        const supplier = getField(form, "supplier") || getField(form, "id_supplier");
+        const newSupplier = getField(form, "new_supplier_name") || getField(form, "id_new_supplier_name");
+        const items = parseItems(getField(form, "items_json")?.value || getField(form, "id_items_json")?.value);
+        const productVariant = getField(form, "product_variant") || getField(form, "id_product_variant");
+        if (!supplier?.value && !String(newSupplier?.value || "").trim()) {
+            showOfflineNotice("اختر المورد أو اكتب موردا جديدا قبل الحفظ أوفلاين.", true);
+            return false;
+        }
+        if (!items.length && !productVariant?.value) {
+            showOfflineNotice("أضف صنفا واحدا على الأقل قبل حفظ الشراء أوفلاين.", true);
+            return false;
+        }
+    }
+
+    return true;
+}
+
 async function handleQuickCustomer(options = {}) {
     const body = options.body instanceof FormData ? options.body : new FormData();
     const fields = await formDataToObject(body);
@@ -455,29 +535,39 @@ export async function handleJsonRequest(url, options = {}) {
     throw new Error("No offline handler for this request");
 }
 
-document.addEventListener("submit", async (event) => {
-    if (event.defaultPrevented) return;
+async function handleCapturedSubmit(form, submitter = null) {
+    window.setTimeout(async () => {
+        pendingSubmissions.delete(form);
+        if (!form.isConnected) return;
+        if (typeof form.reportValidity === "function" && !form.reportValidity()) return;
+        if (!validateOfflineForm(form, submitter)) return;
+
+        if (await isServerReachable()) {
+            submitNormally(form, submitter);
+            return;
+        }
+
+        try {
+            const queued = await queueFormSubmission(form, submitter);
+            if (queued) {
+                form.dataset.offlineQueued = "true";
+                showOfflineNotice("تم الحفظ محليا. ستتم المزامنة تلقائيا عند عودة الاتصال.");
+            }
+        } catch (error) {
+            showOfflineNotice(`تعذر الحفظ المحلي: ${error.message || error}`, true);
+        }
+    }, 0);
+}
+
+document.addEventListener("submit", (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement) || !shouldCaptureForm(form)) return;
 
     event.preventDefault();
-    const submitter = event.submitter;
-
-    if (await isServerReachable()) {
-        submitNormally(form, submitter);
-        return;
-    }
-
-    try {
-        const queued = await queueFormSubmission(form, submitter);
-        if (queued) {
-            form.dataset.offlineQueued = "true";
-            showOfflineNotice("Saved offline. It will sync automatically when the server is available.");
-        }
-    } catch (error) {
-        showOfflineNotice(`Offline save failed: ${error.message || error}`, true);
-    }
-});
+    if (pendingSubmissions.has(form)) return;
+    pendingSubmissions.add(form);
+    handleCapturedSubmit(form, event.submitter);
+}, true);
 
 window.addEventListener("online", () => {
     document.body.classList.remove("is-offline");
