@@ -1,4 +1,4 @@
-const CACHE_VERSION = "sh-pwa-v2026-07-02-07";
+const CACHE_VERSION = "sh-pwa-v2026-07-02-08";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const OFFLINE_URL = "/offline/";
