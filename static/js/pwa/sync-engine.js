@@ -29,6 +29,54 @@ const DEFAULT_ENTITY_TYPES = {
     driver_actions: "driver_action",
 };
 
+const APP_SHELL_URLS = [
+    "/",
+    "/products/",
+    "/products/create/",
+    "/products/categories/",
+    "/products/sizes/",
+    "/products/colors/",
+    "/inventory/stock/",
+    "/inventory/movements/",
+    "/inventory/movements/in/",
+    "/inventory/movements/out/",
+    "/inventory/movements/transfer/",
+    "/inventory/movements/representative-issue/",
+    "/inventory/movements/representative-return/",
+    "/inventory/movements/adjustment/",
+    "/inventory/warehouses/",
+    "/customers/",
+    "/customers/simple/create/",
+    "/customers/list/",
+    "/orders/create/",
+    "/orders/",
+    "/orders/quotes/",
+    "/invoices/",
+    "/finance/cash/",
+    "/finance/shift/",
+    "/finance/accounts/",
+    "/finance/transactions/",
+    "/finance/transactions/expense/",
+    "/finance/transactions/collection/",
+    "/finance/transactions/supplier-payment/",
+    "/finance/transactions/transfer/",
+    "/returns/",
+    "/returns/simple/",
+    "/returns/exchange/",
+    "/returns/create/",
+    "/sales-reps/",
+    "/sales-reps/assignments/",
+    "/sales-reps/record-sale/",
+    "/sales-reps/collection/",
+    "/sales-reps/statement/",
+    "/purchases/suppliers/simple/",
+    "/purchases/orders/",
+    "/purchases/orders/create/",
+    "/purchases/orders/return/",
+    "/reports/",
+    "/settings/",
+];
+
 let syncInProgress = false;
 let bootstrapInProgress = false;
 
@@ -49,6 +97,41 @@ function getCookie(name) {
 
 function syncStatusEvent(detail) {
     window.dispatchEvent(new CustomEvent("sh-sync-status", { detail }));
+}
+
+function uniqueUrls(urls) {
+    const seen = new Set();
+    return urls
+        .filter(Boolean)
+        .map((url) => new URL(url, window.location.origin))
+        .filter((url) => url.origin === window.location.origin)
+        .map((url) => {
+            url.hash = "";
+            return `${url.pathname}${url.search}`;
+        })
+        .filter((url) => {
+            if (seen.has(url)) return false;
+            seen.add(url);
+            return true;
+        });
+}
+
+export async function cacheAppShell(extraUrls = []) {
+    if (!("serviceWorker" in navigator)) return;
+    const urls = uniqueUrls([
+        ...APP_SHELL_URLS,
+        window.location.pathname,
+        ...extraUrls,
+    ]);
+    if (!urls.length) return;
+
+    try {
+        const registration = await navigator.serviceWorker.ready;
+        const worker = navigator.serviceWorker.controller || registration.active || registration.waiting || registration.installing;
+        worker?.postMessage({ type: "CACHE_URLS", urls });
+    } catch (error) {
+        syncStatusEvent({ state: "app_shell_cache_failed", error: String(error.message || error) });
+    }
 }
 
 async function jsonFetch(url, options = {}) {
@@ -124,6 +207,7 @@ export async function bootstrapNow() {
         const payload = await jsonFetch("/api/sync/bootstrap-browser/");
         await importBootstrap(payload);
         await setMetadata("last_successful_sync_at", nowIso());
+        await cacheAppShell();
         syncStatusEvent({ state: "bootstrapped" });
         return payload;
     } catch (error) {
@@ -158,6 +242,7 @@ export async function processQueue() {
 }
 
 async function startOnlineWork() {
+    await cacheAppShell();
     await bootstrapNow();
     await processQueue();
 }
@@ -179,5 +264,6 @@ if (navigator.onLine) {
 
 window.SHSync = {
     bootstrapNow,
+    cacheAppShell,
     processQueue,
 };

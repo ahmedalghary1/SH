@@ -36,6 +36,7 @@ window.addEventListener("appinstalled", () => {
     document.querySelectorAll("[data-pwa-install]").forEach((button) => {
         button.hidden = true;
     });
+    window.SHSync?.cacheAppShell?.();
     window.SHSync?.bootstrapNow?.();
 });
 
@@ -489,6 +490,7 @@ document.addEventListener("click", (event) => {
     if (syncButton) {
         syncButton.disabled = true;
         Promise.resolve()
+            .then(() => window.SHSync?.cacheAppShell?.())
             .then(() => window.SHSync?.bootstrapNow?.())
             .then(() => window.SHSync?.processQueue?.())
             .finally(() => {

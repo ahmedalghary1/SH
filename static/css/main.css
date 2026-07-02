@@ -1,3 +1,27 @@
+@font-face {
+    font-family: "Cairo";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("../fonts/cairo/Cairo-400.ttf") format("truetype");
+}
+
+@font-face {
+    font-family: "Cairo";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url("../fonts/cairo/Cairo-600.ttf") format("truetype");
+}
+
+@font-face {
+    font-family: "Cairo";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url("../fonts/cairo/Cairo-700.ttf") format("truetype");
+}
+
 :root {
     --primary-color: #0f172a;
     --secondary-color: #1e293b;
