@@ -4,6 +4,7 @@
 <div class="page-head">
     <h1>{{ account.name }}</h1>
     <div class="actions">
+        <a class="btn btn-light" href="{% url 'finance:cash_account_statement' %}?cash_account={{ account.pk }}">كشف الحساب</a>
         <a class="btn btn-primary" href="{% url 'finance:expense_create' %}">مصروف</a>
         <a class="btn btn-light" href="{% url 'finance:transfer' %}">تحويل</a>
     </div>

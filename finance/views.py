@@ -543,7 +543,11 @@ class CashAccountStatementView(ManagerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        form = CashAccountStatementForm(self.request.GET or None)
+        request_data = self.request.GET.copy()
+        if request_data.get('account') and not request_data.get('cash_account'):
+            request_data['cash_account'] = request_data['account']
+        default_account = CashAccount.get_default()
+        form = CashAccountStatementForm(request_data or None, initial={'cash_account': default_account})
         account = None
         statement_data = {
             'entries': [],
@@ -555,8 +559,11 @@ class CashAccountStatementView(ManagerRequiredMixin, TemplateView):
             'transactions_count': 0,
             'non_cash_transactions_count': 0,
         }
-        if self.request.GET and form.is_valid():
+        if request_data and form.is_valid():
             account = form.cleaned_data['cash_account']
+            statement_data = build_cash_account_statement(account)
+        elif not request_data and default_account:
+            account = default_account
             statement_data = build_cash_account_statement(account)
         context.update({
             'form': form,

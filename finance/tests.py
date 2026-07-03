@@ -399,3 +399,29 @@ class FinanceServiceTests(TestCase):
         self.assertContains(response, 'مصروف')
         self.assertNotContains(response, self.order.order_number)
         self.assertTrue(all(tx.direction == PaymentTransaction.DIRECTION_OUT for tx in response.context['transactions']))
+
+    def test_cash_account_statement_defaults_to_main_account(self):
+        self.client.force_login(self.user)
+        main_account = CashAccount.get_default()
+
+        response = self.client.get(reverse('finance:cash_account_statement'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['account'], main_account)
+        self.assertContains(response, 'بيانات الخزنة')
+        self.assertContains(response, main_account.name)
+
+    def test_cash_account_statement_accepts_selected_account(self):
+        self.client.force_login(self.user)
+        collect_order_payment(order=self.order, amount=Decimal('200.00'), cash_account=self.cash, user=self.user)
+        add_expense(amount=Decimal('150.00'), cash_account=self.cash, user=self.user, notes='Office rent')
+
+        response = self.client.get(reverse('finance:cash_account_statement'), data={
+            'cash_account': self.cash.pk,
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['account'], self.cash)
+        self.assertContains(response, 'إجمالي الداخل')
+        self.assertContains(response, 'إجمالي الخارج')
+        self.assertContains(response, 'Office rent')

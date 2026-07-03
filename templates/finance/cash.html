@@ -10,7 +10,7 @@
     <div class="page-head">
         <h1>الخزنة</h1>
         <div class="actions">
-            <a href="{% url 'finance:cash_account_statement' %}" class="btn btn-light">كشف حساب خزنة</a>
+            <a href="{% url 'finance:cash_account_statement' %}?cash_account={{ main_account.pk }}" class="btn btn-light">كشف حساب خزنة</a>
             <a href="{% url 'finance:transfer' %}" class="btn btn-primary">تحويل للخزنة الرئيسية</a>
         </div>
     </div>
@@ -21,6 +21,7 @@
                 <span>{{ account.name }}</span>
                 <strong>{{ account.balance }}</strong>
                 <small>{{ account.get_account_type_display }}{% if account.assigned_user %} - {{ account.assigned_user }}{% endif %}</small>
+                <a href="{% url 'finance:cash_account_statement' %}?cash_account={{ account.pk }}" class="btn btn-light">كشف الحساب</a>
             </div>
         {% endfor %}
     </div>
