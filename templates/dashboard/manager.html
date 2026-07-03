@@ -20,6 +20,10 @@
             <span class="quick-action-icon"><svg class="ui-icon"><use href="#icon-hand-coins"></use></svg></span>
             <span>قبض</span>
         </a>
+        <a href="{% url 'finance:expense_create' %}" class="quick-action-btn action-expense">
+            <span class="quick-action-icon"><svg class="ui-icon"><use href="#icon-money"></use></svg></span>
+            <span>مصروف</span>
+        </a>
         <a href="{% url 'orders:create' %}?document=quote" class="quick-action-btn action-quote">
             <span class="quick-action-icon"><svg class="ui-icon"><use href="#icon-clipboard-list"></use></svg></span>
             <span>عرض سعر</span>
@@ -67,6 +71,16 @@
             <div class="stat-content">
                 <span class="stat-label">المنتجات الناقصة</span>
                 <strong class="stat-value">{{ low_stocks|length }}</strong>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon expense">
+                <svg class="ui-icon"><use href="#icon-money"></use></svg>
+            </div>
+            <div class="stat-content">
+                <span class="stat-label">مصروفات اليوم</span>
+                <strong class="stat-value">{{ today_expenses }}</strong>
             </div>
         </div>
 

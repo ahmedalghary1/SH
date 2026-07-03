@@ -3032,6 +3032,13 @@ tbody tr:hover {
     --action-border: #a7f3d0;
 }
 
+.quick-action-btn.action-expense,
+.stat-icon.expense {
+    --action-color: #be123c;
+    --action-bg: #fff1f2;
+    --action-border: #fecdd3;
+}
+
 .quick-action-btn.action-quote {
     --action-color: #7c3aed;
     --action-bg: #f5f3ff;

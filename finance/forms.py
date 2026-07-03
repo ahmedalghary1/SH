@@ -27,9 +27,18 @@ class CashAccountForm(forms.ModelForm):
 
 
 class ExpenseForm(forms.Form):
+    cash_account = forms.ModelChoiceField(
+        queryset=CashAccount.objects.filter(is_active=True),
+        label='الخزنة التي سيتم الخصم منها',
+        empty_label='اختر الخزنة',
+    )
     amount = forms.DecimalField(min_value=0.01, label='المبلغ')
     transaction_date = forms.DateField(label='تاريخ المصروف', initial=timezone.localdate, widget=forms.DateInput(attrs={'type': 'date'}))
     notes = forms.CharField(widget=forms.Textarea, required=False, label='بيان المصروف')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['cash_account'].initial = CashAccount.get_cash_drawer()
 
 
 class CustomerCollectionForm(forms.Form):

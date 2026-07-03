@@ -10,7 +10,7 @@ from inventory.models import Warehouse
 from orders.models import Order
 from purchases.models import Supplier
 
-from .forms import CustomerCollectionForm
+from .forms import CustomerCollectionForm, ExpenseForm
 from .models import CashAccount, PaymentTransaction
 from .services import (
     add_expense,
@@ -62,6 +62,37 @@ class FinanceServiceTests(TestCase):
 
         self.cash.refresh_from_db()
         self.assertEqual(self.cash.balance, Decimal('1000.00'))
+
+    def test_expense_form_requires_cash_account_to_deduct_from(self):
+        form = ExpenseForm(data={
+            'cash_account': self.cash.pk,
+            'amount': '150.00',
+            'transaction_date': '2026-06-12',
+            'notes': 'Office rent',
+        })
+
+        self.assertTrue(form.is_valid(), form.errors.as_text())
+        self.assertEqual(form.fields['cash_account'].label, 'الخزنة التي سيتم الخصم منها')
+
+    def test_expense_create_view_deducts_from_selected_cash_account(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('finance:expense_create'), {
+            'cash_account': self.cash.pk,
+            'amount': '150.00',
+            'transaction_date': '2026-06-12',
+            'notes': 'Office rent',
+        })
+
+        self.assertRedirects(response, reverse('finance:transactions'))
+        self.cash.refresh_from_db()
+        self.assertEqual(self.cash.balance, Decimal('850.00'))
+        self.assertTrue(PaymentTransaction.objects.filter(
+            transaction_type=PaymentTransaction.TYPE_EXPENSE,
+            direction=PaymentTransaction.DIRECTION_OUT,
+            amount=Decimal('150.00'),
+            cash_account=self.cash,
+        ).exists())
 
     def test_collect_order_payment_updates_order_and_cash(self):
         collect_order_payment(order=self.order, amount=Decimal('200.00'), cash_account=self.cash, user=self.user)

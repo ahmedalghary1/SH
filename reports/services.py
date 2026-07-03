@@ -343,6 +343,7 @@ def manager_dashboard_kpis():
 
     collections_in = PaymentTransaction.objects.filter(direction=PaymentTransaction.DIRECTION_IN)
     today_collections = _sum(collections_in.filter(created_at__date=today), 'amount')
+    today_expenses = _sum(expenses.filter(transaction_date=today), 'amount')
 
     return {
         'today_sales': today_agg['sales'] or ZERO,
@@ -352,6 +353,7 @@ def manager_dashboard_kpis():
         'sales_cost_total': month_agg['total_cost'] or ZERO,
         'gross_profit': gross_profit,
         'expenses_total': expenses_total,
+        'today_expenses': today_expenses,
         'net_profit': gross_profit - expenses_total,
         'collections_total': _sum(collections_in, 'amount'),
         'customer_remaining_total': _sum(valid_orders, 'remaining_amount'),
