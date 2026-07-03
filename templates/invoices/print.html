@@ -12,6 +12,15 @@
             --receipt-width: {{ thermal_receipt_width }}mm;
             --receipt-padding: 1.2mm;
             --receipt-vertical-padding: 10mm;
+            --receipt-font-scale: {{ thermal_invoice_font_scale }};
+            --receipt-font-tiny: {{ thermal_receipt_font_tiny }}px;
+            --receipt-font-table: {{ thermal_receipt_font_table }}px;
+            --receipt-font-table-head: {{ thermal_receipt_font_table_head }}px;
+            --receipt-font-meta: {{ thermal_receipt_font_meta }}px;
+            --receipt-font-body: {{ thermal_receipt_font_body }}px;
+            --receipt-font-brand: {{ thermal_receipt_font_brand }}px;
+            --receipt-font-title: {{ thermal_receipt_font_title }}px;
+            --receipt-font-total: {{ thermal_receipt_font_total }}px;
             --ink: #000;
             --muted-ink: #444;
         }
@@ -31,7 +40,7 @@
             background: #fff;
             color: var(--ink);
             direction: rtl;
-            text-align: right;
+            text-align: center;
             font-family: Tahoma, Arial, sans-serif;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
@@ -106,30 +115,38 @@
             border: 0;
             background: #fff;
             color: var(--ink);
-            font-size: 8px;
+            text-align: center;
+            font-size: var(--receipt-font-body);
             font-weight: 900 !important;
             line-height: 1.32;
+            overflow: hidden;
         }
 
         .receipt-invoice * {
+            max-width: 100%;
             font-weight: 900 !important;
+            letter-spacing: 0;
+            overflow-wrap: anywhere;
+            word-break: normal;
         }
 
         .receipt-head {
             display: flex;
+            flex-direction: column;
             align-items: center;
-            justify-content: flex-start;
-            gap: 3mm;
+            justify-content: center;
+            gap: 1mm;
             padding-bottom: 1mm;
-            text-align: left;
+            text-align: center;
         }
 
         .receipt-brand {
             display: flex;
             flex-direction: column;
             gap: .8mm;
-            align-items: flex-start;
+            align-items: center;
             min-width: 0;
+            text-align: center;
         }
 
         .receipt-logo {
@@ -142,7 +159,8 @@
         .receipt-head h1 {
             margin: 0;
             color: var(--ink);
-            font-size: 11px;
+            text-align: center;
+            font-size: var(--receipt-font-brand);
             line-height: 1.2;
             font-weight: 900;
         }
@@ -153,7 +171,7 @@
         }
 
         .receipt-tagline {
-            font-size: 8px;
+            font-size: var(--receipt-font-body);
             font-weight: 700;
         }
 
@@ -167,7 +185,7 @@
             margin: 0 0 2mm;
             color: var(--ink);
             text-align: center;
-            font-size: 12px;
+            font-size: var(--receipt-font-title);
             line-height: 1.2;
             font-weight: 900;
         }
@@ -183,17 +201,20 @@
         .receipt-info div,
         .receipt-summary div,
         .receipt-payment div {
-            display: flex;
-            align-items: baseline;
-            justify-content: space-between;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+            align-items: center;
+            justify-content: center;
             gap: 2mm;
+            text-align: center;
         }
 
         .receipt-info dt,
         .receipt-summary dt,
         .receipt-payment dt {
             color: var(--ink);
-            font-size: 7.2px;
+            text-align: center;
+            font-size: var(--receipt-font-meta);
             font-weight: 900;
         }
 
@@ -203,8 +224,8 @@
             min-width: 0;
             margin: 0;
             overflow-wrap: anywhere;
-            text-align: left;
-            font-size: 7.4px;
+            text-align: center;
+            font-size: var(--receipt-font-meta);
             font-weight: 800;
         }
 
@@ -213,7 +234,7 @@
             border-collapse: collapse;
             table-layout: fixed;
             margin: 0;
-            font-size: 6.1px;
+            font-size: var(--receipt-font-table);
         }
 
         .receipt-items-table th,
@@ -224,6 +245,7 @@
             vertical-align: top;
             text-align: center;
             overflow-wrap: anywhere;
+            line-height: 1.22;
         }
 
         .receipt-items-table th {
@@ -231,14 +253,14 @@
             background: transparent;
             border-top: 1px dashed var(--ink);
             border-bottom: 1px dashed var(--ink);
-            font-size: 6.3px;
+            font-size: var(--receipt-font-table-head);
             font-weight: 900;
         }
 
         .receipt-items-table th:first-child,
         .receipt-items-table td:first-child {
             width: 44%;
-            text-align: right;
+            text-align: center;
         }
 
         .receipt-items-table th:nth-child(2),
@@ -259,14 +281,14 @@
         }
 
         .receipt-items-table strong {
-            font-size: 6px;
+            font-size: var(--receipt-font-table);
             line-height: 1.2;
         }
 
         .receipt-items-table span {
             margin-top: .6mm;
             color: var(--muted-ink);
-            font-size: 5.1px;
+            font-size: var(--receipt-font-tiny);
             line-height: 1.15;
         }
 
@@ -275,7 +297,7 @@
             padding-block: 1mm;
             border-top: 2px solid var(--ink);
             border-bottom: 2px solid var(--ink);
-            font-size: 10px;
+            font-size: var(--receipt-font-total);
         }
 
         .receipt-grand-total dt,
@@ -289,11 +311,12 @@
             gap: 1.1mm;
             margin-top: 1.5mm;
             text-align: center;
+            justify-items: center;
             font-weight: 700;
         }
 
         .receipt-thanks {
-            font-size: 8.6px;
+            font-size: var(--receipt-font-body);
             font-weight: 900;
         }
 

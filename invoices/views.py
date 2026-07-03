@@ -188,9 +188,30 @@ class InvoicePrintView(InvoiceContextMixin, SalesRequiredMixin, DetailView):
         company_settings = context['company_settings']
         paper_width = company_settings.thermal_paper_width or CompanySettings.THERMAL_WIDTH_80
         is_narrow_paper = paper_width == CompanySettings.THERMAL_WIDTH_58
+        try:
+            font_scale = int(company_settings.thermal_invoice_font_scale or CompanySettings.THERMAL_FONT_LARGE)
+        except (TypeError, ValueError):
+            font_scale = int(CompanySettings.THERMAL_FONT_LARGE)
+        font_multiplier = font_scale / 100
+
+        def css_number(value):
+            return f'{value:.2f}'.rstrip('0').rstrip('.')
+
+        def scaled_font(base_size, max_size):
+            return css_number(min(base_size * font_multiplier, max_size))
+
         context['thermal_paper_width'] = int(paper_width)
         context['thermal_printable_width'] = 58 if is_narrow_paper else 72
         context['thermal_receipt_width'] = 50 if is_narrow_paper else 66
+        context['thermal_invoice_font_scale'] = css_number(font_multiplier)
+        context['thermal_receipt_font_tiny'] = scaled_font(5.1, 6.8)
+        context['thermal_receipt_font_table'] = scaled_font(6.1, 7.4)
+        context['thermal_receipt_font_table_head'] = scaled_font(6.3, 7.8)
+        context['thermal_receipt_font_meta'] = scaled_font(7.2, 9.2)
+        context['thermal_receipt_font_body'] = scaled_font(8, 10.4)
+        context['thermal_receipt_font_brand'] = scaled_font(11, 14)
+        context['thermal_receipt_font_title'] = scaled_font(12, 15)
+        context['thermal_receipt_font_total'] = scaled_font(10, 13)
         context['thermal_print_mode'] = company_settings.thermal_print_mode or CompanySettings.PRINT_MODE_BROWSER
         context['thermal_printer_name'] = company_settings.thermal_printer_name or ''
         return context

@@ -261,6 +261,10 @@ class InvoicePDFExportTests(TestCase):
         self.assertContains(print_response, 'size: 72mm auto')
         self.assertContains(print_response, '--receipt-width: 66mm')
         self.assertContains(print_response, '--receipt-vertical-padding: 10mm')
+        self.assertContains(print_response, '--receipt-font-scale: 1.15')
+        self.assertContains(print_response, '--receipt-font-body: 9.2px')
+        self.assertContains(print_response, 'text-align: center')
+        self.assertContains(print_response, 'grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr)')
         self.assertContains(print_response, 'font-weight: 900')
         self.assertNotContains(print_response, 'app-shell')
         self.assertNotContains(print_response, 'css/main.css')
@@ -277,6 +281,18 @@ class InvoicePDFExportTests(TestCase):
         self.assertContains(response, '--paper-width: 58mm')
         self.assertContains(response, 'size: 58mm auto')
         self.assertContains(response, '--receipt-width: 50mm')
+
+    def test_invoice_print_uses_configured_font_scale(self):
+        self.client.force_login(self.user)
+        settings = CompanySettings.load()
+        settings.thermal_invoice_font_scale = CompanySettings.THERMAL_FONT_XLARGE
+        settings.save(update_fields=['thermal_invoice_font_scale'])
+
+        response = self.client.get(reverse('invoices:print', kwargs={'pk': self.invoice.pk}), secure=True)
+
+        self.assertContains(response, '--receipt-font-scale: 1.3')
+        self.assertContains(response, '--receipt-font-body: 10.4px')
+        self.assertContains(response, '--receipt-font-table: 7.4px')
 
     def test_invoice_print_exposes_direct_print_settings(self):
         self.client.force_login(self.user)

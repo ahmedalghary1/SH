@@ -8,7 +8,7 @@ class CompanySettingsForm(forms.ModelForm):
         model = CompanySettings
         fields = (
             'company_name', 'phone', 'email', 'address', 'tax_number', 'logo',
-            'invoice_notes', 'thermal_paper_width', 'thermal_print_mode',
+            'invoice_notes', 'thermal_paper_width', 'thermal_invoice_font_scale', 'thermal_print_mode',
             'thermal_printer_name', 'max_sales_discount_percentage',
             'allow_manager_sell_below_cost',
         )
@@ -21,6 +21,7 @@ class CompanySettingsForm(forms.ModelForm):
             'logo': 'الشعار',
             'invoice_notes': 'ملاحظات الفاتورة',
             'thermal_paper_width': 'مقاس ورق طابعة الفواتير',
+            'thermal_invoice_font_scale': 'حجم خط الفاتورة الحرارية',
             'thermal_print_mode': 'طريقة طباعة الفواتير',
             'thermal_printer_name': 'اسم الطابعة الحرارية',
             'max_sales_discount_percentage': 'حد خصم المبيعات',
