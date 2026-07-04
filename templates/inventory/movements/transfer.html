@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}تحويل مخزون{% endblock %}
 {% block content %}<div class="page-head"><h1>تحويل مخزون</h1></div>{% include 'partials/model_form.html' with button_text='تحويل' %}{% endblock %}
 {% block extra_js %}<script src="{% static 'js/inventory.js' %}"></script>{% endblock %}

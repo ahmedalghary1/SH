@@ -1,4 +1,4 @@
-const CACHE_VERSION = "sh-pwa-v2026-07-02-08";
+const CACHE_VERSION = "sh-pwa-v2026-07-04-01";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const OFFLINE_URL = "/offline/";
@@ -810,7 +810,7 @@ async function networkFirstPost(request) {
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    cacheUrls([...CORE_ASSETS, ...APP_SHELL_PAGES])
+    cacheUrls(CORE_ASSETS)
       .then(() => self.skipWaiting())
   );
 });
