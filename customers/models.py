@@ -18,7 +18,7 @@ class Customer(models.Model):
 
     name = models.CharField(max_length=200, db_index=True)
     customer_type = models.CharField(max_length=30, choices=CUSTOMER_TYPE_CHOICES, default=TYPE_RETAIL, db_index=True)
-    phone = models.CharField(max_length=20, db_index=True)
+    phone = models.CharField(max_length=20, blank=True, db_index=True)
     whatsapp = models.CharField(max_length=20, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
     company_name = models.CharField(max_length=200, blank=True, null=True)
@@ -49,7 +49,7 @@ class Customer(models.Model):
         ]
 
     def __str__(self):
-        return f'{self.name} - {self.phone}'
+        return f'{self.name} - {self.phone}' if self.phone else self.name
 
 
 class CustomerInteraction(models.Model):

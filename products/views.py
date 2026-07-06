@@ -226,7 +226,9 @@ class ProductCreateView(ManagerRequiredMixin, View):
                             warehouse=warehouse,
                             quantity=quantity,
                             user=request.user,
-                            note='كمية أولية عند إضافة المنتج',
+                            note='رصيد افتتاحي عند إضافة المنتج',
+                            source='opening_balance',
+                            movement_type=StockMovement.TYPE_OPENING_BALANCE,
                         )
                     stock, _ = Stock.objects.get_or_create(
                         warehouse=warehouse,

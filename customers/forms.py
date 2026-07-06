@@ -36,6 +36,7 @@ class CustomerForm(forms.ModelForm):
             (Customer.TYPE_WHOLESALE, 'جملة'),
         )
         self.fields['sales_representative'].required = False
+        self.fields['phone'].required = False
         self.fields['sales_representative'].empty_label = 'بدون مسؤول محدد'
         self.fields['sales_representative'].queryset = User.objects.filter(
             role=User.ROLE_SALES,
@@ -80,6 +81,7 @@ class SimpleCustomerForm(forms.ModelForm):
             (Customer.TYPE_WHOLESALE, 'جملة'),
         )
         self.fields['sales_representative'].required = False
+        self.fields['phone'].required = False
         self.fields['sales_representative'].empty_label = 'بدون مسؤول محدد'
         self.fields['sales_representative'].queryset = User.objects.filter(
             role=User.ROLE_SALES,

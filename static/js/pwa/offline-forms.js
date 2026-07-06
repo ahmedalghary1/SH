@@ -377,13 +377,8 @@ function validateOfflineForm(form, submitter = null) {
 
     if (path.startsWith("/customers/")) {
         const name = getField(form, "name") || getField(form, "id_name");
-        const phone = getField(form, "phone") || getField(form, "id_phone");
         if (name && !String(name.value || "").trim()) {
             showOfflineNotice("اكتب اسم العميل قبل الحفظ أوفلاين.", true);
-            return false;
-        }
-        if (phone && !String(phone.value || "").trim()) {
-            showOfflineNotice("اكتب رقم الهاتف قبل الحفظ أوفلاين.", true);
             return false;
         }
     }

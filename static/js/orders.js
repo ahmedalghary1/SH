@@ -293,6 +293,10 @@
         }
     }
 
+    function customerLabel(customer) {
+        return customer.phone ? `${customer.name} - ${customer.phone}` : customer.name;
+    }
+
     function resetProductMeta() {
         setFieldValue(stockInput, "");
         setFieldValue(priceInput, "");
@@ -402,10 +406,10 @@
             const button = document.createElement("button");
             button.type = "button";
             button.className = "search-result";
-            button.textContent = `${customer.name} - ${customer.phone}`;
+            button.textContent = customerLabel(customer);
             button.dataset.id = customer.id;
             button.dataset.name = customer.name;
-            button.dataset.phone = customer.phone;
+            button.dataset.phone = customer.phone || "";
             customerResults.appendChild(button);
         });
         customerResults.classList.add("is-open");
@@ -418,7 +422,7 @@
         if (!option) {
             option = document.createElement("option");
             option.value = button.dataset.id;
-            option.textContent = `${button.dataset.name} - ${button.dataset.phone}`;
+            option.textContent = button.dataset.phone ? `${button.dataset.name} - ${button.dataset.phone}` : button.dataset.name;
             customerSelect.appendChild(option);
         }
         option.selected = true;
@@ -590,7 +594,7 @@
         }
         const option = document.createElement("option");
         option.value = data.data.id;
-        option.textContent = `${data.data.name} - ${data.data.phone}`;
+        option.textContent = customerLabel(data.data);
         option.selected = true;
         customerSelect.appendChild(option);
         if (typeof closeModal === "function") {

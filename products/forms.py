@@ -149,9 +149,11 @@ class InitialStockForm(forms.Form):
     )
     new_warehouse_name = forms.CharField(required=False, label='مخزن جديد')
     quantity = forms.IntegerField(
-        min_value=1,
-        label='الكمية',
-        initial=1,
+        min_value=0,
+        label='الرصيد الافتتاحي',
+        initial=0,
+        required=False,
+        widget=forms.NumberInput(attrs={'min': '0', 'step': '1'}),
     )
 
     def clean(self):

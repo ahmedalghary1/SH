@@ -201,3 +201,17 @@ class CustomerCRMViewTests(TestCase):
         for url in urls:
             response = self.client.get(url)
             self.assertEqual(response.status_code, 200)
+
+    def test_simple_customer_create_accepts_blank_phone(self):
+        response = self.client.post(reverse('customers:simple_create'), {
+            'name': 'No Phone Customer',
+            'customer_type': Customer.TYPE_RETAIL,
+            'phone': '',
+            'opening_balance': '0',
+            'address': '',
+            'notes': '',
+        })
+
+        self.assertRedirects(response, reverse('customers:simple_list'))
+        customer = Customer.objects.get(name='No Phone Customer')
+        self.assertEqual(customer.phone, '')

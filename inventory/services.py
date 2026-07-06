@@ -64,7 +64,7 @@ def _consume_batches(*, variant, warehouse, quantity, batch=None):
 
 
 @transaction.atomic
-def stock_in(*, variant, warehouse, quantity, user, note='', unit_cost=None, source='manual_in'):
+def stock_in(*, variant, warehouse, quantity, user, note='', unit_cost=None, source='manual_in', movement_type=StockMovement.TYPE_IN):
     if quantity <= 0:
         raise ValidationError('الكمية يجب أن تكون أكبر من صفر')
     stock = _get_locked_stock(warehouse, variant)
@@ -82,7 +82,7 @@ def stock_in(*, variant, warehouse, quantity, user, note='', unit_cost=None, sou
         user=user,
     )
     movement = StockMovement.objects.create(
-        movement_type=StockMovement.TYPE_IN,
+        movement_type=movement_type,
         variant=variant,
         to_warehouse=warehouse,
         batch=batch,

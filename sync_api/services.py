@@ -153,7 +153,7 @@ def process_customer(operation, user):
     if customer is None:
         customer = Customer.objects.create(
             name=customer_data.get('name') or 'عميل بدون اسم',
-            phone=phone or f"offline-{customer_data.get('local_uuid')}",
+            phone=phone,
             whatsapp=customer_data.get('whatsapp') or '',
             customer_type=customer_data.get('customer_type') or Customer.TYPE_RETAIL,
             address=customer_data.get('address') or '',
@@ -355,7 +355,7 @@ def process_customer(operation, user):
 
     fields = {
         'name': customer_data.get('name') or 'Offline customer',
-        'phone': phone or f"offline-{local_uuid or operation['local_uuid']}",
+        'phone': phone,
         'whatsapp': customer_data.get('whatsapp') or '',
         'customer_type': customer_data.get('customer_type') or Customer.TYPE_RETAIL,
         'address': customer_data.get('address') or '',
@@ -887,7 +887,9 @@ def _sync_initial_variant_and_stock(product, data, user):
             warehouse=warehouse,
             quantity=quantity,
             user=user,
-            note='Offline product initial quantity',
+            note='Offline product opening balance',
+            source='opening_balance',
+            movement_type=StockMovement.TYPE_OPENING_BALANCE,
         )
         stock, _ = Stock.objects.get_or_create(warehouse=warehouse, variant=variant, defaults={'quantity': 0})
         stock.min_quantity = _int_value(data.get('min_quantity'))

@@ -5,6 +5,7 @@ from django.urls import reverse
 
 from accounts.models import User
 from config.pdf_utils import shape_arabic
+from inventory.models import Stock, StockBatch, StockMovement, Warehouse
 
 from .models import Category, Color, Product, ProductVariant, Size
 
@@ -107,3 +108,46 @@ class BulkPriceUpdateViewTests(TestCase):
 
     def test_pdf_arabic_text_is_shaped(self):
         self.assertNotEqual(shape_arabic('تقرير المنتجات'), 'تقرير المنتجات')
+
+
+class ProductCreateViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='manager2', password='pass', role=User.ROLE_MANAGER)
+        self.client.force_login(self.user)
+        self.category = Category.objects.create(name='Category')
+        self.color = Color.objects.create(name='Black')
+        self.size = Size.objects.create(name='L', sort_order=1)
+        self.warehouse = Warehouse.objects.create(name='Main Warehouse', warehouse_type=Warehouse.TYPE_MAIN)
+
+    def test_opening_balance_creates_opening_stock_movement(self):
+        response = self.client.post(reverse('products:create'), {
+            'name': 'Opening Product',
+            'sku': 'OPEN-001',
+            'category': self.category.pk,
+            'supplier': '',
+            'material': '',
+            'pieces_per_dozen': '12',
+            'color': self.color.pk,
+            'new_color_name': '',
+            'size': self.size.pk,
+            'new_size_name': '',
+            'cost_price': '25.00',
+            'retail_price': '50.00',
+            'wholesale_price': '40.00',
+            'warehouse': self.warehouse.pk,
+            'new_warehouse_name': '',
+            'quantity': '7',
+        })
+
+        product = Product.objects.get(sku='OPEN-001')
+        self.assertRedirects(response, reverse('products:detail', args=[product.pk]))
+        variant = product.variants.get()
+        self.assertEqual(Stock.objects.get(warehouse=self.warehouse, variant=variant).quantity, 7)
+
+        movement = StockMovement.objects.get(variant=variant)
+        self.assertEqual(movement.movement_type, StockMovement.TYPE_OPENING_BALANCE)
+        self.assertEqual(movement.quantity, 7)
+
+        batch = StockBatch.objects.get(variant=variant, warehouse=self.warehouse)
+        self.assertEqual(batch.source, 'opening_balance')
+        self.assertEqual(batch.received_quantity, 7)

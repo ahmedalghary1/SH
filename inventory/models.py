@@ -81,6 +81,7 @@ class StockBatch(models.Model):
 
 
 class StockMovement(models.Model):
+    TYPE_OPENING_BALANCE = 'opening_balance'
     TYPE_IN = 'in'
     TYPE_OUT = 'out'
     TYPE_TRANSFER = 'transfer'
@@ -98,6 +99,7 @@ class StockMovement(models.Model):
     TYPE_SAMPLE = 'sample'
 
     MOVEMENT_TYPE_CHOICES = [
+        (TYPE_OPENING_BALANCE, 'رصيد افتتاحي'),
         (TYPE_IN, 'دخول مخزون'),
         (TYPE_OUT, 'خروج مخزون'),
         (TYPE_TRANSFER, 'تحويل بين مخازن'),
