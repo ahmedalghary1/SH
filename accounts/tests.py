@@ -90,3 +90,18 @@ class LoginCsrfCookieTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+
+    def test_login_post_without_csrf_is_not_rejected(self):
+        client = Client(enforce_csrf_checks=True)
+        response = client.post(
+            reverse('accounts:login'),
+            {
+                'username': 'missing-user',
+                'password': 'bad-password',
+            },
+            HTTP_HOST='sh.elwsamstore.com',
+            HTTP_REFERER='https://sh.elwsamstore.com/accounts/login/',
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200)

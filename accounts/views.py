@@ -3,7 +3,7 @@ from django.contrib import messages
 from django.contrib.auth.views import LoginView, LogoutView
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
-from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, ListView, UpdateView, View
@@ -24,6 +24,10 @@ def ensure_sales_rep_cash_account(user):
         CashAccount.get_for_user(user)
 
 
+# Keep the login POST tolerant of stale/missing CSRF cookies caused by old
+# cached auth pages or misconfigured deployment proxies. Other POST endpoints
+# remain protected by CsrfViewMiddleware.
+@method_decorator(csrf_exempt, name='dispatch')
 @method_decorator(ensure_csrf_cookie, name='dispatch')
 @method_decorator(never_cache, name='dispatch')
 class AppLoginView(LoginView):
