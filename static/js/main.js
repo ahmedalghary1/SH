@@ -13,11 +13,23 @@ function getCookie(name) {
     return cookieValue;
 }
 
-if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/service-worker.js", { scope: "/" }).catch((error) => {
-            console.warn("Service worker registration failed", error);
+const isAuthPage = window.location.pathname.startsWith("/accounts/");
+
+if ("serviceWorker" in navigator && isAuthPage) {
+    navigator.serviceWorker.getRegistrations?.()
+        .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+        .catch((error) => {
+            console.warn("Service worker unregister failed on auth page", error);
         });
+}
+
+if ("serviceWorker" in navigator && !isAuthPage) {
+    window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/service-worker.js", { scope: "/" })
+            .then((registration) => registration.update?.())
+            .catch((error) => {
+                console.warn("Service worker registration failed", error);
+            });
     });
 }
 

@@ -1,4 +1,4 @@
-const CACHE_VERSION = "sh-pwa-v2026-07-04-01";
+const CACHE_VERSION = "sh-pwa-v2026-07-06-auth-01";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const OFFLINE_URL = "/offline/";
@@ -544,6 +544,10 @@ function isApiRequest(url) {
   return url.pathname.startsWith("/api/");
 }
 
+function isAuthRequest(url) {
+  return url.pathname.startsWith("/accounts/") || url.pathname.startsWith("/admin/");
+}
+
 function isNavigationRequest(request) {
   return request.mode === "navigate" || request.destination === "document";
 }
@@ -555,7 +559,7 @@ function isShellPageUrl(url) {
 function isCacheableGet(request) {
   if (request.method !== "GET") return false;
   const url = sameOriginUrl(request);
-  if (!url || isApiRequest(url)) return false;
+  if (!url || isApiRequest(url) || isAuthRequest(url)) return false;
   return CACHEABLE_DESTINATIONS.has(request.destination) || STATIC_EXTENSIONS.test(url.pathname);
 }
 
@@ -569,9 +573,13 @@ function normalizedRequest(input, stripSearch = false) {
 
 function shouldStoreResponse(cacheRequest, response) {
   if (!cacheRequest || !response || !response.ok || response.type !== "basic") return false;
+  const requestUrl = sameOriginUrl(cacheRequest);
+  if (requestUrl && isAuthRequest(requestUrl)) return false;
+  if (response.headers.has("set-cookie")) return false;
+  const cacheControl = (response.headers.get("cache-control") || "").toLowerCase();
+  if (cacheControl.includes("no-store") || cacheControl.includes("private")) return false;
 
   if (response.redirected && response.url) {
-    const requestUrl = sameOriginUrl(cacheRequest);
     const responseUrl = sameOriginUrl(response.url);
     if (!requestUrl || !responseUrl || requestUrl.pathname !== responseUrl.pathname) {
       return false;
@@ -679,6 +687,23 @@ async function cacheFirst(request) {
       return navigationFallback();
     }
     throw error;
+  }
+}
+
+async function networkFirstNavigation(request) {
+  const url = sameOriginUrl(request);
+  if (url && isAuthRequest(url)) {
+    return fetch(request);
+  }
+
+  try {
+    const response = await fetch(request);
+    await putInCache(PAGE_CACHE, request, response);
+    return response;
+  } catch (error) {
+    const cached = await matchCachedRequest(request);
+    if (cached) return cached;
+    return navigationFallback();
   }
 }
 
@@ -833,7 +858,7 @@ self.addEventListener("fetch", (event) => {
 
   if (isNavigationRequest(request)) {
     if (request.method !== "GET") return;
-    event.respondWith(cacheFirst(request));
+    event.respondWith(networkFirstNavigation(request));
     return;
   }
 

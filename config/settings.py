@@ -41,6 +41,18 @@ def env_list(name, default=''):
     return [item.strip() for item in value.split(',') if item.strip()]
 
 
+def csrf_origins_from_hosts(hosts):
+    origins = []
+    for host in hosts:
+        if not host or host == '*' or host.startswith('.'):
+            continue
+        if host in {'localhost', '127.0.0.1'}:
+            origins.extend([f'http://{host}', f'https://{host}'])
+        else:
+            origins.append(f'https://{host}')
+    return origins
+
+
 def env_url(name, default):
     value = os.environ.get(name, default)
     if not value:
@@ -90,7 +102,7 @@ ALLOWED_HOSTS = env_list(
 )
 CSRF_TRUSTED_ORIGINS = env_list(
     'CSRF_TRUSTED_ORIGINS',
-    'https://sh.elwsamstore.com,https://www.sh.elwsamstore.com',
+    ','.join(csrf_origins_from_hosts(ALLOWED_HOSTS)),
 )
 USE_WHITENOISE = (
     env_bool('USE_WHITENOISE', not DEBUG)
