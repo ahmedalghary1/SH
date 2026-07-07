@@ -45,30 +45,34 @@ class CashAccount(models.Model):
         return self.name
 
     @classmethod
+    def _get_or_create_single(cls, defaults=None, **lookup):
+        account = cls.objects.filter(**lookup).order_by('pk').first()
+        if account:
+            return account
+        return cls.objects.create(**lookup, **(defaults or {}))
+
+    @classmethod
     def get_default(cls):
-        account, _ = cls.objects.get_or_create(
+        return cls._get_or_create_single(
             name='الخزنة الرئيسية',
             defaults={'account_type': cls.TYPE_CASH, 'is_active': True},
         )
-        return account
 
     @classmethod
     def get_cash_drawer(cls):
-        account, _ = cls.objects.get_or_create(
+        return cls._get_or_create_single(
             name='درج النقدية',
             defaults={'account_type': cls.TYPE_CASH, 'is_active': True},
         )
-        return account
 
     @classmethod
     def get_for_user(cls, user):
         if user and getattr(user, 'role', None) == 'sales':
-            account, _ = cls.objects.get_or_create(
+            return cls._get_or_create_single(
                 account_type=cls.TYPE_SALES_REP_CASH,
                 assigned_user=user,
                 defaults={'name': f'خزنة {user.get_full_name() or user.username}', 'is_active': True},
             )
-            return account
         return cls.get_default()
 
 
