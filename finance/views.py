@@ -1,9 +1,6 @@
-from decimal import Decimal
-
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
-from django.db import models
 from django.db.models import Sum
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
@@ -38,7 +35,7 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
         )
 
         selected_account_id = self.request.GET.get('account', '').strip()
-        selected_account = all_cash_accounts.filter(pk=selected_account_id).first() if selected_account_id else None
+        selected_account = all_cash_accounts.filter(pk=selected_account_id).first() if selected_account_id.isdigit() else None
         scoped_accounts = all_cash_accounts.filter(pk=selected_account.pk) if selected_account else all_cash_accounts
         account_ids = list(scoped_accounts.values_list('pk', flat=True))
 
@@ -60,19 +57,11 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
             'created_by',
         ).order_by('-transaction_date', '-created_at')
 
-        total_in = transactions.filter(direction=PaymentTransaction.DIRECTION_IN).aggregate(v=Sum('amount'))['v'] or Decimal('0')
-        total_out = transactions.filter(direction=PaymentTransaction.DIRECTION_OUT).aggregate(v=Sum('amount'))['v'] or Decimal('0')
+        total_in = transactions.filter(direction=PaymentTransaction.DIRECTION_IN).aggregate(v=Sum('amount'))['v'] or 0
+        total_out = transactions.filter(direction=PaymentTransaction.DIRECTION_OUT).aggregate(v=Sum('amount'))['v'] or 0
         period_net = total_in - total_out
-        current_balance = scoped_accounts.aggregate(v=Sum('balance'))['v'] or Decimal('0')
-        movement_from_start_to_now = transactions_base.filter(transaction_date__gte=date_from).aggregate(
-            total_in=Sum('amount', filter=models.Q(direction=PaymentTransaction.DIRECTION_IN)),
-            total_out=Sum('amount', filter=models.Q(direction=PaymentTransaction.DIRECTION_OUT)),
-        )
-        opening_balance = current_balance - (
-            (movement_from_start_to_now['total_in'] or Decimal('0')) -
-            (movement_from_start_to_now['total_out'] or Decimal('0'))
-        )
-        closing_balance = opening_balance + period_net
+        current_balance = scoped_accounts.aggregate(v=Sum('balance'))['v'] or 0
+        opening_balance = current_balance - period_net
 
         cash_sales = transactions.filter(
             transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
@@ -98,7 +87,6 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
 
         context.update({
             'opening_balance': opening_balance,
-            'closing_balance': closing_balance,
             'cash_sales': cash_sales,
             'customer_collections': customer_collections,
             'supplier_payments': supplier_payments,
@@ -107,6 +95,7 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
             'total_in': total_in,
             'total_out': total_out,
             'period_net': period_net,
+            'period_net_is_negative': period_net < 0,
             'current_balance': current_balance,
             'main_account': default_account,
             'cash_drawer': cash_drawer,

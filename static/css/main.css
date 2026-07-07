@@ -3587,6 +3587,12 @@ tbody tr:hover {
     gap: var(--space-2);
 }
 
+.cash-filter-form {
+    align-items: end;
+    grid-template-columns: minmax(220px, 1.4fr) repeat(2, minmax(160px, 0.8fr)) auto;
+    margin-bottom: var(--space-4);
+}
+
 .cash-balance-strip {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
@@ -3644,26 +3650,35 @@ tbody tr:hover {
 
 .cash-summary-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-    gap: var(--space-3);
-    margin-bottom: var(--space-4);
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
 }
 
 .cash-card {
     background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-lg);
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    min-height: 92px;
     padding: var(--space-4);
+    transition: all 0.2s;
+}
+
+.cash-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.cash-card.current {
+    border-color: var(--primary-color);
 }
 
 .cash-icon {
-    width: 42px;
-    height: 42px;
-    border-radius: 8px;
+    width: 50px;
+    height: 50px;
+    border-radius: var(--radius-md);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -3718,7 +3733,7 @@ tbody tr:hover {
 
 .cash-value {
     display: block;
-    font-size: 1.25rem;
+    font-size: 1.5rem;
     font-weight: 700;
     color: var(--text-color);
 }
@@ -3789,7 +3804,7 @@ tbody tr:hover {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: var(--space-3);
-    margin-bottom: var(--space-4);
+    margin-bottom: var(--space-6);
 }
 
 .cash-action-btn {
@@ -3797,9 +3812,15 @@ tbody tr:hover {
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     text-decoration: none;
     font-weight: 600;
+    transition: all 0.2s;
+}
+
+.cash-action-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
 }
 
 .cash-action-btn.expense {
@@ -3824,8 +3845,8 @@ tbody tr:hover {
 
 .cash-transactions-section {
     background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-lg);
     padding: var(--space-4);
 }
 
@@ -3845,11 +3866,11 @@ tbody tr:hover {
 }
 
 .cash-table-wrap thead {
-    background: var(--background-color);
+    background: var(--primary-color);
 }
 
 .cash-table-wrap th {
-    color: var(--text-color);
+    color: white;
     padding: var(--space-3);
     text-align: right;
     font-size: 0.82rem;
@@ -3884,6 +3905,14 @@ tbody tr:hover {
     color: var(--muted-text);
 }
 
+.simple-cash-page .stat-card.highlight {
+    border-color: var(--primary-color);
+}
+
+.simple-cash-page .stat-card .button-row {
+    margin-top: var(--space-3);
+}
+
 @media (max-width: 68rem) {
     .cash-filter-bar,
     .cash-balance-strip {
@@ -3914,7 +3943,8 @@ tbody tr:hover {
     .cash-balance-metrics,
     .cash-summary-grid,
     .cash-accounts-grid,
-    .cash-actions {
+    .cash-actions,
+    .cash-filter-form {
         grid-template-columns: 1fr;
     }
 
