@@ -196,10 +196,22 @@ class CashAccountDeleteView(ManagerDeleteView):
     model = CashAccount
     success_url = reverse_lazy('finance:accounts')
     success_message = 'تم حذف الحساب المالي'
+    protected_message = 'لا يمكن حذف هذه الخزنة لأنها مرتبطة بحركات مالية. يمكنك إيقافها بدل حذفها للحفاظ على سلامة البيانات.'
 
-    def dispatch(self, request, *args, **kwargs):
-        messages.error(request, 'لا يمكن حذف الخزنة الرئيسية الوحيدة')
-        return redirect('finance:accounts')
+    def form_valid(self, form):
+        account = self.get_object()
+        if account.balance != 0:
+            messages.error(self.request, 'لا يمكن حذف خزنة رصيدها غير صفر. صفّر الرصيد أولاً ثم أعد المحاولة.')
+            return redirect(self.get_success_url())
+        if account.account_type == CashAccount.TYPE_CASH and account.is_active:
+            has_other_active_cash = CashAccount.objects.filter(
+                account_type=CashAccount.TYPE_CASH,
+                is_active=True,
+            ).exclude(pk=account.pk).exists()
+            if not has_other_active_cash:
+                messages.error(self.request, 'لا يمكن حذف آخر خزنة نقدية نشطة في النظام.')
+                return redirect(self.get_success_url())
+        return super().form_valid(form)
 
 
 class CashAccountDetailView(ManagerRequiredMixin, DetailView):
