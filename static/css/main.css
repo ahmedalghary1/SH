@@ -3909,8 +3909,75 @@ tbody tr:hover {
     border-color: var(--primary-color);
 }
 
+.simple-cash-page > .stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+}
+
+.simple-cash-page > .stats-grid .stat-card {
+    display: grid;
+    gap: var(--space-2);
+    min-height: 10.5rem;
+    padding: var(--space-4);
+}
+
+.simple-cash-page > .stats-grid .stat-card span {
+    color: var(--text-color);
+    font-size: 0.95rem;
+    font-weight: 800;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.simple-cash-page > .stats-grid .stat-card strong {
+    direction: ltr;
+    font-size: clamp(1.35rem, 1rem + 1vw, 1.75rem);
+    line-height: 1.15;
+    margin-block: var(--space-1);
+    overflow-wrap: anywhere;
+    text-align: right;
+}
+
+.simple-cash-page > .stats-grid .stat-card small {
+    color: var(--muted-text);
+    line-height: 1.5;
+    min-height: 1.5rem;
+}
+
 .simple-cash-page .stat-card .button-row {
+    display: grid;
+    gap: var(--space-2);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     margin-top: var(--space-3);
+}
+
+.simple-cash-page .stat-card .button-row .btn {
+    min-width: 0;
+    padding-inline: var(--space-2);
+    white-space: normal;
+}
+
+.simple-cash-page .cash-summary-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 1fr));
+}
+
+.simple-cash-page .cash-card {
+    min-height: 7.75rem;
+}
+
+.simple-cash-page .cash-content {
+    min-width: 0;
+}
+
+.simple-cash-page .cash-label {
+    line-height: 1.45;
+}
+
+.simple-cash-page .cash-value {
+    direction: ltr;
+    overflow-wrap: anywhere;
+    text-align: right;
 }
 
 @media (max-width: 68rem) {
@@ -3950,6 +4017,16 @@ tbody tr:hover {
 
     .cash-balance-main strong {
         font-size: 1.55rem;
+    }
+
+    .simple-cash-page > .stats-grid,
+    .simple-cash-page .cash-summary-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .simple-cash-page > .stats-grid .stat-card,
+    .simple-cash-page .cash-card {
+        min-height: 0;
     }
 }
 
