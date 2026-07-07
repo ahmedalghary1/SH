@@ -50,18 +50,6 @@
         {% if form.warehouse.errors %}<small class="error">{{ form.warehouse.errors|join:', ' }}</small>{% endif %}
     </label>
 
-    <label>
-        <span>{{ form.cash_account.label }}</span>
-        {{ form.cash_account }}
-        {% if form.cash_account.errors %}<small class="error">{{ form.cash_account.errors|join:', ' }}</small>{% endif %}
-    </label>
-
-    <label>
-        <span>{{ form.paid_amount.label }}</span>
-        {{ form.paid_amount }}
-        {% if form.paid_amount.errors %}<small class="error">{{ form.paid_amount.errors|join:', ' }}</small>{% endif %}
-    </label>
-
     <div class="table-wrap span-2">
         <table>
             <thead>
@@ -83,6 +71,37 @@
                     <th></th>
                 </tr>
             </tfoot>
+        </table>
+    </div>
+
+    <label>
+        <span>{{ form.cash_account.label }}</span>
+        {{ form.cash_account }}
+        {% if form.cash_account.errors %}<small class="error">{{ form.cash_account.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <label>
+        <span>{{ form.paid_amount.label }}</span>
+        {{ form.paid_amount }}
+        {% if form.paid_amount.errors %}<small class="error">{{ form.paid_amount.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <div class="table-wrap span-2">
+        <table>
+            <tbody>
+                <tr>
+                    <th>إجمالي الفاتورة</th>
+                    <td data-purchase-summary-total>0.00</td>
+                </tr>
+                <tr>
+                    <th>المدفوع على الفاتورة</th>
+                    <td data-purchase-summary-paid>0.00</td>
+                </tr>
+                <tr>
+                    <th>المتبقي على المورد</th>
+                    <td data-purchase-summary-remaining>0.00</td>
+                </tr>
+            </tbody>
         </table>
     </div>
 
