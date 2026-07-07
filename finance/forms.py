@@ -21,8 +21,26 @@ class CashAccountForm(forms.ModelForm):
             'is_active': 'نشط',
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['assigned_user'].queryset = User.objects.filter(
+            role=User.ROLE_SALES,
+            is_active=True,
+        ).order_by('username')
+        self.fields['assigned_user'].required = False
+        self.fields['assigned_user'].label = 'المندوب'
+
     def clean(self):
         cleaned = super().clean()
+        account_type = cleaned.get('account_type')
+        assigned_user = cleaned.get('assigned_user')
+        if account_type == CashAccount.TYPE_SALES_REP_CASH:
+            if not assigned_user:
+                self.add_error('assigned_user', 'اختر المندوب لهذه العهدة المالية')
+            elif assigned_user.role != User.ROLE_SALES:
+                self.add_error('assigned_user', 'العهدة المالية تكون للمندوبين فقط')
+        else:
+            cleaned['assigned_user'] = None
         return cleaned
 
 

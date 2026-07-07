@@ -11,7 +11,6 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView
 
-from accounts.models import User
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, can_view_costs, SalesRequiredMixin
 from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
@@ -33,8 +32,6 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
         today = timezone.localdate()
         default_account = CashAccount.get_default()
         cash_drawer = CashAccount.get_cash_drawer()
-        for sales_user in User.objects.filter(role=User.ROLE_SALES, is_active=True):
-            CashAccount.get_for_user(sales_user)
         all_cash_accounts = CashAccount.objects.filter(is_active=True).select_related('assigned_user').order_by(
             'account_type',
             'name',

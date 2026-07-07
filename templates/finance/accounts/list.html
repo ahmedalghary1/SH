@@ -19,7 +19,7 @@
                 <td><span class="badge">{{ account.is_active|yesno:'نشط,متوقف' }}</span></td>
                 <td class="actions">
                     <a class="btn btn-light" href="{% url 'finance:account_detail' account.pk %}">التفاصيل</a>
-                    <a class="btn btn-light" href="{% url 'finance:account_update' account.pk %}">تعديل</a>
+                    <a class="btn btn-light" href="{% url 'finance:account_update' account.pk %}">تعديل الاسم</a>
                     {% if request.user.can_hard_delete %}
                         <a class="btn btn-danger" href="{% url 'finance:account_delete' account.pk %}">حذف</a>
                     {% endif %}

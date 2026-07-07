@@ -18,12 +18,6 @@ from .models import User
 from .permissions import ManagerRequiredMixin
 
 
-def ensure_sales_rep_cash_account(user):
-    if user.role == User.ROLE_SALES:
-        from finance.models import CashAccount
-        CashAccount.get_for_user(user)
-
-
 # Keep the login POST tolerant of stale/missing CSRF cookies caused by old
 # cached auth pages or misconfigured deployment proxies. Other POST endpoints
 # remain protected by CsrfViewMiddleware.
@@ -87,7 +81,6 @@ class UserCreateView(ManagerRequiredMixin, CreateView):
 
     def form_valid(self, form):
         response = super().form_valid(form)
-        ensure_sales_rep_cash_account(self.object)
         messages.success(self.request, 'تم إنشاء الموظف بنجاح')
         return response
 
@@ -100,7 +93,6 @@ class UserUpdateView(ManagerRequiredMixin, UpdateView):
 
     def form_valid(self, form):
         response = super().form_valid(form)
-        ensure_sales_rep_cash_account(self.object)
         messages.success(self.request, 'تم تحديث بيانات الموظف')
         return response
 

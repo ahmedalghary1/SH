@@ -1,6 +1,9 @@
 {% extends 'base.html' %}
-{% block title %}إضافة حساب مالي{% endblock %}
+{% block title %}{% if object %}تعديل خزنة{% else %}إضافة خزنة{% endif %}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>إضافة حساب مالي</h1></div>
-{% include 'partials/model_form.html' with button_text='حفظ الحساب' %}
+<div class="page-head">
+    <h1>{% if object %}تعديل خزنة{% else %}إضافة خزنة{% endif %}</h1>
+    <a class="btn btn-light" href="{% url 'finance:accounts' %}">رجوع للخزن</a>
+</div>
+{% include 'partials/model_form.html' with button_text='حفظ الخزنة' %}
 {% endblock %}
