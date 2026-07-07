@@ -2,7 +2,6 @@ import json
 from decimal import Decimal, InvalidOperation
 
 from django import forms
-from django.db.models import Q
 
 from finance.models import CashAccount
 from inventory.models import Stock, Warehouse
@@ -85,7 +84,8 @@ class PurchaseOrderForm(forms.Form):
     retail_price = forms.DecimalField(min_value=0, required=False, label='سعر قطاعي')
     wholesale_price = forms.DecimalField(min_value=0, required=False, label='سعر جملة')
     warehouse = forms.ModelChoiceField(queryset=Warehouse.objects.filter(is_active=True), label='مخزن الإضافة', required=False)
-    cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة')
+    cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة', required=False)
+    paid_amount = forms.DecimalField(min_value=0, required=False, initial=0, label='المدفوع الآن')
     quantity = forms.IntegerField(min_value=1, label='الكمية', required=False)
     unit_cost = forms.DecimalField(min_value=0, label='سعر الشراء', required=False)
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
@@ -104,6 +104,7 @@ class PurchaseOrderForm(forms.Form):
         items = self._clean_items_json(cleaned.get('items_json'))
         if items:
             cleaned['purchase_items'] = items
+            self._clean_payment(cleaned, items)
             return cleaned
         if cleaned.get('product_variant'):
             if not cleaned.get('quantity'):
@@ -115,6 +116,7 @@ class PurchaseOrderForm(forms.Form):
                 'quantity': cleaned.get('quantity'),
                 'unit_cost': cleaned.get('unit_cost'),
             }]
+            self._clean_payment(cleaned, cleaned['purchase_items'])
             return cleaned
         if not (cleaned.get('new_product_name') or '').strip():
             self.add_error('product_variant', 'اختر الصنف أو اكتب منتج جديد')
@@ -132,7 +134,24 @@ class PurchaseOrderForm(forms.Form):
             self.add_error('quantity', 'أدخل الكمية')
         if cleaned.get('unit_cost') is None:
             self.add_error('unit_cost', 'أدخل سعر الشراء')
+        if cleaned.get('quantity') and cleaned.get('unit_cost') is not None:
+            self._clean_payment(cleaned, [{
+                'quantity': cleaned.get('quantity'),
+                'unit_cost': cleaned.get('unit_cost'),
+            }])
         return cleaned
+
+    def _clean_payment(self, cleaned, items):
+        paid_amount = cleaned.get('paid_amount') or Decimal('0')
+        cleaned['paid_amount'] = paid_amount
+        total = sum(
+            Decimal(str(item.get('quantity') or 0)) * Decimal(str(item.get('unit_cost') or 0))
+            for item in items
+        )
+        if paid_amount > total:
+            self.add_error('paid_amount', 'المدفوع لا يمكن أن يتجاوز إجمالي الفاتورة')
+        if paid_amount > 0 and not cleaned.get('cash_account'):
+            self.add_error('cash_account', 'اختر الخزنة عند تسجيل مبلغ مدفوع')
 
     def _clean_items_json(self, raw_items):
         if not raw_items:
@@ -220,31 +239,18 @@ class PurchaseReturnForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        supplier_id = self.data.get('supplier') if self.is_bound else self.initial.get('supplier')
         self.fields['supplier'].widget.attrs.update({'data-purchase-return-supplier': 'true'})
         self.fields['product_variant'].widget.attrs.update({'data-purchase-return-variant': 'true'})
         self.fields['warehouse'].widget.attrs.update({'data-purchase-return-warehouse': 'true'})
-        if supplier_id:
-            product_variant_id = self.data.get('product_variant') if self.is_bound else self.initial.get('product_variant')
-            variant_filter = Q(product__supplier_id=supplier_id)
-            if product_variant_id:
-                variant_filter |= Q(pk=product_variant_id)
-            self.fields['product_variant'].queryset = ProductVariant.objects.filter(
-                variant_filter,
-                is_active=True,
-            ).select_related('product', 'color', 'size').order_by('product__name', 'color__name', 'size__sort_order', 'size__name')
-        else:
-            self.fields['product_variant'].queryset = ProductVariant.objects.none()
+        self.fields['product_variant'].queryset = ProductVariant.objects.filter(
+            is_active=True,
+        ).select_related('product', 'color', 'size').order_by('product__name', 'color__name', 'size__sort_order', 'size__name')
 
     def clean(self):
         cleaned = super().clean()
-        supplier = cleaned.get('supplier')
         product_variant = cleaned.get('product_variant')
         warehouse = cleaned.get('warehouse')
         quantity = cleaned.get('quantity')
-
-        if supplier and product_variant and product_variant.product.supplier_id != supplier.pk:
-            self.add_error('product_variant', 'اختر صنفا خاصا بالمورد المحدد')
 
         if product_variant and warehouse:
             stock = Stock.objects.filter(variant=product_variant, warehouse=warehouse).first()

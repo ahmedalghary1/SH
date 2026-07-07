@@ -1,8 +1,6 @@
 from django import forms
 
 from inventory.models import Warehouse
-from purchases.models import Supplier
-
 from .models import Category, Color, Product, ProductVariant, Size
 
 
@@ -41,7 +39,7 @@ class ProductForm(forms.ModelForm):
 
     class Meta:
         model = Product
-        fields = ('name', 'sku', 'category', 'supplier', 'material', 'pieces_per_dozen', 'image')
+        fields = ('name', 'sku', 'category', 'material', 'pieces_per_dozen', 'image')
         labels = {
             'name': 'اسم المنتج',
             'sku': 'كود المنتج',
@@ -60,8 +58,6 @@ class ProductForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['supplier'].queryset = Supplier.objects.filter(is_active=True).order_by('name')
-        self.fields['supplier'].required = False
         self.fields['category'].required = False
 
     def clean(self):

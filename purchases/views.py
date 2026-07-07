@@ -55,7 +55,7 @@ def _get_or_create_named_model(model, selected, new_name, *, defaults=None, miss
     return obj
 
 
-def _create_purchase_product_variant(*, name, sku, category, category_name, color, color_name, size, size_name, pieces_per_dozen, retail_price, wholesale_price, unit_cost, supplier=None):
+def _create_purchase_product_variant(*, name, sku, category, category_name, color, color_name, size, size_name, pieces_per_dozen, retail_price, wholesale_price, unit_cost):
     name = (name or '').strip()
     sku = (sku or '').strip()
     if not name:
@@ -82,7 +82,6 @@ def _create_purchase_product_variant(*, name, sku, category, category_name, colo
         name=name,
         sku=sku,
         category=category,
-        supplier=supplier,
         retail_price=retail_price,
         wholesale_price=wholesale_price,
         pieces_per_dozen=pieces_per_dozen,
@@ -387,7 +386,7 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
         )
         return supplier
 
-    def get_or_create_product_variant(self, form, supplier):
+    def get_or_create_product_variant(self, form):
         variant = form.cleaned_data.get('product_variant')
         if variant:
             return variant
@@ -405,10 +404,9 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
             retail_price=form.cleaned_data.get('retail_price') or 0,
             wholesale_price=form.cleaned_data.get('wholesale_price') or 0,
             unit_cost=form.cleaned_data.get('unit_cost') or 0,
-            supplier=supplier,
         )
 
-    def build_purchase_items(self, form, supplier):
+    def build_purchase_items(self, form):
         posted_items = form.cleaned_data.get('purchase_items') or []
         if posted_items:
             items = []
@@ -424,7 +422,7 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
                 })
             return items
 
-        product_variant = self.get_or_create_product_variant(form, supplier)
+        product_variant = self.get_or_create_product_variant(form)
         return [{
             'product_variant': product_variant,
             'quantity': form.cleaned_data['quantity'],
@@ -435,7 +433,7 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
         try:
             with transaction.atomic():
                 supplier = self.get_or_create_supplier(form)
-                items = self.build_purchase_items(form, supplier)
+                items = self.build_purchase_items(form)
                 po = create_purchase_order(
                     supplier=supplier,
                     status=PurchaseOrder.STATUS_ORDERED,
@@ -452,15 +450,19 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
                     user=self.request.user,
                     note=form.cleaned_data.get('notes') or '',
                 )
-                if po.total_amount > 0:
+                paid_amount = form.cleaned_data.get('paid_amount') or Decimal('0')
+                if paid_amount > 0:
                     pay_supplier(
                         purchase_order=po,
                         cash_account=form.cleaned_data['cash_account'],
-                        amount=po.total_amount,
+                        amount=paid_amount,
                         user=self.request.user,
                         notes=form.cleaned_data.get('notes') or f'شراء مباشر {po.purchase_number}',
                     )
-            messages.success(self.request, 'تم تسجيل شراء البضاعة وإضافتها للمخزن')
+            if po.remaining_amount > 0:
+                messages.success(self.request, 'تم تسجيل شراء البضاعة وإضافتها للمخزن وتسجيل المتبقي على المورد')
+            else:
+                messages.success(self.request, 'تم تسجيل شراء البضاعة وإضافتها للمخزن')
             return redirect('purchases:order_detail', pk=po.pk)
         except ValidationError as exc:
             form.add_error(None, exc.message)
@@ -495,11 +497,6 @@ def ajax_quick_create_purchase_product(request):
             raise ValidationError('الاختيار المحدد غير صحيح')
         return obj
 
-    supplier = None
-    supplier_id = request.POST.get('supplier')
-    if supplier_id:
-        supplier = Supplier.objects.filter(pk=supplier_id, is_active=True).first()
-
     try:
         with transaction.atomic():
             variant = _create_purchase_product_variant(
@@ -515,7 +512,6 @@ def ajax_quick_create_purchase_product(request):
                 retail_price=_decimal_from_post(request.POST.get('retail_price')),
                 wholesale_price=_decimal_from_post(request.POST.get('wholesale_price')),
                 unit_cost=_decimal_from_post(request.POST.get('unit_cost')),
-                supplier=supplier,
             )
     except ValidationError as exc:
         message = getattr(exc, 'message', None) or '; '.join(exc.messages)
@@ -536,15 +532,10 @@ def ajax_quick_create_purchase_product(request):
 @require_GET
 @role_required('manager')
 def ajax_supplier_product_variants(request):
-    supplier_id = request.GET.get('supplier_id')
-    if not supplier_id:
-        return JsonResponse({'success': True, 'message': 'تم جلب الأصناف', 'data': {'variants': []}})
-
     stocks = Stock.objects.filter(
         quantity__gt=0,
         warehouse__is_active=True,
         variant__is_active=True,
-        variant__product__supplier_id=supplier_id,
     ).select_related('variant__product', 'variant__color', 'variant__size')
     totals = {}
     variants = {}

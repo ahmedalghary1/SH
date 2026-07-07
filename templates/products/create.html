@@ -40,12 +40,6 @@
     </label>
 
     <label>
-        <span>{{ product_form.supplier.label }}</span>
-        {{ product_form.supplier }}
-        {% if product_form.supplier.errors %}<small class="error">{{ product_form.supplier.errors|join:', ' }}</small>{% endif %}
-    </label>
-
-    <label>
         <span>{{ product_form.material.label }}</span>
         {{ product_form.material }}
         {% if product_form.material.errors %}<small class="error">{{ product_form.material.errors|join:', ' }}</small>{% endif %}

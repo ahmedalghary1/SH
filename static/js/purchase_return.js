@@ -68,7 +68,7 @@
                 quantity: variant.available_quantity,
             }));
             variantSelect.disabled = variants.length === 0;
-            setOptions(variantSelect, variants, variants.length ? "اختر الصنف" : "لا توجد منتجات متاحة لهذا المورد");
+            setOptions(variantSelect, variants, variants.length ? "اختر الصنف" : "لا توجد منتجات متاحة للمرتجع");
         } catch (error) {
             variantSelect.disabled = true;
             setOptions(variantSelect, [], error.message);

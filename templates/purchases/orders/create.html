@@ -56,6 +56,12 @@
         {% if form.cash_account.errors %}<small class="error">{{ form.cash_account.errors|join:', ' }}</small>{% endif %}
     </label>
 
+    <label>
+        <span>{{ form.paid_amount.label }}</span>
+        {{ form.paid_amount }}
+        {% if form.paid_amount.errors %}<small class="error">{{ form.paid_amount.errors|join:', ' }}</small>{% endif %}
+    </label>
+
     <div class="table-wrap span-2">
         <table>
             <thead>

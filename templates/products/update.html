@@ -59,25 +59,45 @@
             <table>
                 <thead><tr><th>الكود</th><th>اللون</th><th>المقاس</th><th>المخزن</th><th>الكمية</th><th>حد التنبيه</th></tr></thead>
                 <tbody>
-                {% for stock in stock_rows %}
-                    <tr>
-                        <td>{{ stock.variant.variant_sku }}</td>
-                        <td>{{ stock.variant.color|default:'-' }}</td>
-                        <td>{{ stock.variant.size|default:'-' }}</td>
-                        <td>
-                            <input type="hidden" name="stock_id" value="{{ stock.pk }}">
-                            <select name="stock_{{ stock.pk }}_warehouse">
-                                {% for warehouse in warehouses %}
-                                    <option value="{{ warehouse.pk }}" {% if warehouse.pk == stock.warehouse_id %}selected{% endif %}>{{ warehouse.name }} - {{ warehouse.get_warehouse_type_display }}</option>
-                                {% endfor %}
-                            </select>
-                        </td>
-                        <td><input type="number" min="0" name="stock_{{ stock.pk }}_quantity" value="{{ stock.quantity }}"></td>
-                        <td><input type="number" min="0" name="stock_{{ stock.pk }}_min_quantity" value="{{ stock.min_quantity }}"></td>
-                    </tr>
-                {% empty %}
+                {% if stock_rows or variants_without_stock %}
+                    {% for stock in stock_rows %}
+                        <tr>
+                            <td>{{ stock.variant.variant_sku }}</td>
+                            <td>{{ stock.variant.color|default:'-' }}</td>
+                            <td>{{ stock.variant.size|default:'-' }}</td>
+                            <td>
+                                <input type="hidden" name="stock_id" value="{{ stock.pk }}">
+                                <select name="stock_{{ stock.pk }}_warehouse">
+                                    {% for warehouse in warehouses %}
+                                        <option value="{{ warehouse.pk }}" {% if warehouse.pk == stock.warehouse_id %}selected{% endif %}>{{ warehouse.name }} - {{ warehouse.get_warehouse_type_display }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td><input type="number" min="0" name="stock_{{ stock.pk }}_quantity" value="{{ stock.quantity }}"></td>
+                            <td><input type="number" min="0" name="stock_{{ stock.pk }}_min_quantity" value="{{ stock.min_quantity }}"></td>
+                        </tr>
+                    {% endfor %}
+                    {% for variant in variants_without_stock %}
+                        <tr>
+                            <td>{{ variant.variant_sku }}</td>
+                            <td>{{ variant.color|default:'-' }}</td>
+                            <td>{{ variant.size|default:'-' }}</td>
+                            <td>
+                                <input type="hidden" name="new_stock_variant_id" value="{{ variant.pk }}">
+                                <select name="new_stock_{{ variant.pk }}_warehouse">
+                                    <option value="">اختر المخزن</option>
+                                    {% for warehouse in warehouses %}
+                                        <option value="{{ warehouse.pk }}">{{ warehouse.name }} - {{ warehouse.get_warehouse_type_display }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td><input type="number" min="0" name="new_stock_{{ variant.pk }}_quantity" value="0"></td>
+                            <td><input type="number" min="0" name="new_stock_{{ variant.pk }}_min_quantity" value="0"></td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
                     <tr><td colspan="6">لا توجد كميات مخزون لهذا المنتج بعد. أضف لونًا ومقاسًا ثم أدخل الكمية.</td></tr>
-                {% endfor %}
+                {% endif %}
                 </tbody>
             </table>
         </div>

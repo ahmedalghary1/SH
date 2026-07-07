@@ -262,6 +262,9 @@ class ProductUpdateView(ManagerRequiredMixin, View):
     def get_variants(self, product):
         return product.variants.select_related('color', 'size').order_by('variant_sku', 'color__name', 'size__sort_order', 'size__name')
 
+    def get_variants_without_stock(self, product):
+        return self.get_variants(product).annotate(stock_count=Count('stock')).filter(stock_count=0)
+
     def get(self, request, pk):
         product = self.get_product()
         return render(request, self.template_name, {
@@ -269,6 +272,7 @@ class ProductUpdateView(ManagerRequiredMixin, View):
             'form': ProductForm(instance=product),
             'variants': self.get_variants(product),
             'stock_rows': self.get_stock_rows(product),
+            'variants_without_stock': self.get_variants_without_stock(product),
             'warehouses': Warehouse.objects.filter(is_active=True).order_by('warehouse_type', 'name'),
         })
 
@@ -293,6 +297,7 @@ class ProductUpdateView(ManagerRequiredMixin, View):
             'form': form,
             'variants': self.get_variants(product),
             'stock_rows': stock_rows,
+            'variants_without_stock': self.get_variants_without_stock(product),
             'warehouses': warehouses,
         })
 
@@ -368,6 +373,36 @@ class ProductUpdateView(ManagerRequiredMixin, View):
                 adjust_stock(
                     variant=stock.variant,
                     warehouse=stock.warehouse,
+                    new_quantity=quantity,
+                    user=request.user,
+                    note=f'تعديل كمية المنتج {product.sku}',
+                )
+                stock.refresh_from_db()
+            stock.min_quantity = min_quantity
+            stock.save(update_fields=['min_quantity'])
+
+        new_variant_ids = request.POST.getlist('new_stock_variant_id')
+        for variant_id in new_variant_ids:
+            variant = ProductVariant.objects.select_for_update().get(pk=variant_id, product=product)
+            warehouse_id = request.POST.get(f'new_stock_{variant_id}_warehouse')
+            quantity = int(request.POST.get(f'new_stock_{variant_id}_quantity') or 0)
+            min_quantity = int(request.POST.get(f'new_stock_{variant_id}_min_quantity') or 0)
+            if quantity < 0 or min_quantity < 0:
+                raise ValidationError('لا يمكن أن تكون كميات المخزون سالبة')
+            if quantity <= 0 and min_quantity <= 0 and not warehouse_id:
+                continue
+            if not warehouse_id:
+                raise ValidationError('اختر المخزن عند إدخال كمية للون/المقاس')
+            warehouse = get_object_or_404(Warehouse, pk=warehouse_id, is_active=True)
+            stock, _ = Stock.objects.select_for_update().get_or_create(
+                warehouse=warehouse,
+                variant=variant,
+                defaults={'quantity': 0},
+            )
+            if stock.quantity != quantity:
+                adjust_stock(
+                    variant=variant,
+                    warehouse=warehouse,
                     new_quantity=quantity,
                     user=request.user,
                     note=f'تعديل كمية المنتج {product.sku}',

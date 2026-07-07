@@ -168,6 +168,7 @@ class PurchaseServiceTests(TestCase):
             'wholesale_price': '220.00',
             'warehouse': warehouse.pk,
             'cash_account': cash.pk,
+            'paid_amount': '200.00',
             'quantity': '2',
             'unit_cost': '100.00',
             'notes': 'modal purchase',
@@ -179,13 +180,14 @@ class PurchaseServiceTests(TestCase):
         variant = ProductVariant.objects.get(product=product)
         cash.refresh_from_db()
 
-        self.assertEqual(product.supplier, supplier)
         self.assertEqual(product.category.name, 'Modal Category')
         self.assertEqual(product.pieces_per_dozen, 10)
         self.assertEqual(variant.color.name, 'Modal Black')
         self.assertEqual(variant.size.name, 'M')
         self.assertEqual(Stock.objects.get(warehouse=warehouse, variant=variant).quantity, 2)
         self.assertEqual(cash.balance, Decimal('800.00'))
+        supplier.refresh_from_db()
+        self.assertEqual(supplier.current_balance, Decimal('0.00'))
 
     def test_direct_purchase_view_accepts_multiple_items_in_one_invoice(self):
         self.client.force_login(self.manager)
@@ -199,6 +201,7 @@ class PurchaseServiceTests(TestCase):
             'product_variant': '',
             'warehouse': warehouse.pk,
             'cash_account': cash.pk,
+            'paid_amount': '350.00',
             'quantity': '',
             'unit_cost': '',
             'items_json': json.dumps([
@@ -218,6 +221,33 @@ class PurchaseServiceTests(TestCase):
         self.assertEqual(Stock.objects.get(warehouse=warehouse, variant=self.variant).quantity, 2)
         self.assertEqual(Stock.objects.get(warehouse=warehouse, variant=second_variant).quantity, 3)
         self.assertEqual(cash.balance, Decimal('1650.00'))
+
+    def test_direct_purchase_view_can_be_on_credit(self):
+        self.client.force_login(self.manager)
+        cash = CashAccount.objects.create(name='Credit Purchase Cash', balance=Decimal('2000.00'))
+        warehouse = Warehouse.objects.create(name='Credit Purchase Warehouse', warehouse_type=Warehouse.TYPE_MAIN)
+
+        response = self.client.post(reverse('purchases:order_create'), {
+            'supplier': self.supplier.pk,
+            'product_variant': self.variant.pk,
+            'warehouse': warehouse.pk,
+            'cash_account': cash.pk,
+            'paid_amount': '0',
+            'quantity': '4',
+            'unit_cost': '100.00',
+            'notes': 'credit purchase',
+        }, secure=True)
+
+        self.assertEqual(response.status_code, 302)
+        po = PurchaseOrder.objects.get(notes='credit purchase')
+        self.supplier.refresh_from_db()
+        cash.refresh_from_db()
+
+        self.assertEqual(po.total_amount, Decimal('400.00'))
+        self.assertEqual(po.paid_amount, Decimal('0.00'))
+        self.assertEqual(po.remaining_amount, Decimal('400.00'))
+        self.assertEqual(self.supplier.current_balance, Decimal('400.00'))
+        self.assertEqual(cash.balance, Decimal('2000.00'))
 
     def test_purchase_quick_product_ajax_creates_variant_without_warehouse(self):
         self.client.force_login(self.manager)
@@ -244,7 +274,6 @@ class PurchaseServiceTests(TestCase):
         self.assertTrue(payload['success'])
         variant = ProductVariant.objects.get(pk=payload['data']['id'])
 
-        self.assertEqual(variant.product.supplier, supplier)
         self.assertEqual(variant.product.pieces_per_dozen, 8)
         self.assertEqual(variant.cost_price, Decimal('110.00'))
         self.assertEqual(variant.retail_price, Decimal('320.00'))
@@ -264,17 +293,16 @@ class PurchaseServiceTests(TestCase):
         supplier = Supplier.objects.get(pk=payload['data']['id'])
         self.assertEqual(supplier.name, 'Quick Supplier')
 
-    def test_purchase_return_supplier_variants_ajax_filters_by_supplier_and_stock(self):
+    def test_purchase_return_variants_ajax_returns_stocked_variants(self):
         self.client.force_login(self.manager)
         supplier = Supplier.objects.create(name='Return Supplier')
-        other_supplier = Supplier.objects.create(name='Other Return Supplier')
         category = Category.objects.create(name='Return Category')
         color = Color.objects.create(name='Return Black')
         size = Size.objects.create(name='Return M')
         warehouse = Warehouse.objects.create(name='Return Warehouse', warehouse_type=Warehouse.TYPE_MAIN)
-        product = Product.objects.create(name='Return Product', sku='RET-001', supplier=supplier, category=category)
+        product = Product.objects.create(name='Return Product', sku='RET-001', category=category)
         variant = ProductVariant.objects.create(product=product, color=color, size=size, variant_sku='RET-001-BLK-M')
-        other_product = Product.objects.create(name='Other Return Product', sku='RET-002', supplier=other_supplier, category=category)
+        other_product = Product.objects.create(name='Other Return Product', sku='RET-002', category=category)
         other_variant = ProductVariant.objects.create(product=other_product, color=color, size=size, variant_sku='RET-002-BLK-M')
         Stock.objects.create(warehouse=warehouse, variant=variant, quantity=5)
         Stock.objects.create(warehouse=warehouse, variant=other_variant, quantity=7)
@@ -287,18 +315,20 @@ class PurchaseServiceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         variants = response.json()['data']['variants']
-        self.assertEqual([item['id'] for item in variants], [variant.pk])
-        self.assertEqual(variants[0]['available_quantity'], 5)
+        self.assertEqual([item['id'] for item in variants], [other_variant.pk, variant.pk])
+        self.assertEqual({item['id']: item['available_quantity'] for item in variants}, {
+            variant.pk: 5,
+            other_variant.pk: 7,
+        })
 
-    def test_purchase_return_rejects_variant_from_another_supplier(self):
+    def test_purchase_return_accepts_any_stocked_variant_for_selected_supplier_account(self):
         self.client.force_login(self.manager)
         supplier = Supplier.objects.create(name='Correct Supplier')
-        other_supplier = Supplier.objects.create(name='Wrong Supplier')
         category = Category.objects.create(name='Return Validation Category')
         color = Color.objects.create(name='Return Validation Black')
         size = Size.objects.create(name='Return Validation M')
         warehouse = Warehouse.objects.create(name='Return Validation Warehouse', warehouse_type=Warehouse.TYPE_MAIN)
-        product = Product.objects.create(name='Wrong Supplier Product', sku='RET-WRONG-001', supplier=other_supplier, category=category)
+        product = Product.objects.create(name='Return Validation Product', sku='RET-WRONG-001', category=category)
         variant = ProductVariant.objects.create(product=product, color=color, size=size, variant_sku='RET-WRONG-001-BLK-M')
         Stock.objects.create(warehouse=warehouse, variant=variant, quantity=5)
 
@@ -311,5 +341,6 @@ class PurchaseServiceTests(TestCase):
             'notes': '',
         }, secure=True)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'اختر صنفا خاصا بالمورد المحدد')
+        self.assertEqual(response.status_code, 302)
+        supplier.refresh_from_db()
+        self.assertEqual(supplier.current_balance, Decimal('-10.00'))

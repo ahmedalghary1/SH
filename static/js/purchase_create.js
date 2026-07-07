@@ -170,7 +170,6 @@
 
         const payload = new FormData();
         [
-            "supplier",
             "new_product_name",
             "new_product_sku",
             "new_category",

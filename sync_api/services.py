@@ -797,10 +797,6 @@ def _category_from_product_data(data):
     return category
 
 
-def _supplier_from_product_data(data):
-    return _related_by_id(Supplier, data.get('supplier'))
-
-
 def _color_from_product_data(data):
     color = _related_by_id(Color, data.get('color'))
     new_name = str(_first_value(data.get('new_color_name')) or '').strip()
@@ -1127,7 +1123,6 @@ def process_product(operation, user):
             name=_first_value(product_data.get('name') or product_data.get('new_product_name')) or 'Offline product',
             sku=sku or f"offline-{operation['local_uuid']}",
             category=_category_from_product_data(product_data),
-            supplier=_supplier_from_product_data(product_data),
             material=_first_value(product_data.get('material')) or '',
             pieces_per_dozen=_int_value(product_data.get('pieces_per_dozen'), 12),
             retail_price=_decimal_value(product_data.get('retail_price')),
@@ -1140,16 +1135,13 @@ def process_product(operation, user):
         category = _category_from_product_data(product_data)
         if category is not None:
             product.category = category
-        supplier = _supplier_from_product_data(product_data)
-        if supplier is not None or 'supplier' in product_data:
-            product.supplier = supplier
         product.material = _first_value(product_data.get('material')) or product.material
         product.pieces_per_dozen = _int_value(product_data.get('pieces_per_dozen'), product.pieces_per_dozen)
         product.retail_price = _decimal_value(product_data.get('retail_price'), product.retail_price)
         product.wholesale_price = _decimal_value(product_data.get('wholesale_price'), product.wholesale_price)
 
     update_fields = [
-        'name', 'sku', 'category', 'supplier', 'material', 'pieces_per_dozen',
+        'name', 'sku', 'category', 'material', 'pieces_per_dozen',
         'retail_price', 'wholesale_price', 'updated_at',
     ]
     if _save_payload_file(product, 'image', _file_payload(product_data, 'image', index=0)):
@@ -1283,7 +1275,7 @@ def _purchase_size(data):
     return size
 
 
-def _purchase_variant_from_data(data, supplier=None):
+def _purchase_variant_from_data(data):
     variant = _related_by_id(ProductVariant, data.get('product_variant') or data.get('variant_id'))
     if variant:
         return variant
@@ -1298,7 +1290,6 @@ def _purchase_variant_from_data(data, supplier=None):
             name=name,
             sku=sku,
             category=_purchase_category(data),
-            supplier=supplier,
             pieces_per_dozen=_int_value(data.get('pieces_per_dozen'), 12),
             retail_price=_decimal_value(data.get('retail_price')),
             wholesale_price=_decimal_value(data.get('wholesale_price')),
@@ -1320,12 +1311,12 @@ def _purchase_variant_from_data(data, supplier=None):
     return variant
 
 
-def _purchase_items(data, supplier=None):
+def _purchase_items(data):
     items = []
     for item in _json_items(data.get('items_json')):
         variant = _related_by_id(ProductVariant, item.get('product_variant_id') or item.get('variant_id'))
         if variant is None:
-            variant = _purchase_variant_from_data(data, supplier=supplier)
+            variant = _purchase_variant_from_data(data)
         items.append({
             'product_variant': variant,
             'quantity': int(item.get('quantity') or 0),
@@ -1334,7 +1325,7 @@ def _purchase_items(data, supplier=None):
     if items:
         return items
     return [{
-        'product_variant': _purchase_variant_from_data(data, supplier=supplier),
+        'product_variant': _purchase_variant_from_data(data),
         'quantity': _int_value(data.get('quantity'), 1),
         'unit_cost': _decimal_value(data.get('unit_cost')),
     }]
@@ -1353,8 +1344,7 @@ def process_purchase(operation, user):
         return response_success(operation['local_uuid'], supplier.pk, 'Supplier', resolution='local_applied')
 
     if '/purchases/orders/ajax/quick-create-product/' in path:
-        supplier = _supplier_from_purchase_data(data)
-        variant = _purchase_variant_from_data(data, supplier=supplier)
+        variant = _purchase_variant_from_data(data)
         return response_success(operation['local_uuid'], variant.pk, 'ProductVariant', resolution='local_applied')
 
     if '/purchases/suppliers/' in path and '/raw-purchase/' not in path:
@@ -1402,7 +1392,7 @@ def process_purchase(operation, user):
     supplier = _supplier_from_purchase_data(data)
     if supplier is None:
         raise ValidationError('Cannot sync purchase without a supplier')
-    items = _purchase_items(data, supplier=supplier)
+    items = _purchase_items(data)
     purchase_order = create_purchase_order(
         supplier=supplier,
         status=PurchaseOrder.STATUS_ORDERED,
@@ -1422,11 +1412,12 @@ def process_purchase(operation, user):
             note=_first_value(data.get('notes')) or '',
         )
     cash_account = _related_by_id(CashAccount, data.get('cash_account'))
-    if cash_account and purchase_order.total_amount > 0:
+    paid_amount = _decimal_value(data.get('paid_amount'))
+    if cash_account and paid_amount > 0:
         pay_supplier(
             purchase_order=purchase_order,
             cash_account=cash_account,
-            amount=purchase_order.total_amount,
+            amount=paid_amount,
             user=user,
             notes=_first_value(data.get('notes')) or f'Offline purchase {purchase_order.purchase_number}',
         )

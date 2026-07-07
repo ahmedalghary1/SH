@@ -124,7 +124,6 @@ class ProductCreateViewTests(TestCase):
             'name': 'Opening Product',
             'sku': 'OPEN-001',
             'category': self.category.pk,
-            'supplier': '',
             'material': '',
             'pieces_per_dozen': '12',
             'color': self.color.pk,
