@@ -1,6 +1,9 @@
+from decimal import Decimal
+
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
+from django.db import models
 from django.db.models import Sum
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
@@ -32,24 +35,48 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
         cash_drawer = CashAccount.get_cash_drawer()
         for sales_user in User.objects.filter(role=User.ROLE_SALES, is_active=True):
             CashAccount.get_for_user(sales_user)
-        sales_rep_accounts = CashAccount.objects.filter(
-            account_type=CashAccount.TYPE_SALES_REP_CASH,
-            is_active=True,
-        ).select_related('assigned_user').order_by('assigned_user__username', 'name')
         all_cash_accounts = CashAccount.objects.filter(is_active=True).select_related('assigned_user').order_by(
             'account_type',
             'name',
         )
-        account_ids = list(all_cash_accounts.values_list('pk', flat=True))
-        
-        # الحصول على المعاملات اليومية
-        transactions = PaymentTransaction.objects.filter(
-            cash_account_id__in=account_ids,
-            transaction_date=today
-        ).select_related('created_by').order_by('-created_at')
-        
-        # حساب الإحصائيات
-        opening_balance = 0
+
+        selected_account_id = self.request.GET.get('account', '').strip()
+        selected_account = all_cash_accounts.filter(pk=selected_account_id).first() if selected_account_id else None
+        scoped_accounts = all_cash_accounts.filter(pk=selected_account.pk) if selected_account else all_cash_accounts
+        account_ids = list(scoped_accounts.values_list('pk', flat=True))
+
+        date_from = parse_date(self.request.GET.get('date_from') or '') or today
+        date_to = parse_date(self.request.GET.get('date_to') or '') or date_from
+        if date_to < date_from:
+            date_from, date_to = date_to, date_from
+
+        transactions_base = PaymentTransaction.objects.filter(cash_account_id__in=account_ids)
+        transactions = transactions_base.filter(
+            transaction_date__gte=date_from,
+            transaction_date__lte=date_to,
+        ).select_related(
+            'cash_account',
+            'related_order',
+            'related_customer',
+            'related_supplier',
+            'related_sales_rep',
+            'created_by',
+        ).order_by('-transaction_date', '-created_at')
+
+        total_in = transactions.filter(direction=PaymentTransaction.DIRECTION_IN).aggregate(v=Sum('amount'))['v'] or Decimal('0')
+        total_out = transactions.filter(direction=PaymentTransaction.DIRECTION_OUT).aggregate(v=Sum('amount'))['v'] or Decimal('0')
+        period_net = total_in - total_out
+        current_balance = scoped_accounts.aggregate(v=Sum('balance'))['v'] or Decimal('0')
+        movement_from_start_to_now = transactions_base.filter(transaction_date__gte=date_from).aggregate(
+            total_in=Sum('amount', filter=models.Q(direction=PaymentTransaction.DIRECTION_IN)),
+            total_out=Sum('amount', filter=models.Q(direction=PaymentTransaction.DIRECTION_OUT)),
+        )
+        opening_balance = current_balance - (
+            (movement_from_start_to_now['total_in'] or Decimal('0')) -
+            (movement_from_start_to_now['total_out'] or Decimal('0'))
+        )
+        closing_balance = opening_balance + period_net
+
         cash_sales = transactions.filter(
             transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
             related_order__isnull=False
@@ -71,23 +98,29 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
         cash_refunds = transactions.filter(
             transaction_type=PaymentTransaction.TYPE_REFUND
         ).aggregate(v=Sum('amount'))['v'] or 0
-        
-        total_in = transactions.filter(direction=PaymentTransaction.DIRECTION_IN).aggregate(v=Sum('amount'))['v'] or 0
-        total_out = transactions.filter(direction=PaymentTransaction.DIRECTION_OUT).aggregate(v=Sum('amount'))['v'] or 0
-        current_balance = default_account.balance
-        
+
         context.update({
             'opening_balance': opening_balance,
+            'closing_balance': closing_balance,
             'cash_sales': cash_sales,
             'customer_collections': customer_collections,
             'supplier_payments': supplier_payments,
             'expenses': expenses,
             'cash_refunds': cash_refunds,
+            'total_in': total_in,
+            'total_out': total_out,
+            'period_net': period_net,
             'current_balance': current_balance,
             'main_account': default_account,
             'cash_drawer': cash_drawer,
-            'sales_rep_accounts': sales_rep_accounts,
             'all_cash_accounts': all_cash_accounts,
+            'selected_account': selected_account,
+            'filters': {
+                'account': selected_account_id if selected_account else '',
+                'date_from': date_from.isoformat(),
+                'date_to': date_to.isoformat(),
+            },
+            'period_label': date_from.strftime('%Y-%m-%d') if date_from == date_to else f'{date_from:%Y-%m-%d} - {date_to:%Y-%m-%d}',
             'transactions': transactions[:50],
         })
         return context

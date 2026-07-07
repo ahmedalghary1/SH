@@ -1,105 +1,116 @@
 {% extends 'base.html' %}
 {% block title %}الخزنة{% endblock %}
 {% block content %}
-<style>
-    .cash-table-wrap thead th {
-        color: #000 !important;
-    }
-</style>
-<div class="simple-cash-page">
-    <div class="page-head">
-        <h1>الخزنة</h1>
+<div class="simple-cash-page cash-dashboard-page">
+    <div class="page-head cash-dashboard-head">
+        <div>
+            <h1>الخزنة</h1>
+            <p class="muted-text">متابعة أرصدة الخزن وحركة النقد للفترة المحددة.</p>
+        </div>
         <div class="actions">
-            <a href="{% url 'finance:cash_account_statement' %}?cash_account={{ main_account.pk }}" class="btn btn-light">كشف حساب خزنة</a>
-            <a href="{% url 'finance:transfer' %}" class="btn btn-primary">تحويل للخزنة الرئيسية</a>
+            <a href="{% url 'finance:cash_account_statement' %}{% if selected_account %}?cash_account={{ selected_account.pk }}{% else %}?cash_account={{ main_account.pk }}{% endif %}" class="btn btn-light">كشف حساب خزنة</a>
+            <a href="{% url 'finance:accounts' %}" class="btn btn-light">إدارة الخزن</a>
+            <a href="{% url 'finance:transfer' %}" class="btn btn-primary">تحويل بين الخزن</a>
         </div>
     </div>
 
-    <div class="stats-grid">
-        {% for account in all_cash_accounts %}
-            <div class="stat-card">
-                <span>{{ account.name }}</span>
-                <strong>{{ account.balance }}</strong>
-                <small>{{ account.get_account_type_display }}{% if account.assigned_user %} - {{ account.assigned_user }}{% endif %}</small>
-                <a href="{% url 'finance:cash_account_statement' %}?cash_account={{ account.pk }}" class="btn btn-light">كشف الحساب</a>
-            </div>
-        {% endfor %}
-    </div>
+    <form method="get" class="cash-filter-bar">
+        <label>
+            <span>الخزنة</span>
+            <select name="account">
+                <option value="">كل الخزن النشطة</option>
+                {% for account in all_cash_accounts %}
+                    <option value="{{ account.pk }}" {% if filters.account == account.pk|stringformat:'s' %}selected{% endif %}>
+                        {{ account.name }} - {{ account.get_account_type_display }}
+                    </option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>من تاريخ</span>
+            <input type="date" name="date_from" value="{{ filters.date_from }}">
+        </label>
+        <label>
+            <span>إلى تاريخ</span>
+            <input type="date" name="date_to" value="{{ filters.date_to }}">
+        </label>
+        <div class="cash-filter-actions">
+            <button class="btn btn-primary" type="submit">تطبيق</button>
+            <a class="btn btn-light" href="{% url 'finance:cash' %}">اليوم</a>
+        </div>
+    </form>
 
-    <!-- كروت ملخص الخزنة -->
+    <section class="cash-balance-strip">
+        <div class="cash-balance-main">
+            <span>الرصيد الحالي{% if selected_account %} - {{ selected_account.name }}{% else %} لكل الخزن{% endif %}</span>
+            <strong>{{ current_balance }}</strong>
+            <small>الفترة: {{ period_label }}</small>
+        </div>
+        <div class="cash-balance-metrics">
+            <div><span>رصيد بداية الفترة</span><strong>{{ opening_balance }}</strong></div>
+            <div><span>إجمالي الداخل</span><strong class="amount-in">{{ total_in }}</strong></div>
+            <div><span>إجمالي الخارج</span><strong class="amount-out">{{ total_out }}</strong></div>
+            <div><span>صافي الحركة</span><strong class="{% if period_net < 0 %}amount-out{% else %}amount-in{% endif %}">{{ period_net }}</strong></div>
+            <div><span>رصيد نهاية الفترة</span><strong>{{ closing_balance }}</strong></div>
+        </div>
+    </section>
+
     <div class="cash-summary-grid">
         <div class="cash-card">
-            <div class="cash-icon start">
-                <svg class="ui-icon"><use href="#icon-file"></use></svg>
-            </div>
+            <div class="cash-icon sales"><svg class="ui-icon"><use href="#icon-sale"></use></svg></div>
             <div class="cash-content">
-                <span class="cash-label">رصيد بداية اليوم</span>
-                <strong class="cash-value">{{ opening_balance }}</strong>
-            </div>
-        </div>
-
-        <div class="cash-card">
-            <div class="cash-icon sales">
-                <svg class="ui-icon"><use href="#icon-sale"></use></svg>
-            </div>
-            <div class="cash-content">
-                <span class="cash-label">مبيعات نقدية اليوم</span>
+                <span class="cash-label">مبيعات نقدية</span>
                 <strong class="cash-value">{{ cash_sales }}</strong>
             </div>
         </div>
-
         <div class="cash-card">
-            <div class="cash-icon collections">
-                <svg class="ui-icon"><use href="#icon-money"></use></svg>
-            </div>
+            <div class="cash-icon collections"><svg class="ui-icon"><use href="#icon-money"></use></svg></div>
             <div class="cash-content">
-                <span class="cash-label">تحصيلات العملاء</span>
+                <span class="cash-label">تحصيلات عملاء</span>
                 <strong class="cash-value">{{ customer_collections }}</strong>
             </div>
         </div>
-
         <div class="cash-card">
-            <div class="cash-icon supplier">
-                <svg class="ui-icon"><use href="#icon-box"></use></svg>
-            </div>
+            <div class="cash-icon supplier"><svg class="ui-icon"><use href="#icon-box"></use></svg></div>
             <div class="cash-content">
-                <span class="cash-label">مدفوعات الموردين</span>
+                <span class="cash-label">مدفوعات موردين</span>
                 <strong class="cash-value">{{ supplier_payments }}</strong>
             </div>
         </div>
-
         <div class="cash-card">
-            <div class="cash-icon expense">
-                <svg class="ui-icon"><use href="#icon-close"></use></svg>
-            </div>
+            <div class="cash-icon expense"><svg class="ui-icon"><use href="#icon-minus"></use></svg></div>
             <div class="cash-content">
-                <span class="cash-label">المصروفات</span>
+                <span class="cash-label">مصروفات</span>
                 <strong class="cash-value">{{ expenses }}</strong>
             </div>
         </div>
-
         <div class="cash-card">
-            <div class="cash-icon refund">
-                <svg class="ui-icon"><use href="#icon-return"></use></svg>
-            </div>
+            <div class="cash-icon refund"><svg class="ui-icon"><use href="#icon-return"></use></svg></div>
             <div class="cash-content">
                 <span class="cash-label">مرتجعات نقدية</span>
                 <strong class="cash-value">{{ cash_refunds }}</strong>
             </div>
         </div>
-
-        <div class="cash-card current">
-            <div class="cash-icon balance">
-                <svg class="ui-icon"><use href="#icon-money"></use></svg>
-            </div>
-            <div class="cash-content">
-                <span class="cash-label">رصيد الخزنة الحالي</span>
-                <strong class="cash-value">{{ current_balance }}</strong>
-            </div>
-        </div>
     </div>
 
-    <!-- أزرار الإجراءات السريعة -->
+    <section class="cash-accounts-section">
+        <div class="section-head">
+            <h2>أرصدة الخزن</h2>
+            <a class="btn btn-light" href="{% url 'finance:account_create' %}">إضافة خزنة</a>
+        </div>
+        <div class="cash-accounts-grid">
+            {% for account in all_cash_accounts %}
+                <a class="cash-account-tile {% if selected_account and selected_account.pk == account.pk %}active{% endif %}" href="{% url 'finance:cash' %}?account={{ account.pk }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}">
+                    <span>{{ account.name }}</span>
+                    <strong>{{ account.balance }}</strong>
+                    <small>{{ account.get_account_type_display }}{% if account.assigned_user %} - {{ account.assigned_user }}{% endif %}</small>
+                </a>
+            {% empty %}
+                <div class="empty-state">لا توجد خزن نشطة.</div>
+            {% endfor %}
+        </div>
+    </section>
+
     <div class="cash-actions">
         <a href="{% url 'finance:expense_create' %}" class="cash-action-btn expense">
             <svg class="ui-icon"><use href="#icon-minus"></use></svg>
@@ -115,37 +126,50 @@
         </a>
     </div>
 
-    <!-- جدول حركة الخزنة -->
-    <div class="cash-transactions-section">
-        <h2>حركة الخزنة</h2>
+    <section class="cash-transactions-section">
+        <div class="section-head">
+            <h2>حركة الخزنة</h2>
+            <a class="btn btn-light" href="{% url 'finance:transactions' %}?date_from={{ filters.date_from }}&date_to={{ filters.date_to }}">كل الحركات</a>
+        </div>
         <div class="cash-table-wrap">
             <table>
                 <thead>
                     <tr>
-                        <th>التاريخ والوقت</th>
+                        <th>التاريخ</th>
+                        <th>الخزنة</th>
                         <th>نوع الحركة</th>
+                        <th>الطرف / المرجع</th>
                         <th>البيان</th>
-                        <th>المبلغ الداخل</th>
-                        <th>المبلغ الخارج</th>
+                        <th>داخل</th>
+                        <th>خارج</th>
                         <th>المستخدم</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for tx in transactions %}
                         <tr>
-                            <td>{{ tx.created_at|date:'Y-m-d H:i' }}</td>
+                            <td>{{ tx.transaction_date|date:'Y-m-d' }}<br><small>{{ tx.created_at|date:'H:i' }}</small></td>
+                            <td>{{ tx.cash_account }}</td>
                             <td>{{ tx.get_transaction_type_display }}</td>
+                            <td>
+                                {% if tx.related_order %}{{ tx.related_order.order_number }}
+                                {% elif tx.related_customer %}{{ tx.related_customer }}
+                                {% elif tx.related_supplier %}{{ tx.related_supplier }}
+                                {% elif tx.related_sales_rep %}{{ tx.related_sales_rep }}
+                                {% elif tx.related_supplier_name %}{{ tx.related_supplier_name }}
+                                {% else %}-{% endif %}
+                            </td>
                             <td>{{ tx.notes|default:'-' }}</td>
                             <td class="amount-in">{% if tx.direction == 'in' %}{{ tx.amount }}{% else %}-{% endif %}</td>
                             <td class="amount-out">{% if tx.direction == 'out' %}{{ tx.amount }}{% else %}-{% endif %}</td>
                             <td>{{ tx.created_by|default:'-' }}</td>
                         </tr>
                     {% empty %}
-                        <tr><td colspan="6">لا توجد حركات اليوم</td></tr>
+                        <tr><td colspan="8" class="empty-state">لا توجد حركات في الفترة المحددة.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-    </div>
+    </section>
 </div>
 {% endblock %}
