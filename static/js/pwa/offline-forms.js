@@ -546,6 +546,7 @@ async function handleCapturedSubmit(form, submitter = null) {
             if (!validateOfflineForm(form, submitter)) return;
 
             if (await isServerReachable()) {
+                window.SHUnsavedForms?.markSaved?.(form);
                 submitNormally(form, submitter);
                 return;
             }
@@ -553,6 +554,7 @@ async function handleCapturedSubmit(form, submitter = null) {
             const queued = await queueFormSubmission(form, submitter);
             if (queued) {
                 form.dataset.offlineQueued = "true";
+                window.SHUnsavedForms?.markSaved?.(form);
                 showOfflineNotice("تم الحفظ محليا. ستتم المزامنة تلقائيا عند عودة الاتصال.");
                 return;
             }

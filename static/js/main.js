@@ -86,6 +86,148 @@ window.addEventListener("appinstalled", () => {
     window.SHSync?.bootstrapNow?.();
 });
 
+const UNSAVED_FORM_MESSAGE = "\u0644\u062f\u064a\u0643 \u0628\u064a\u0627\u0646\u0627\u062a \u063a\u064a\u0631 \u0645\u062d\u0641\u0648\u0638\u0629. \u0625\u0630\u0627 \u0627\u0646\u062a\u0642\u0644\u062a \u0627\u0644\u0622\u0646 \u0644\u0646 \u064a\u062a\u0645 \u062d\u0641\u0638\u0647\u0627. \u0647\u0644 \u062a\u0631\u064a\u062f \u0627\u0644\u0645\u062a\u0627\u0628\u0639\u0629\u061f";
+const trackedFormSnapshots = new WeakMap();
+let allowUnsavedNavigation = false;
+
+function getFormMethod(form) {
+    return String(form.getAttribute("method") || form.method || "get").toLowerCase();
+}
+
+function hasEditableFields(form) {
+    return Boolean(form.querySelector([
+        "textarea",
+        "select",
+        "input:not([type='button']):not([type='hidden']):not([type='reset']):not([type='submit'])",
+    ].join(",")));
+}
+
+function shouldTrackUnsavedForm(form) {
+    if (!(form instanceof HTMLFormElement)) return false;
+    if (form.dataset.unsavedGuard === "off" || form.closest("[data-unsaved-guard='off']")) return false;
+    if (form.dataset.confirm) return false;
+    if (getFormMethod(form) !== "post" && form.dataset.unsavedGuard !== "on") return false;
+    return hasEditableFields(form);
+}
+
+function shouldSkipUnsavedField(key, value) {
+    if (!key || key === "csrfmiddlewaretoken") return true;
+    return value instanceof File && !value.name && value.size === 0;
+}
+
+function formSnapshot(form) {
+    const entries = [];
+    const formData = new FormData(form);
+    formData.forEach((value, key) => {
+        if (shouldSkipUnsavedField(key, value)) return;
+        if (value instanceof File) {
+            entries.push([key, "file", value.name, value.size, value.lastModified || 0]);
+            return;
+        }
+        entries.push([key, "value", String(value)]);
+    });
+    return JSON.stringify(entries);
+}
+
+function trackUnsavedForm(form, reset = false) {
+    if (!shouldTrackUnsavedForm(form)) return false;
+    if (reset || !trackedFormSnapshots.has(form)) {
+        trackedFormSnapshots.set(form, formSnapshot(form));
+    }
+    return true;
+}
+
+function getDirtyUnsavedForms() {
+    const dirtyForms = [];
+    document.querySelectorAll("form").forEach((form) => {
+        if (!trackUnsavedForm(form)) return;
+        if (trackedFormSnapshots.get(form) !== formSnapshot(form)) {
+            dirtyForms.push(form);
+        }
+    });
+    return dirtyForms;
+}
+
+function hasDirtyUnsavedForms() {
+    return getDirtyUnsavedForms().length > 0;
+}
+
+function markUnsavedFormSaved(form) {
+    if (form) {
+        trackUnsavedForm(form, true);
+    } else {
+        document.querySelectorAll("form").forEach((candidate) => trackUnsavedForm(candidate, true));
+    }
+}
+
+function setupUnsavedFormTracking(root = document) {
+    const forms = root.matches?.("form") ? [root] : Array.from(root.querySelectorAll?.("form") || []);
+    forms.forEach((form) => trackUnsavedForm(form));
+}
+
+function allowCurrentNavigation() {
+    allowUnsavedNavigation = true;
+    window.setTimeout(() => {
+        allowUnsavedNavigation = false;
+    }, 1200);
+}
+
+function isPageNavigationLink(link, event) {
+    if (!link || event.defaultPrevented) return false;
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+    if (link.hasAttribute("download")) return false;
+    const target = (link.getAttribute("target") || "_self").toLowerCase();
+    if (target !== "_self") return false;
+    const url = new URL(link.href, window.location.href);
+    if (url.origin !== window.location.origin) return false;
+    return url.pathname !== window.location.pathname || url.search !== window.location.search;
+}
+
+window.SHUnsavedForms = {
+    hasDirtyForms: hasDirtyUnsavedForms,
+    markSaved: markUnsavedFormSaved,
+    reset: markUnsavedFormSaved,
+};
+
+setupUnsavedFormTracking();
+
+document.addEventListener("DOMContentLoaded", () => {
+    setupUnsavedFormTracking();
+});
+
+new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+            if (node instanceof Element) setupUnsavedFormTracking(node);
+        });
+    });
+}).observe(document.documentElement, { childList: true, subtree: true });
+
+document.addEventListener("input", (event) => {
+    trackUnsavedForm(event.target.closest?.("form"));
+}, true);
+
+document.addEventListener("change", (event) => {
+    trackUnsavedForm(event.target.closest?.("form"));
+}, true);
+
+document.addEventListener("click", (event) => {
+    const link = event.target.closest?.("a[href]");
+    if (!isPageNavigationLink(link, event) || !hasDirtyUnsavedForms()) return;
+    if (window.confirm(UNSAVED_FORM_MESSAGE)) {
+        allowCurrentNavigation();
+        return;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+}, true);
+
+window.addEventListener("beforeunload", (event) => {
+    if (allowUnsavedNavigation || !hasDirtyUnsavedForms()) return;
+    event.preventDefault();
+    event.returnValue = "";
+});
+
 document.addEventListener("submit", (event) => {
     const form = event.target;
     const message = form.getAttribute("data-confirm");
@@ -103,6 +245,10 @@ document.addEventListener("submit", (event) => {
         input?.setCustomValidity("اختر قيمة من القائمة");
         input?.focus({ preventScroll: true });
         input?.reportValidity();
+    }
+    if (!event.defaultPrevented) {
+        markUnsavedFormSaved(form);
+        allowCurrentNavigation();
     }
 });
 
