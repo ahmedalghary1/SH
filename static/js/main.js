@@ -794,6 +794,27 @@ document.addEventListener("keydown", (event) => {
     document.body.classList.remove("sidebar-open");
 });
 
+// Content tabs use delegation so they also work after workspace navigation
+// replaces the page content without firing DOMContentLoaded again.
+document.addEventListener("click", (event) => {
+    const contentTab = event.target.closest(".tabs-container .tab-btn[data-tab]");
+    if (!contentTab) return;
+
+    const container = contentTab.closest(".tabs-container");
+    const target = [...container.querySelectorAll(".tab-content")]
+        .find(panel => panel.id === contentTab.dataset.tab);
+    if (!target) return;
+
+    container.querySelectorAll(".tab-btn").forEach(tab => {
+        const isActive = tab === contentTab;
+        tab.classList.toggle("active", isActive);
+        tab.setAttribute("aria-selected", String(isActive));
+    });
+    container.querySelectorAll(".tab-content").forEach(panel => {
+        panel.classList.toggle("active", panel === target);
+    });
+});
+
 // Advanced Options Toggle
 document.addEventListener("click", (event) => {
     const advancedToggle = event.target.closest("[data-advanced-toggle]");
