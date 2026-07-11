@@ -9,6 +9,9 @@
             {% if request.user.is_manager %}
             <a href="{% url 'customers:update' customer.pk %}" class="btn btn-primary btn-large">تعديل</a>
             {% endif %}
+            {% if request.user.can_hard_delete %}
+            <a href="{% url 'customers:delete' customer.pk %}" class="btn btn-danger btn-large">حذف العميل</a>
+            {% endif %}
         </div>
     </div>
 

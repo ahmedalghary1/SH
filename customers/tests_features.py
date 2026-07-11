@@ -35,3 +35,23 @@ class CustomerFeatureTests(TestCase):
         self.assertIn('له', values)
         self.assertNotIn('المدين', values)
         self.assertNotIn('الدائن', values)
+
+    def test_manager_can_delete_customer(self):
+        response = self.client.post(reverse('customers:delete', args=[self.customer.pk]))
+
+        self.assertRedirects(response, reverse('customers:simple_list'))
+        self.assertFalse(Customer.objects.filter(pk=self.customer.pk).exists())
+
+    def test_sales_user_cannot_delete_customer(self):
+        sales_user = User.objects.create_user(username='customer-sales', password='x', role=User.ROLE_SALES)
+        self.client.force_login(sales_user)
+
+        response = self.client.post(reverse('customers:delete', args=[self.customer.pk]))
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Customer.objects.filter(pk=self.customer.pk).exists())
+
+    def test_delete_action_is_visible_to_manager(self):
+        response = self.client.get(reverse('customers:simple_list'))
+
+        self.assertContains(response, reverse('customers:delete', args=[self.customer.pk]))

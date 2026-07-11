@@ -185,7 +185,7 @@ class CustomerUpdateView(CustomerVisibilityMixin, SalesRequiredMixin, UpdateView
 
 class CustomerDeleteView(ManagerDeleteView):
     model = Customer
-    success_url = reverse_lazy('customers:list')
+    success_url = reverse_lazy('customers:simple_list')
     success_message = 'تم حذف العميل'
 
 
