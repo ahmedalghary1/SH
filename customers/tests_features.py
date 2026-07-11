@@ -1,5 +1,8 @@
+from io import BytesIO
+
 from django.test import TestCase
 from django.urls import reverse
+from openpyxl import load_workbook
 
 from accounts.models import User
 from customers.models import Customer
@@ -20,3 +23,9 @@ class CustomerFeatureTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.content.startswith(b'PK'))
         self.assertEqual(response['Content-Type'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        workbook = load_workbook(BytesIO(response.content), read_only=True)
+        values = [cell.value for row in workbook.active.iter_rows() for cell in row]
+        self.assertIn('عليه', values)
+        self.assertIn('له', values)
+        self.assertNotIn('المدين', values)
+        self.assertNotIn('الدائن', values)

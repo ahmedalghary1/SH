@@ -538,7 +538,7 @@ def ajax_quick_create_customer(request):
 def export_customer_statement(request, pk, export_format):
     customer = get_object_or_404(visible_customers_for_user(request.user, Customer.objects.all()), pk=pk)
     statement = build_customer_statement(customer)
-    headers = ['التاريخ والوقت', 'نوع الحركة', 'رقم المستند', 'البيان', 'المدين', 'الدائن', 'الرصيد']
+    headers = ['التاريخ والوقت', 'نوع الحركة', 'رقم المستند', 'البيان', 'عليه', 'له', 'الرصيد']
     rows = []
     for entry in statement['entries']:
         document = getattr(entry.get('order'), 'order_number', '') or getattr(entry.get('sales_return'), 'pk', '') or getattr(entry.get('transaction'), 'reference', '')

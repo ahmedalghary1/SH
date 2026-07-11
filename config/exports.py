@@ -2,6 +2,7 @@ import csv
 from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 from django.http import HttpResponse
 from django.utils import timezone
@@ -68,8 +69,13 @@ def export_xlsx_response(*, filename, title, headers, rows, metadata=()):
     for row in sheet.iter_rows():
         for cell in row:
             cell.alignment = Alignment(horizontal='right')
-    for column in sheet.columns:
-        sheet.column_dimensions[column[0].column_letter].width = min(max(12, max(len(str(c.value or '')) for c in column) + 2), 45)
+    for column_index, column in enumerate(sheet.columns, start=1):
+        # The title row is merged across all columns. Cells inside that merged
+        # range are MergedCell instances and do not expose ``column_letter``.
+        sheet.column_dimensions[get_column_letter(column_index)].width = min(
+            max(12, max(len(str(cell.value or '')) for cell in column) + 2),
+            45,
+        )
     for row in range(header_row + 1, sheet.max_row + 1):
         for col in range(5, min(8, len(headers) + 1)):
             sheet.cell(row, col).number_format = '#,##0.00'
