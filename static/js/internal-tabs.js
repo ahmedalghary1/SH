@@ -44,6 +44,14 @@
     const next = doc.querySelector('[data-page-content]');
     if (!next) { location.href = url; return; }
     content.innerHTML = next.innerHTML;
+    // Keep page-level pagination metadata in sync with the newly loaded page.
+    // Otherwise a report opened after a paginated list inherits that list's
+    // total and displays it as a fixed count above the report's first table.
+    if (next.hasAttribute('data-total-records')) {
+      content.dataset.totalRecords = next.dataset.totalRecords;
+    } else {
+      delete content.dataset.totalRecords;
+    }
     content.removeAttribute('aria-busy');
     for (const script of doc.querySelectorAll('script')) {
       if (script.src && !document.querySelector(`script[src="${script.getAttribute('src')}"]`)) {
