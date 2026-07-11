@@ -1,4 +1,5 @@
 import csv
+from datetime import date, datetime
 from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -77,6 +78,11 @@ def export_xlsx_response(*, filename, title, headers, rows, metadata=()):
             45,
         )
     for row in range(header_row + 1, sheet.max_row + 1):
+        date_cell = sheet.cell(row, 1)
+        if isinstance(date_cell.value, datetime):
+            date_cell.number_format = 'dd/mm/yyyy hh:mm'
+        elif isinstance(date_cell.value, date):
+            date_cell.number_format = 'dd/mm/yyyy'
         for col in range(5, min(8, len(headers) + 1)):
             sheet.cell(row, col).number_format = '#,##0.00'
     buffer = BytesIO()
@@ -87,6 +93,10 @@ def export_xlsx_response(*, filename, title, headers, rows, metadata=()):
 
 
 def _p(value, style):
+    if isinstance(value, datetime):
+        value = timezone.localtime(value).strftime('%d/%m/%Y %H:%M') if timezone.is_aware(value) else value.strftime('%d/%m/%Y %H:%M')
+    elif isinstance(value, date):
+        value = value.strftime('%d/%m/%Y')
     return arabic_paragraph(value, style)
 
 

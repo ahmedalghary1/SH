@@ -538,11 +538,11 @@ def ajax_quick_create_customer(request):
 def export_customer_statement(request, pk, export_format):
     customer = get_object_or_404(visible_customers_for_user(request.user, Customer.objects.all()), pk=pk)
     statement = build_customer_statement(customer)
-    headers = ['التاريخ والوقت', 'نوع الحركة', 'رقم المستند', 'البيان', 'عليه', 'له', 'الرصيد']
+    headers = ['التاريخ', 'نوع الحركة', 'رقم المستند', 'البيان', 'عليه', 'له', 'الرصيد']
     rows = []
     for entry in statement['entries']:
         document = getattr(entry.get('order'), 'order_number', '') or getattr(entry.get('sales_return'), 'pk', '') or getattr(entry.get('transaction'), 'reference', '')
-        rows.append([str(entry.get('date') or ''), entry.get('type'), document, entry.get('description'), entry.get('debit'), entry.get('credit'), entry.get('balance')])
+        rows.append([entry.get('date') or '', entry.get('type'), document, entry.get('description'), entry.get('debit'), entry.get('credit'), entry.get('balance')])
     rows.append(['', '', '', 'الإجماليات', statement['total_debit'], statement['total_credit'], statement['current_balance']])
     safe_name = slugify(customer.name, allow_unicode=True).replace('/', '-') or f'customer-{customer.pk}'
     filename = f'customer-statement-{safe_name}-{timezone.localdate():%Y-%m-%d}'
