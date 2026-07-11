@@ -1,4 +1,4 @@
-const CACHE_VERSION = "sh-pwa-v2026-07-07-unsaved-forms-01";
+const CACHE_VERSION = "sh-pwa-v2026-07-11-workspace-tabs-02";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const OFFLINE_URL = "/offline/";
@@ -12,6 +12,7 @@ const CORE_ASSETS = [
   "/manifest.json",
   "/static/css/main.css",
   "/static/js/main.js",
+  "/static/js/internal-tabs.js",
   "/static/js/orders.js",
   "/static/js/inventory.js",
   "/static/js/product_create.js",

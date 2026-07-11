@@ -9,8 +9,9 @@
 
     {{ form.order }}
     {{ form.allowed_discount }}
-    {{ form.transaction_date }}
     {{ form.notes }}
+
+    <label><span>{{ form.transaction_date.label }}</span>{{ form.transaction_date }}{% if form.transaction_date.errors %}<small class="error">{{ form.transaction_date.errors|join:', ' }}</small>{% endif %}</label>
 
     <label>
         <span>{{ form.customer.label }}</span>

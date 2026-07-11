@@ -74,6 +74,10 @@ def record_transaction(
         raise ValidationError('اتجاه الحركة المالية غير صحيح')
     account.save(update_fields=['balance'])
     account.refresh_from_db(fields=['balance'])
+    transaction_time = None
+    if isinstance(transaction_date, datetime):
+        transaction_time = transaction_date.timetz().replace(tzinfo=None)
+        transaction_date = transaction_date.date()
     tx = PaymentTransaction.objects.create(
         transaction_type=transaction_type,
         direction=direction,
@@ -86,6 +90,7 @@ def record_transaction(
         related_supplier_name=related_supplier_name or '',
         notes=notes,
         transaction_date=transaction_date or timezone.localdate(),
+        transaction_time=transaction_time or timezone.localtime().time().replace(tzinfo=None),
         created_by=created_by,
         reference=reference or '',
     )

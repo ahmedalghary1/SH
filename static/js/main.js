@@ -195,6 +195,47 @@ document.addEventListener("DOMContentLoaded", () => {
     setupUnsavedFormTracking();
 });
 
+function enhanceSharedPageUi(root = document) {
+    root.querySelectorAll('table').forEach((table) => {
+        if (table.dataset.countEnhanced) return;
+        table.dataset.countEnhanced = '1';
+        const rows = [...table.querySelectorAll('tbody tr')].filter(row => !row.querySelector('td[colspan]'));
+        const badge = document.createElement('div');
+        badge.className = 'table-record-count';
+        const fullCount = root.closest?.('[data-page-content]')?.dataset.totalRecords || document.querySelector('[data-page-content]')?.dataset.totalRecords;
+        badge.textContent = `إجمالي العدد: ${Number(fullCount || rows.length).toLocaleString('en-US')}`;
+        table.parentElement?.insertBefore(badge, table);
+    });
+    root.querySelectorAll('td, .stat-card strong, .summary-value, [data-number]').forEach((node) => {
+        if (node.children.length || node.dataset.numberEnhanced) return;
+        const raw = node.textContent.trim().replace(/,/g, '');
+        if (!/^-?\d+(\.\d+)?$/.test(raw)) return;
+        node.dataset.numberEnhanced = '1';
+        const decimals = raw.includes('.') ? raw.split('.')[1].length : 0;
+        node.textContent = Number(raw).toLocaleString('en-US', {minimumFractionDigits: decimals, maximumFractionDigits: decimals});
+    });
+    root.querySelectorAll('form').forEach((form) => {
+        if (form.dataset.submitGuard) return;
+        form.dataset.submitGuard = '1';
+        if ((form.method || 'get').toLowerCase() === 'post' && !form.querySelector('[name="_submission_token"]')) {
+            const token = document.createElement('input');
+            token.type = 'hidden'; token.name = '_submission_token';
+            token.value = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+            form.appendChild(token);
+        }
+        form.addEventListener('submit', (event) => {
+            if (!form.checkValidity()) return;
+            if (form.dataset.submitting === '1') { event.preventDefault(); return; }
+            form.dataset.submitting = '1';
+            setTimeout(() => form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(button => {
+                button.disabled = true; button.dataset.originalText = button.textContent; button.textContent = 'جارٍ الحفظ...';
+            }), 0);
+        });
+    });
+}
+document.addEventListener('DOMContentLoaded', () => enhanceSharedPageUi());
+document.addEventListener('sh:page-loaded', () => enhanceSharedPageUi());
+
 new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
         mutation.addedNodes.forEach((node) => {

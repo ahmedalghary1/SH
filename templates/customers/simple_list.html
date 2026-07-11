@@ -13,7 +13,7 @@
             <div class="filter-inputs">
                 <div class="filter-group">
                     <label>بحث</label>
-                    <input type="text" name="q" placeholder="الاسم أو رقم الهاتف" value="{{ request.GET.q }}">
+                    <input type="text" name="q" placeholder="الاسم أو الهاتف أو العنوان" value="{{ request.GET.q }}">
                 </div>
                 <div class="filter-group">
                     <label>نوع العميل</label>
@@ -31,6 +31,7 @@
                         <option value="no" {% if request.GET.debt == 'no' %}selected{% endif %}>بدون مديونية</option>
                     </select>
                 </div>
+                <div class="filter-group"><label>ترتيب الرصيد</label><select name="sort"><option value="">الأحدث</option><option value="-balance" {% if sort == '-balance' %}selected{% endif %}>الأعلى أولًا</option><option value="balance" {% if sort == 'balance' %}selected{% endif %}>الأقل أولًا</option></select></div>
             </div>
             <button type="submit" class="btn btn-primary">بحث</button>
         </form>

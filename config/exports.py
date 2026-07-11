@@ -1,5 +1,7 @@
 import csv
 from io import BytesIO
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
 
 from django.http import HttpResponse
 from django.utils import timezone
@@ -42,6 +44,39 @@ def export_csv_response(*, filename, headers, rows):
     writer.writerow(headers)
     for row in rows:
         writer.writerow(row)
+    return response
+
+
+def export_xlsx_response(*, filename, title, headers, rows, metadata=()):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = 'كشف الحساب'
+    sheet.sheet_view.rightToLeft = True
+    sheet.append([title])
+    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
+    sheet['A1'].font = Font(bold=True, size=16)
+    for label, value in metadata:
+        sheet.append([label, value])
+    sheet.append([])
+    header_row = sheet.max_row + 1
+    sheet.append(headers)
+    for cell in sheet[header_row]:
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = PatternFill('solid', fgColor='071D35')
+    for row in rows:
+        sheet.append(list(row))
+    for row in sheet.iter_rows():
+        for cell in row:
+            cell.alignment = Alignment(horizontal='right')
+    for column in sheet.columns:
+        sheet.column_dimensions[column[0].column_letter].width = min(max(12, max(len(str(c.value or '')) for c in column) + 2), 45)
+    for row in range(header_row + 1, sheet.max_row + 1):
+        for col in range(5, min(8, len(headers) + 1)):
+            sheet.cell(row, col).number_format = '#,##0.00'
+    buffer = BytesIO()
+    workbook.save(buffer)
+    response = HttpResponse(buffer.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="{filename}.xlsx"'
     return response
 
 

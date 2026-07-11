@@ -1,6 +1,9 @@
 from django.contrib import messages
-from django.db.models import Max, Q, Sum
+from django.db.models import DecimalField, F, Max, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from django.http import JsonResponse
+from django.utils import timezone
+from django.utils.text import slugify
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.views.decorators.http import require_GET, require_POST
@@ -8,7 +11,7 @@ from django.views.generic import CreateView, DetailView, ListView, TemplateView,
 
 from accounts.permissions import ManagerRequiredMixin, SalesRequiredMixin, sales_required
 from config.delete_views import ManagerDeleteView
-from config.exports import ExportListMixin
+from config.exports import ExportListMixin, export_pdf_response, export_xlsx_response
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
 from finance.services import build_customer_statement
@@ -45,7 +48,10 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
         qs = Customer.objects.select_related('created_by', 'sales_representative').filter(is_active=True)
         qs = visible_customers_for_user(self.request.user, qs).annotate(
             total_purchases=Sum('order__total', filter=Q(order__status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED])),
-            current_balance=Sum('order__remaining_amount', filter=Q(order__status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED])),
+            current_balance=F('opening_balance') + Coalesce(
+                Sum('order__remaining_amount', filter=Q(order__status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED])),
+                Value(0), output_field=DecimalField(max_digits=14, decimal_places=2),
+            ),
             last_transaction_date=Max(
                 'order__created_at',
                 filter=~Q(order__status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED])
@@ -65,7 +71,7 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
             Order.STATUS_PARTIALLY_RETURNED,
         ]
         if q:
-            qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name'), q))
+            qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name', 'address'), q))
         if customer_type in valid_types:
             qs = qs.filter(customer_type=customer_type)
         if debt == 'yes':
@@ -73,12 +79,16 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
         elif debt == 'no':
             qs = qs.exclude(Q(opening_balance__gt=0) | Q(order__remaining_amount__gt=0, order__status__in=debt_order_statuses))
         
-        return qs.distinct().order_by('-created_at')
+        ordering = self.request.GET.get('sort')
+        if ordering in {'balance', '-balance'}:
+            qs = qs.order_by('current_balance' if ordering == 'balance' else '-current_balance', 'name')
+        else:
+            qs = qs.order_by('-created_at')
+        return qs.distinct()
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        for customer in context['customers']:
-            customer.current_balance = (customer.opening_balance or 0) + (customer.current_balance or 0)
+        context['sort'] = self.request.GET.get('sort', '')
         return context
 
 
@@ -102,15 +112,21 @@ class CustomerListView(SalesRequiredMixin, ExportListMixin, ListView):
 
     def get_queryset(self):
         qs = Customer.objects.select_related('created_by', 'sales_representative').filter(is_active=True)
-        qs = visible_customers_for_user(self.request.user, qs)
+        qs = visible_customers_for_user(self.request.user, qs).annotate(
+            current_balance=F('opening_balance') + Coalesce(
+                Sum('order__remaining_amount', filter=Q(order__status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED])),
+                Value(0), output_field=DecimalField(max_digits=14, decimal_places=2),
+            )
+        )
         q = self.request.GET.get('q')
         customer_type = self.request.GET.get('type')
         valid_types = {choice[0] for choice in Customer.CUSTOMER_TYPE_CHOICES}
         if q:
-            qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name'), q))
+            qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name', 'address'), q))
         if customer_type in valid_types:
             qs = qs.filter(customer_type=customer_type)
-        return qs.order_by('-created_at')
+        ordering = self.request.GET.get('sort')
+        return qs.order_by('current_balance' if ordering == 'balance' else '-current_balance' if ordering == '-balance' else '-created_at')
 
 
 class SimpleCustomerCreateView(SalesRequiredMixin, CreateView):
@@ -491,7 +507,7 @@ def ajax_search_customers(request):
     q = request.GET.get('q', '').strip()
     qs = visible_customers_for_user(request.user, Customer.objects.filter(is_active=True))
     if q:
-        qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name'), q))
+        qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name', 'address'), q))
     data = [
         {'id': c.id, 'name': c.name, 'phone': c.phone, 'customer_type': c.customer_type, 'company_name': c.company_name or ''}
         for c in qs[:12]
@@ -515,3 +531,24 @@ def ajax_quick_create_customer(request):
             'data': {'id': customer.id, 'name': customer.name, 'phone': customer.phone, 'customer_type': customer.customer_type},
         })
     return JsonResponse({'success': False, 'message': 'بيانات العميل غير صحيحة', 'errors': form.errors}, status=400)
+
+
+@require_GET
+@sales_required
+def export_customer_statement(request, pk, export_format):
+    customer = get_object_or_404(visible_customers_for_user(request.user, Customer.objects.all()), pk=pk)
+    statement = build_customer_statement(customer)
+    headers = ['التاريخ والوقت', 'نوع الحركة', 'رقم المستند', 'البيان', 'المدين', 'الدائن', 'الرصيد']
+    rows = []
+    for entry in statement['entries']:
+        document = getattr(entry.get('order'), 'order_number', '') or getattr(entry.get('sales_return'), 'pk', '') or getattr(entry.get('transaction'), 'reference', '')
+        rows.append([str(entry.get('date') or ''), entry.get('type'), document, entry.get('description'), entry.get('debit'), entry.get('credit'), entry.get('balance')])
+    rows.append(['', '', '', 'الإجماليات', statement['total_debit'], statement['total_credit'], statement['current_balance']])
+    safe_name = slugify(customer.name, allow_unicode=True).replace('/', '-') or f'customer-{customer.pk}'
+    filename = f'customer-statement-{safe_name}-{timezone.localdate():%Y-%m-%d}'
+    metadata = [('اسم العميل', customer.name), ('الهاتف', customer.phone or ''), ('العنوان', customer.address or ''), ('الرصيد الافتتاحي', statement['opening_balance'])]
+    if export_format == 'pdf':
+        return export_pdf_response(filename=filename, title=f'كشف حساب عميل - {customer.name}', headers=headers, rows=rows)
+    if export_format == 'xlsx':
+        return export_xlsx_response(filename=filename, title='كشف حساب عميل', headers=headers, rows=rows, metadata=metadata)
+    return JsonResponse({'success': False, 'message': 'صيغة تصدير غير مدعومة'}, status=400)

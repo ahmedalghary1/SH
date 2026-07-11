@@ -22,6 +22,7 @@ urlpatterns = [
     path('orders/ajax/supplier-product-variants/', views.ajax_supplier_product_variants, name='ajax_supplier_product_variants'),
     path('orders/return/', views.PurchaseReturnView.as_view(), name='purchase_return'),
     path('orders/<int:pk>/', views.PurchaseOrderDetailView.as_view(), name='order_detail'),
+    path('orders/<int:pk>/discount/', views.update_purchase_order_discount, name='order_discount'),
     path('orders/<int:pk>/receive/', views.PurchaseReceiveView.as_view(), name='order_receive'),
     path('orders/<int:pk>/pay/', views.SupplierPaymentView.as_view(), name='order_pay'),
     path('orders/<int:pk>/cancel/', views.PurchaseOrderCancelView.as_view(), name='order_cancel'),

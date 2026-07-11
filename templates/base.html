@@ -19,7 +19,8 @@
     {% include 'partials/sidebar.html' %}
     <main class="main-area">
         {% include 'partials/navbar.html' %}
-        <section class="page-content">
+        <nav class="workspace-tabs" data-workspace-tabs aria-label="التبويبات المفتوحة"></nav>
+        <section class="page-content" data-page-content{% if page_obj %} data-total-records="{{ page_obj.paginator.count }}"{% endif %}>
             {% include 'partials/messages.html' %}
             {% block content %}{% endblock %}
             {% current_page_audit_history %}
@@ -30,6 +31,7 @@
     {% block auth_content %}{% endblock %}
 {% endif %}
 <script src="{% static 'js/main.js' %}"></script>
+<script src="{% static 'js/internal-tabs.js' %}"></script>
 {% if request.user.is_authenticated %}
 <script type="module" src="{% static 'js/pwa/sync-engine.js' %}"></script>
 <script type="module" src="{% static 'js/pwa/offline-forms.js' %}"></script>

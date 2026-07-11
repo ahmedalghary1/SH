@@ -1,4 +1,5 @@
 from django.contrib.auth.models import AbstractUser
+from django.conf import settings
 from django.db import models
 
 
@@ -51,5 +52,12 @@ class User(AbstractUser):
     @property
     def is_warehouse(self):
         return self.role == self.ROLE_WAREHOUSE
+
+
+class SubmissionReceipt(models.Model):
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='submission_receipts')
+    path = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
 # Create your models here.

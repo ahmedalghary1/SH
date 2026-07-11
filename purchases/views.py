@@ -21,7 +21,7 @@ from products.models import Category, Color, Product, ProductVariant, Size
 from .forms import PurchaseOrderForm, PurchaseReceiveForm, PurchaseReturnForm, SupplierForm, SupplierPaymentForm, SimpleSupplierForm
 from .models import PurchaseOrder, Supplier
 from .raw_material import RawMaterialPurchaseForm, record_raw_material_purchase
-from .services import cancel_purchase_order, create_purchase_order, create_purchase_return, pay_supplier, receive_purchase_order_items
+from .services import cancel_purchase_order, create_purchase_order, create_purchase_return, pay_supplier, receive_purchase_order_items, update_purchase_discount
 
 
 def _decimal_from_post(value, default=Decimal('0')):
@@ -442,6 +442,8 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
                     notes=form.cleaned_data.get('notes') or '',
                     items=items,
                     user=self.request.user,
+                    discount_type=form.cleaned_data['discount_type'],
+                    discount_value=form.cleaned_data.get('discount_value') or Decimal('0'),
                 )
                 receive_purchase_order_items(
                     purchase_order=po,
@@ -567,6 +569,23 @@ class PurchaseOrderDetailView(RoleRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         context['can_view_costs'] = can_view_costs(self.request.user)
         return context
+
+
+@require_POST
+@role_required('manager')
+def update_purchase_order_discount(request, pk):
+    purchase_order = get_object_or_404(PurchaseOrder, pk=pk)
+    try:
+        update_purchase_discount(
+            purchase_order=purchase_order,
+            discount_type=request.POST.get('discount_type') or PurchaseOrder.DISCOUNT_FIXED,
+            discount_value=Decimal(request.POST.get('discount_value') or '0'),
+            user=request.user,
+        )
+        messages.success(request, 'تم تحديث خصم فاتورة الشراء وإعادة حساب رصيد المورد')
+    except (ValidationError, InvalidOperation) as exc:
+        messages.error(request, getattr(exc, 'message', None) or 'قيمة الخصم غير صحيحة')
+    return redirect('purchases:order_detail', pk=pk)
 
 
 class PurchaseReceiveView(WarehouseRequiredMixin, FormView):

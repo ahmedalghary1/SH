@@ -7,6 +7,10 @@
     <button class="btn btn-primary" type="submit">عرض</button>
 </form>
 {% if customer %}
+<div class="page-actions">
+    <a class="btn btn-primary" href="{% url 'customers:statement_export' customer.pk 'pdf' %}">تصدير PDF</a>
+    <a class="btn btn-primary" href="{% url 'customers:statement_export' customer.pk 'xlsx' %}">تصدير Excel</a>
+</div>
 <section class="card">
     <h2>بيانات العميل</h2>
     <div class="detail-grid">

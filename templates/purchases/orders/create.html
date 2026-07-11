@@ -85,6 +85,9 @@
         {{ form.paid_amount }}
         {% if form.paid_amount.errors %}<small class="error">{{ form.paid_amount.errors|join:', ' }}</small>{% endif %}
     </label>
+    <label><span>{{ form.discount_type.label }}</span>{{ form.discount_type }}</label>
+    <label><span>{{ form.discount_value.label }}</span>{{ form.discount_value }}{% if form.discount_value.errors %}<small class="error">{{ form.discount_value.errors|join:', ' }}</small>{% endif %}</label>
+    <div class="card" data-purchase-totals>قبل الخصم: <b data-subtotal>0.00</b> · الخصم: <b data-discount>0.00</b> · الصافي: <b data-net>0.00</b></div>
 
     <div class="table-wrap span-2">
         <table>

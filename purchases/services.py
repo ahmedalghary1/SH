@@ -26,18 +26,42 @@ def recalculate_purchase_order(purchase_order):
         item.total_cost = item.unit_cost * item.quantity
         item.save(update_fields=['total_cost'])
         total += item.total_cost
-    purchase_order.total_amount = total
-    purchase_order.remaining_amount = max(total - purchase_order.paid_amount, Decimal('0'))
-    purchase_order.save(update_fields=['total_amount', 'remaining_amount'])
+    purchase_order.subtotal_amount = total
+    discount = total * purchase_order.discount_value / Decimal('100') if purchase_order.discount_type == PurchaseOrder.DISCOUNT_PERCENT else purchase_order.discount_value
+    purchase_order.discount_amount = discount.quantize(Decimal('0.01'))
+    if purchase_order.discount_amount < 0 or purchase_order.discount_amount > total:
+        raise ValidationError('الخصم لا يمكن أن يتجاوز إجمالي الفاتورة')
+    purchase_order.total_amount = total - purchase_order.discount_amount
+    purchase_order.remaining_amount = max(purchase_order.total_amount - purchase_order.paid_amount, Decimal('0'))
+    purchase_order.save(update_fields=['subtotal_amount', 'discount_amount', 'total_amount', 'remaining_amount'])
     return purchase_order
 
 
 @transaction.atomic
-def create_purchase_order(*, supplier, items, user, status=PurchaseOrder.STATUS_ORDERED, order_date=None, expected_date=None, notes=''):
+def update_purchase_discount(*, purchase_order, discount_type, discount_value, user):
+    purchase_order = PurchaseOrder.objects.select_for_update().select_related('supplier').get(pk=purchase_order.pk)
+    supplier = Supplier.objects.select_for_update().get(pk=purchase_order.supplier_id)
+    old_remaining = purchase_order.remaining_amount
+    purchase_order.discount_type = discount_type
+    purchase_order.discount_value = Decimal(discount_value or 0)
+    if purchase_order.discount_value < 0 or (discount_type == PurchaseOrder.DISCOUNT_PERCENT and purchase_order.discount_value > 100):
+        raise ValidationError('قيمة الخصم غير صحيحة')
+    recalculate_purchase_order(purchase_order)
+    if purchase_order.status != PurchaseOrder.STATUS_DRAFT:
+        supplier.current_balance = F('current_balance') + (purchase_order.remaining_amount - old_remaining)
+        supplier.save(update_fields=['current_balance'])
+    return purchase_order
+
+
+@transaction.atomic
+def create_purchase_order(*, supplier, items, user, status=PurchaseOrder.STATUS_ORDERED, order_date=None, expected_date=None, notes='', discount_type=PurchaseOrder.DISCOUNT_FIXED, discount_value=Decimal('0')):
     if status not in {PurchaseOrder.STATUS_DRAFT, PurchaseOrder.STATUS_ORDERED}:
         raise ValidationError('حالة أمر الشراء عند الإنشاء يجب أن تكون مسودة أو تم الطلب')
     if not items:
         raise ValidationError('لا يمكن إنشاء أمر شراء بدون أصناف')
+    discount_value = Decimal(discount_value or 0)
+    if discount_value < 0 or (discount_type == PurchaseOrder.DISCOUNT_PERCENT and discount_value > 100):
+        raise ValidationError('قيمة الخصم غير صحيحة')
     purchase_order = PurchaseOrder.objects.create(
         purchase_number=generate_purchase_number(),
         supplier=supplier,
@@ -46,6 +70,8 @@ def create_purchase_order(*, supplier, items, user, status=PurchaseOrder.STATUS_
         expected_date=expected_date,
         notes=notes,
         created_by=user,
+        discount_type=discount_type,
+        discount_value=discount_value,
     )
     for item in items:
         quantity = int(item['quantity'])

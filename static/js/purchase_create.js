@@ -12,6 +12,8 @@
     const itemsJson = field("id_items_json");
     const itemsBody = form.querySelector("[data-purchase-items-body]");
     const totalCell = form.querySelector("[data-purchase-total]");
+    const discountType = field("id_discount_type");
+    const discountValue = field("id_discount_value");
     let items = [];
     try {
         items = itemsJson?.value ? JSON.parse(itemsJson.value || "[]") : [];
@@ -62,8 +64,17 @@
                 sum + (Number(item.quantity || 0) * Number(item.unit_cost || 0))
             ), 0));
         }
+        const subtotal = items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_cost || 0), 0);
+        const entered = Math.max(0, Number(discountValue?.value || 0));
+        const discount = discountType?.value === 'percent' ? subtotal * Math.min(entered, 100) / 100 : Math.min(entered, subtotal);
+        form.querySelector('[data-subtotal]').textContent = money(subtotal);
+        form.querySelector('[data-discount]').textContent = money(discount);
+        form.querySelector('[data-net]').textContent = money(subtotal - discount);
         updateItemsJson();
     }
+
+    discountType?.addEventListener('change', renderItems);
+    discountValue?.addEventListener('input', renderItems);
 
     function requireAny(message, ...inputs) {
         const hasValue = inputs.some((input) => String(input?.value || "").trim());

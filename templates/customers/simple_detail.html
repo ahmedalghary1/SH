@@ -171,6 +171,10 @@
         </div>
 
         <div class="tab-content" id="statement">
+            <div class="page-actions">
+                <a class="btn btn-primary" href="{% url 'customers:statement_export' customer.pk 'pdf' %}">تصدير PDF</a>
+                <a class="btn btn-primary" href="{% url 'customers:statement_export' customer.pk 'xlsx' %}">تصدير Excel</a>
+            </div>
             <div class="table-wrap">
                 <table>
                     <thead>

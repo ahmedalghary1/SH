@@ -7,7 +7,8 @@
 </div>
 {% include 'partials/export_buttons.html' %}
 <form class="filters">
-    <input name="q" placeholder="بحث بالاسم أو الهاتف" value="{{ request.GET.q }}">
+    <input name="q" placeholder="الاسم أو الهاتف أو العنوان" value="{{ request.GET.q }}">
+    <select name="sort"><option value="">الأحدث</option><option value="-balance" {% if request.GET.sort == '-balance' %}selected{% endif %}>الرصيد الأعلى</option><option value="balance" {% if request.GET.sort == 'balance' %}selected{% endif %}>الرصيد الأقل</option></select>
     <select name="type">
         <option value="">كل العملاء</option>
         <option value="retail" {% if request.GET.type == 'retail' %}selected{% endif %}>قطاعي</option>

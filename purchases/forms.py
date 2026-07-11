@@ -86,6 +86,8 @@ class PurchaseOrderForm(forms.Form):
     warehouse = forms.ModelChoiceField(queryset=Warehouse.objects.filter(is_active=True), label='مخزن الإضافة', required=False)
     cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة', required=False)
     paid_amount = forms.DecimalField(min_value=0, required=False, initial=0, label='المدفوع الآن')
+    discount_type = forms.ChoiceField(choices=PurchaseOrder.DISCOUNT_TYPE_CHOICES, initial=PurchaseOrder.DISCOUNT_FIXED, label='نوع الخصم')
+    discount_value = forms.DecimalField(min_value=0, required=False, initial=0, label='قيمة الخصم')
     quantity = forms.IntegerField(min_value=1, label='الكمية', required=False)
     unit_cost = forms.DecimalField(min_value=0, label='سعر الشراء', required=False)
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
@@ -148,7 +150,16 @@ class PurchaseOrderForm(forms.Form):
             Decimal(str(item.get('quantity') or 0)) * Decimal(str(item.get('unit_cost') or 0))
             for item in items
         )
-        if paid_amount > total:
+        discount_value = cleaned.get('discount_value') or Decimal('0')
+        discount_type = cleaned.get('discount_type') or PurchaseOrder.DISCOUNT_FIXED
+        if discount_type == PurchaseOrder.DISCOUNT_PERCENT and discount_value > Decimal('100'):
+            self.add_error('discount_value', 'نسبة الخصم يجب أن تكون بين 0 و100')
+        discount_amount = total * discount_value / Decimal('100') if discount_type == PurchaseOrder.DISCOUNT_PERCENT else discount_value
+        if discount_amount > total:
+            self.add_error('discount_value', 'الخصم لا يمكن أن يتجاوز إجمالي الفاتورة')
+        cleaned['discount_amount'] = discount_amount.quantize(Decimal('0.01'))
+        cleaned['net_total'] = total - cleaned['discount_amount']
+        if paid_amount > cleaned['net_total']:
             self.add_error('paid_amount', 'المدفوع لا يمكن أن يتجاوز إجمالي الفاتورة')
         if paid_amount > 0 and not cleaned.get('cash_account'):
             self.add_error('cash_account', 'اختر الخزنة عند تسجيل مبلغ مدفوع')

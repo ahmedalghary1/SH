@@ -129,6 +129,7 @@ class PaymentTransaction(models.Model):
     reference = models.CharField(max_length=80, blank=True, null=True, db_index=True)
     notes = models.TextField(blank=True, null=True)
     transaction_date = models.DateField(default=timezone.localdate, db_index=True)
+    transaction_time = models.TimeField(default=timezone.localtime, db_index=True)
     affects_cash = models.BooleanField(default=True, db_index=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)

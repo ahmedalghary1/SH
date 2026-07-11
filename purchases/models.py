@@ -31,6 +31,9 @@ class Supplier(models.Model):
 
 
 class PurchaseOrder(models.Model):
+    DISCOUNT_FIXED = 'fixed'
+    DISCOUNT_PERCENT = 'percent'
+    DISCOUNT_TYPE_CHOICES = [(DISCOUNT_FIXED, 'مبلغ ثابت'), (DISCOUNT_PERCENT, 'نسبة مئوية')]
     STATUS_DRAFT = 'draft'
     STATUS_ORDERED = 'ordered'
     STATUS_PARTIALLY_RECEIVED = 'partially_received'
@@ -50,6 +53,10 @@ class PurchaseOrder(models.Model):
     order_date = models.DateField(default=timezone.localdate, db_index=True)
     expected_date = models.DateField(blank=True, null=True)
     total_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    subtotal_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    discount_type = models.CharField(max_length=10, choices=DISCOUNT_TYPE_CHOICES, default=DISCOUNT_FIXED)
+    discount_value = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    discount_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     paid_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     remaining_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     notes = models.TextField(blank=True, null=True)

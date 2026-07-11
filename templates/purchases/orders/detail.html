@@ -12,10 +12,20 @@
         {% endif %}
     </div>
 </div>
+{% if request.user.is_manager %}
+<form method="post" action="{% url 'purchases:order_discount' purchase_order.pk %}" class="card form-grid">
+    {% csrf_token %}
+    <label><span>نوع الخصم</span><select name="discount_type"><option value="fixed" {% if purchase_order.discount_type == 'fixed' %}selected{% endif %}>مبلغ ثابت</option><option value="percent" {% if purchase_order.discount_type == 'percent' %}selected{% endif %}>نسبة مئوية</option></select></label>
+    <label><span>قيمة الخصم</span><input type="number" min="0" step="0.01" name="discount_value" value="{{ purchase_order.discount_value }}"></label>
+    <button class="btn btn-primary" type="submit">تحديث الخصم</button>
+</form>
+{% endif %}
 <div class="stats-grid">
     <div class="stat-card"><span>المورد</span><strong>{{ purchase_order.supplier }}</strong></div>
     <div class="stat-card"><span>الحالة</span><strong>{{ purchase_order.get_status_display }}</strong></div>
-    <div class="stat-card"><span>الإجمالي</span><strong>{{ purchase_order.total_amount }}</strong></div>
+    <div class="stat-card"><span>قبل الخصم</span><strong>{{ purchase_order.subtotal_amount }}</strong></div>
+    <div class="stat-card"><span>الخصم</span><strong>{{ purchase_order.discount_amount }}</strong></div>
+    <div class="stat-card"><span>الصافي</span><strong>{{ purchase_order.total_amount }}</strong></div>
     <div class="stat-card"><span>المتبقي</span><strong>{{ purchase_order.remaining_amount }}</strong></div>
 </div>
 <section class="card">

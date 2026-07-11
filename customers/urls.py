@@ -19,6 +19,7 @@ urlpatterns = [
     path('<int:pk>/', views.CustomerDetailView.as_view(), name='detail'),
     path('<int:pk>/crm/', views.CustomerDetailView.as_view(), name='crm_detail'),
     path('<int:pk>/update/', views.CustomerUpdateView.as_view(), name='update'),
+    path('<int:pk>/statement/export/<str:export_format>/', views.export_customer_statement, name='statement_export'),
     path('<int:pk>/delete/', views.CustomerDeleteView.as_view(), name='delete'),
     path('<int:pk>/interactions/', views.CustomerInteractionListView.as_view(), name='interactions'),
     path('<int:pk>/interactions/create/', views.CustomerInteractionCreateView.as_view(), name='interaction_create'),
