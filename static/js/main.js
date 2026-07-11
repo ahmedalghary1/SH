@@ -196,14 +196,21 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function enhanceSharedPageUi(root = document) {
+    const pageContent = root.closest?.('[data-page-content]') || document.querySelector('[data-page-content]');
+    const paginatedTable = pageContent?.querySelector('table');
     root.querySelectorAll('table').forEach((table) => {
         if (table.dataset.countEnhanced) return;
         table.dataset.countEnhanced = '1';
         const rows = [...table.querySelectorAll('tbody tr')].filter(row => !row.querySelector('td[colspan]'));
         const badge = document.createElement('div');
         badge.className = 'table-record-count';
-        const fullCount = root.closest?.('[data-page-content]')?.dataset.totalRecords || document.querySelector('[data-page-content]')?.dataset.totalRecords;
-        badge.textContent = `إجمالي العدد: ${Number(fullCount || rows.length).toLocaleString('en-US')}`;
+        // The paginator count belongs only to the page's primary table. Using
+        // it for every table made all secondary tables show the same total.
+        const paginatedCount = table === paginatedTable ? pageContent?.dataset.totalRecords : null;
+        const tableCount = paginatedCount !== undefined && paginatedCount !== null && paginatedCount !== ''
+            ? Number(paginatedCount)
+            : rows.length;
+        badge.textContent = `إجمالي العدد: ${tableCount.toLocaleString('en-US')}`;
         table.parentElement?.insertBefore(badge, table);
     });
     root.querySelectorAll('td, .stat-card strong, .summary-value, [data-number]').forEach((node) => {
