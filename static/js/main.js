@@ -195,7 +195,42 @@ document.addEventListener("DOMContentLoaded", () => {
     setupUnsavedFormTracking();
 });
 
+function normalizeNumberText(value) {
+    let normalized = String(value ?? '')
+        .trim()
+        .replace(/[٠-٩]/g, digit => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+        .replace(/[۰-۹]/g, digit => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+        .replace(/٬/g, '')
+        .replace(/٫/g, '.');
+    if (normalized.includes('.')) return normalized.replace(/,/g, '');
+    const commaParts = normalized.split(',');
+    // A single comma followed by one or two digits is a decimal separator,
+    // not a thousands separator. Normalize it to the system-wide dot.
+    if (commaParts.length === 2 && /^\d{1,2}$/.test(commaParts[1])) {
+        return `${commaParts[0]}.${commaParts[1]}`;
+    }
+    return normalized.replace(/,/g, '');
+}
+
+function formatExactNumber(value) {
+    const normalized = normalizeNumberText(value);
+    if (!/^-?\d+(\.\d+)?$/.test(normalized)) return String(value ?? '');
+    const sign = normalized.startsWith('-') ? '-' : '';
+    const unsigned = sign ? normalized.slice(1) : normalized;
+    const [integer, fraction] = unsigned.split('.');
+    const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return `${sign}${grouped}${fraction === undefined ? '' : `.${fraction}`}`;
+}
+
+window.SHNumbers = { normalize: normalizeNumberText, format: formatExactNumber };
+
 function enhanceSharedPageUi(root = document) {
+    root.querySelectorAll('input[type="number"]').forEach(input => {
+        // Keep the browser control aligned with the backend/JSON decimal
+        // convention regardless of the surrounding Arabic page language.
+        input.lang = 'en';
+        if (input.step === 'any' || String(input.step).includes('.')) input.inputMode = 'decimal';
+    });
     const pageContent = root.closest?.('[data-page-content]') || document.querySelector('[data-page-content]');
     const paginatedTable = pageContent?.querySelector('table');
     root.querySelectorAll('table').forEach((table) => {
@@ -208,18 +243,21 @@ function enhanceSharedPageUi(root = document) {
         // it for every table made all secondary tables show the same total.
         const paginatedCount = table === paginatedTable ? pageContent?.dataset.totalRecords : null;
         const tableCount = paginatedCount !== undefined && paginatedCount !== null && paginatedCount !== ''
-            ? Number(paginatedCount)
+            ? paginatedCount
             : rows.length;
-        badge.textContent = `إجمالي العدد: ${tableCount.toLocaleString('en-US')}`;
+        badge.textContent = `إجمالي العدد: ${formatExactNumber(String(tableCount))}`;
+        badge.classList.add('number-value');
         table.parentElement?.insertBefore(badge, table);
     });
     root.querySelectorAll('td, .stat-card strong, .summary-value, [data-number]').forEach((node) => {
         if (node.children.length || node.dataset.numberEnhanced) return;
-        const raw = node.textContent.trim().replace(/,/g, '');
+        const raw = normalizeNumberText(node.textContent);
         if (!/^-?\d+(\.\d+)?$/.test(raw)) return;
         node.dataset.numberEnhanced = '1';
-        const decimals = raw.includes('.') ? raw.split('.')[1].length : 0;
-        node.textContent = Number(raw).toLocaleString('en-US', {minimumFractionDigits: decimals, maximumFractionDigits: decimals});
+        // Format the string directly. Converting through Number used to round
+        // large values and could silently change the displayed value.
+        node.textContent = formatExactNumber(raw);
+        node.classList.add('number-value');
     });
     root.querySelectorAll('form').forEach((form) => {
         if (form.dataset.submitGuard) return;

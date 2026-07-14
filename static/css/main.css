@@ -703,6 +703,14 @@ input[type="number"],
 input[type="date"] {
     direction: ltr;
     text-align: right;
+    unicode-bidi: isolate;
+    font-variant-numeric: tabular-nums;
+}
+
+.number-value {
+    direction: ltr;
+    unicode-bidi: isolate;
+    font-variant-numeric: tabular-nums;
 }
 
 input::placeholder,
