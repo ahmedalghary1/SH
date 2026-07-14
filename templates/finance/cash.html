@@ -5,7 +5,7 @@
     <div class="page-head">
         <h1>الخزنة</h1>
         <div class="actions">
-            <a href="{% url 'finance:cash_account_statement' %}?cash_account={% if selected_account %}{{ selected_account.pk }}{% else %}{{ main_account.pk }}{% endif %}" class="btn btn-light">كشف حساب خزنة</a>
+            <a href="{% url 'finance:cash_account_statement' %}?cash_account={% if selected_account %}{{ selected_account.pk }}{% else %}{{ cash_drawer.pk }}{% endif %}" class="btn btn-light">كشف حساب خزنة</a>
             <a href="{% url 'finance:accounts' %}" class="btn btn-light">إدارة الخزن</a>
             <a href="{% url 'finance:transfer' %}" class="btn btn-primary">تحويل بين الخزن</a>
         </div>
@@ -29,6 +29,24 @@
             <span>إلى تاريخ</span>
             <input type="date" name="date_to" value="{{ filters.date_to }}">
         </label>
+        <label>
+            <span>نوع البيع</span>
+            <select name="sale_type">
+                <option value="">جميع الحركات</option>
+                {% for value, label in sale_type_choices %}
+                    <option value="{{ value }}" {% if filters.sale_type == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>ترتيب النتائج</span>
+            <select name="sort">
+                <option value="datetime_desc" {% if filters.sort == 'datetime_desc' %}selected{% endif %}>التاريخ والوقت: الأحدث أولاً</option>
+                <option value="datetime_asc" {% if filters.sort == 'datetime_asc' %}selected{% endif %}>التاريخ والوقت: الأقدم أولاً</option>
+                <option value="amount_desc" {% if filters.sort == 'amount_desc' %}selected{% endif %}>المبلغ: الأعلى أولاً</option>
+                <option value="amount_asc" {% if filters.sort == 'amount_asc' %}selected{% endif %}>المبلغ: الأقل أولاً</option>
+            </select>
+        </label>
         <div class="form-actions">
             <button class="btn btn-primary" type="submit">تطبيق</button>
             <a class="btn btn-light" href="{% url 'finance:cash' %}">اليوم</a>
@@ -42,7 +60,7 @@
                 <strong>{{ account.balance }}</strong>
                 <small>{{ account.get_account_type_display }}{% if account.assigned_user %} - {{ account.assigned_user }}{% endif %}</small>
                 <div class="button-row">
-                    <a href="{% url 'finance:cash' %}?account={{ account.pk }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}" class="btn btn-light btn-small">عرض الحركة</a>
+                    <a href="{% url 'finance:cash' %}?account={{ account.pk }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}&sale_type={{ filters.sale_type }}&sort={{ filters.sort }}" class="btn btn-light btn-small">عرض الحركة</a>
                     <a href="{% url 'finance:account_update' account.pk %}" class="btn btn-light btn-small">تعديل الاسم</a>
                 </div>
             </div>
@@ -75,6 +93,15 @@
             <div class="cash-content">
                 <span class="cash-label">إجمالي الداخل</span>
                 <strong class="cash-value amount-in">{{ total_in }}</strong>
+            </div>
+        </div>
+        <div class="cash-card">
+            <div class="cash-icon sales">
+                <svg class="ui-icon"><use href="#icon-money"></use></svg>
+            </div>
+            <div class="cash-content">
+                <span class="cash-label">إجمالي مبالغ النتائج بعد الفلترة</span>
+                <strong class="cash-value">{{ filtered_amount_total }}</strong>
             </div>
         </div>
         <div class="cash-card">
@@ -150,6 +177,7 @@
                     <tr>
                         <th>التاريخ والوقت</th>
                         <th>الخزنة</th>
+                        <th>نوع البيع</th>
                         <th>نوع الحركة</th>
                         <th>الطرف / المرجع</th>
                         <th>البيان</th>
@@ -161,8 +189,9 @@
                 <tbody>
                     {% for tx in transactions %}
                         <tr>
-                            <td>{{ tx.created_at|date:'Y-m-d H:i' }}</td>
+                            <td>{{ tx.transaction_date|date:'Y-m-d' }} {{ tx.transaction_time|time:'H:i' }}</td>
                             <td>{{ tx.cash_account }}</td>
+                            <td>{% if tx.related_order %}{{ tx.related_order.get_order_type_display }}{% else %}-{% endif %}</td>
                             <td>{{ tx.get_transaction_type_display }}</td>
                             <td>
                                 {% if tx.related_order %}{{ tx.related_order.order_number }}
@@ -178,7 +207,7 @@
                             <td>{{ tx.created_by|default:'-' }}</td>
                         </tr>
                     {% empty %}
-                        <tr><td colspan="8">لا توجد حركات في الفترة المحددة</td></tr>
+                        <tr><td colspan="9">لا توجد حركات في الفترة المحددة</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

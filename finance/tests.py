@@ -400,16 +400,16 @@ class FinanceServiceTests(TestCase):
         self.assertNotContains(response, self.order.order_number)
         self.assertTrue(all(tx.direction == PaymentTransaction.DIRECTION_OUT for tx in response.context['transactions']))
 
-    def test_cash_account_statement_defaults_to_main_account(self):
+    def test_cash_account_statement_defaults_to_cash_drawer(self):
         self.client.force_login(self.user)
-        main_account = CashAccount.get_default()
+        cash_drawer = CashAccount.get_cash_drawer()
 
         response = self.client.get(reverse('finance:cash_account_statement'))
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context['account'], main_account)
+        self.assertEqual(response.context['account'], cash_drawer)
         self.assertContains(response, 'بيانات الخزنة')
-        self.assertContains(response, main_account.name)
+        self.assertContains(response, cash_drawer.name)
 
     def test_cash_account_statement_accepts_selected_account(self):
         self.client.force_login(self.user)

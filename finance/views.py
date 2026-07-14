@@ -15,6 +15,7 @@ from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 from customers.models import Customer
 from customers.services import visible_customers_for_user
+from orders.models import Order
 
 from .forms import CashAccountForm, CashAccountStatementForm, CustomerCollectionForm, CustomerPaymentEditForm, ExpenseForm, SalesRepStatementForm, TransferForm, SupplierPaymentForm
 from .models import CashAccount, PaymentTransaction
@@ -49,7 +50,7 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
             date_from, date_to = date_to, date_from
 
         transactions_base = PaymentTransaction.objects.filter(cash_account_id__in=account_ids)
-        transactions = transactions_base.filter(
+        period_transactions = transactions_base.filter(
             transaction_date__gte=date_from,
             transaction_date__lte=date_to,
         ).select_related(
@@ -59,13 +60,32 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
             'related_supplier',
             'related_sales_rep',
             'created_by',
-        ).order_by('-transaction_date', '-created_at')
+        )
+
+        sale_type = self.request.GET.get('sale_type', '').strip()
+        sort = self.request.GET.get('sort', 'datetime_desc').strip()
+        sort_options = {
+            'amount_asc': ('amount', 'transaction_date', 'transaction_time', 'pk'),
+            'amount_desc': ('-amount', '-transaction_date', '-transaction_time', '-pk'),
+            'datetime_asc': ('transaction_date', 'transaction_time', 'pk'),
+            'datetime_desc': ('-transaction_date', '-transaction_time', '-pk'),
+        }
+        if sort not in sort_options:
+            sort = 'datetime_desc'
+
+        transactions = period_transactions
+        if sale_type in {Order.TYPE_B2C, Order.TYPE_B2B}:
+            transactions = transactions.filter(related_order__order_type=sale_type)
+        transactions = transactions.order_by(*sort_options[sort])
 
         total_in = transactions.filter(direction=PaymentTransaction.DIRECTION_IN).aggregate(v=Sum('amount'))['v'] or 0
         total_out = transactions.filter(direction=PaymentTransaction.DIRECTION_OUT).aggregate(v=Sum('amount'))['v'] or 0
         period_net = total_in - total_out
+        filtered_amount_total = transactions.aggregate(v=Sum('amount'))['v'] or 0
         current_balance = scoped_accounts.aggregate(v=Sum('balance'))['v'] or 0
-        opening_balance = current_balance - period_net
+        base_total_in = period_transactions.filter(direction=PaymentTransaction.DIRECTION_IN).aggregate(v=Sum('amount'))['v'] or 0
+        base_total_out = period_transactions.filter(direction=PaymentTransaction.DIRECTION_OUT).aggregate(v=Sum('amount'))['v'] or 0
+        opening_balance = current_balance - (base_total_in - base_total_out)
 
         cash_sales = transactions.filter(
             transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
@@ -100,6 +120,7 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
             'total_out': total_out,
             'period_net': period_net,
             'period_net_is_negative': period_net < 0,
+            'filtered_amount_total': filtered_amount_total,
             'current_balance': current_balance,
             'main_account': default_account,
             'cash_drawer': cash_drawer,
@@ -109,7 +130,10 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
                 'account': selected_account_id if selected_account else '',
                 'date_from': date_from.isoformat(),
                 'date_to': date_to.isoformat(),
+                'sale_type': sale_type if sale_type in {Order.TYPE_B2C, Order.TYPE_B2B} else '',
+                'sort': sort,
             },
+            'sale_type_choices': Order.ORDER_TYPE_CHOICES,
             'period_label': date_from.strftime('%Y-%m-%d') if date_from == date_to else f'{date_from:%Y-%m-%d} - {date_to:%Y-%m-%d}',
             'transactions': transactions[:50],
         })
@@ -720,7 +744,7 @@ class CashAccountStatementView(ManagerRequiredMixin, TemplateView):
         request_data = self.request.GET.copy()
         if request_data.get('account') and not request_data.get('cash_account'):
             request_data['cash_account'] = request_data['account']
-        default_account = CashAccount.get_default()
+        default_account = CashAccount.get_cash_drawer()
         form = CashAccountStatementForm(request_data or None, initial={'cash_account': default_account})
         account = None
         statement_data = {
