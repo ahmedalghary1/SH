@@ -17,6 +17,7 @@ urlpatterns = [
     path('transactions/<int:pk>/delete/', views.PaymentTransactionDeleteView.as_view(), name='transaction_delete'),
     path('transactions/expense/', views.ExpenseCreateView.as_view(), name='expense_create'),
     path('transactions/collection/', views.CustomerCollectionView.as_view(), name='collection_create'),
+    path('transactions/collection/<int:pk>/update/', views.CustomerCollectionUpdateView.as_view(), name='collection_update'),
     path('transactions/supplier-payment/', views.SupplierPaymentView.as_view(), name='supplier_payment_create'),
     path('transactions/transfer/', views.TransferView.as_view(), name='transfer'),
     path('statements/cash-account/', views.CashAccountStatementView.as_view(), name='cash_account_statement'),

@@ -1,8 +1,10 @@
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
-from django.db.models import Sum
-from django.shortcuts import redirect
+from datetime import datetime
+
+from django.db.models import Q, Sum
+from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -11,10 +13,12 @@ from django.views.generic import CreateView, DetailView, FormView, ListView, Tem
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, can_view_costs, SalesRequiredMixin
 from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
+from customers.models import Customer
+from customers.services import visible_customers_for_user
 
-from .forms import CashAccountForm, CashAccountStatementForm, CustomerCollectionForm, ExpenseForm, SalesRepStatementForm, TransferForm, SupplierPaymentForm
+from .forms import CashAccountForm, CashAccountStatementForm, CustomerCollectionForm, CustomerPaymentEditForm, ExpenseForm, SalesRepStatementForm, TransferForm, SupplierPaymentForm
 from .models import CashAccount, PaymentTransaction
-from .services import add_expense, build_cash_account_statement, build_customer_statement, collect_customer_balance_payment, collect_order_payment, delete_transaction, record_customer_allowed_discount, record_customer_payment, record_customer_refund_payment, record_supplier_payment, transfer_between_accounts
+from .services import add_expense, build_cash_account_statement, build_customer_statement, collect_customer_balance_payment, collect_order_payment, delete_transaction, record_customer_allowed_discount, record_customer_payment, record_customer_refund_payment, record_supplier_payment, replace_customer_payment, transfer_between_accounts
 
 
 def _validation_error_message(exc):
@@ -354,7 +358,8 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
     allowed_roles = ('manager', 'sales')
     template_name = 'finance/transactions/collection.html'
     form_class = CustomerCollectionForm
-    success_url = reverse_lazy('finance:transactions')
+    success_url = reverse_lazy('finance:collection_create')
+    paginate_by = 30
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -367,6 +372,73 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
         if customer_id:
             initial['customer'] = customer_id
         return initial
+
+    def get_collection_queryset(self):
+        visible_customers = visible_customers_for_user(
+            self.request.user,
+            Customer.objects.all(),
+        )
+        queryset = PaymentTransaction.objects.filter(
+            transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+            direction=PaymentTransaction.DIRECTION_IN,
+            related_customer__in=visible_customers,
+        ).select_related(
+            'related_customer',
+            'related_order',
+            'cash_account',
+            'created_by',
+        ).order_by('-transaction_date', '-transaction_time', '-pk')
+
+        customer_id = self.request.GET.get('customer', '').strip()
+        cash_account_id = self.request.GET.get('cash_account', '').strip()
+        date_from = parse_date(self.request.GET.get('date_from', ''))
+        date_to = parse_date(self.request.GET.get('date_to', ''))
+        query = self.request.GET.get('q', '').strip()
+
+        if customer_id.isdigit():
+            queryset = queryset.filter(related_customer_id=customer_id)
+        if cash_account_id.isdigit():
+            queryset = queryset.filter(cash_account_id=cash_account_id)
+        if date_from:
+            queryset = queryset.filter(transaction_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(transaction_date__lte=date_to)
+        if query:
+            queryset = queryset.filter(
+                Q(related_customer__name__icontains=query)
+                | Q(reference__icontains=query)
+                | Q(notes__icontains=query)
+            )
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        queryset = self.get_collection_queryset()
+        total_amount = queryset.aggregate(total=Sum('amount'))['total'] or 0
+        paginator = Paginator(queryset, self.paginate_by)
+        page_obj = paginator.get_page(self.request.GET.get('page'))
+        query_params = self.request.GET.copy()
+        query_params.pop('page', None)
+
+        form = context['form']
+        context.update({
+            'collections': page_obj.object_list,
+            'page_obj': page_obj,
+            'paginator': paginator,
+            'is_paginated': page_obj.has_other_pages(),
+            'pagination_query': query_params.urlencode(),
+            'total_amount': total_amount,
+            'filter_customers': form.fields['customer'].queryset,
+            'filter_cash_accounts': CashAccount.objects.filter(is_active=True).order_by('name'),
+            'filters': {
+                'customer': self.request.GET.get('customer', ''),
+                'cash_account': self.request.GET.get('cash_account', ''),
+                'date_from': self.request.GET.get('date_from', ''),
+                'date_to': self.request.GET.get('date_to', ''),
+                'q': self.request.GET.get('q', ''),
+            },
+        })
+        return context
 
     def form_valid(self, form):
         try:
@@ -426,6 +498,77 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
                         transaction_date=form.cleaned_data.get('transaction_date'),
                     )
             messages.success(self.request, 'تم تسجيل التحصيل')
+            return redirect(self.success_url)
+        except ValidationError as exc:
+            form.add_error(None, _validation_error_message(exc))
+            return self.form_invalid(form)
+
+
+class CustomerCollectionUpdateView(RoleRequiredMixin, FormView):
+    allowed_roles = ('manager', 'sales')
+    template_name = 'finance/transactions/collection_edit.html'
+    form_class = CustomerPaymentEditForm
+    success_url = reverse_lazy('finance:collection_create')
+
+    def get_object(self):
+        queryset = PaymentTransaction.objects.select_related(
+            'related_customer',
+            'cash_account',
+            'related_order',
+        )
+        if not self.request.user.is_manager:
+            queryset = queryset.filter(created_by=self.request.user)
+        return get_object_or_404(
+            queryset,
+            pk=self.kwargs['pk'],
+            transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+            direction=PaymentTransaction.DIRECTION_IN,
+            related_customer__isnull=False,
+        )
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
+
+    def get_initial(self):
+        initial = super().get_initial()
+        payment = self.get_object()
+        transaction_datetime = datetime.combine(
+            payment.transaction_date,
+            payment.transaction_time,
+        )
+        if timezone.is_naive(transaction_datetime):
+            transaction_datetime = timezone.make_aware(
+                transaction_datetime,
+                timezone.get_current_timezone(),
+            )
+        initial.update({
+            'customer': payment.related_customer_id,
+            'amount': payment.amount,
+            'cash_account': payment.cash_account_id,
+            'transaction_date': transaction_datetime,
+            'notes': payment.notes or '',
+        })
+        return initial
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['payment'] = self.get_object()
+        return context
+
+    def form_valid(self, form):
+        try:
+            replace_customer_payment(
+                payment_transaction=self.get_object(),
+                customer=form.cleaned_data['customer'],
+                amount=form.cleaned_data['amount'],
+                cash_account=form.cleaned_data['cash_account'],
+                transaction_date=form.cleaned_data['transaction_date'],
+                notes=form.cleaned_data.get('notes') or '',
+                user=self.request.user,
+            )
+            messages.success(self.request, 'تم تعديل عملية القبض وإعادة احتساب أثرها المالي')
             return redirect(self.success_url)
         except ValidationError as exc:
             form.add_error(None, _validation_error_message(exc))

@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block title %}تعديل عملية قبض{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>تعديل عملية قبض</h1>
+    <a class="btn btn-light" href="{% url 'finance:collection_create' %}">العودة لسجل القبض</a>
+</div>
+
+<form method="post" class="card form-grid">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <label>
+        <span>{{ form.transaction_date.label }}</span>
+        {{ form.transaction_date }}
+        {% if form.transaction_date.errors %}<small class="error">{{ form.transaction_date.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <label>
+        <span>{{ form.customer.label }}</span>
+        {{ form.customer }}
+        {% if form.customer.errors %}<small class="error">{{ form.customer.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <label>
+        <span>{{ form.amount.label }}</span>
+        {{ form.amount }}
+        {% if form.amount.errors %}<small class="error">{{ form.amount.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <label>
+        <span>{{ form.cash_account.label }}</span>
+        {{ form.cash_account }}
+        {% if form.cash_account.errors %}<small class="error">{{ form.cash_account.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <label class="span-2">
+        <span>{{ form.notes.label }}</span>
+        {{ form.notes }}
+        {% if form.notes.errors %}<small class="error">{{ form.notes.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <div class="form-actions span-2">
+        <button class="btn btn-primary" type="submit">حفظ التعديل</button>
+        <a class="btn btn-light" href="{% url 'finance:collection_create' %}">إلغاء</a>
+    </div>
+</form>
+
+<div class="card">
+    <p>سيتم عكس الأثر المالي للعملية القديمة ثم تسجيل القيم الجديدة لضمان صحة رصيد الخزنة والعميل والفواتير.</p>
+</div>
+{% endblock %}

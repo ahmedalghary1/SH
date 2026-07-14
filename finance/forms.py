@@ -82,7 +82,6 @@ class CustomerCollectionForm(forms.Form):
         self.fields['cash_account'].initial = CashAccount.get_cash_drawer()
         self.fields['allowed_discount'].widget = forms.HiddenInput()
         self.fields['order'].widget = forms.HiddenInput()
-        self.fields['notes'].widget = forms.HiddenInput()
 
     def clean(self):
         cleaned = super().clean()
@@ -97,6 +96,42 @@ class CustomerCollectionForm(forms.Form):
         if order and not customer:
             cleaned['customer'] = order.customer
         return cleaned
+
+
+class CustomerPaymentEditForm(forms.Form):
+    customer = forms.ModelChoiceField(queryset=Customer.objects.all(), label='العميل')
+    amount = forms.DecimalField(
+        min_value=0.01,
+        label='مبلغ القبض',
+        widget=forms.NumberInput(attrs={'step': '0.01'}),
+    )
+    cash_account = forms.ModelChoiceField(
+        queryset=CashAccount.objects.filter(is_active=True),
+        label='الخزنة',
+    )
+    transaction_date = forms.DateTimeField(
+        label='تاريخ ووقت القبض',
+        input_formats=['%Y-%m-%dT%H:%M'],
+        widget=forms.DateTimeInput(
+            format='%Y-%m-%dT%H:%M',
+            attrs={'type': 'datetime-local'},
+        ),
+    )
+    notes = forms.CharField(
+        widget=forms.Textarea(attrs={'rows': 2}),
+        required=False,
+        label='ملاحظات',
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['customer'].queryset = visible_customers_for_user(
+            user,
+            Customer.objects.all().order_by('name'),
+        )
+        self.fields['cash_account'].queryset = CashAccount.objects.filter(
+            is_active=True,
+        ).order_by('name')
 
 
 class TransferForm(forms.Form):

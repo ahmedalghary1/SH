@@ -757,6 +757,42 @@ def delete_transaction(*, payment_transaction, user=None):
 
 
 @transaction.atomic
+def replace_customer_payment(
+    *,
+    payment_transaction,
+    customer,
+    amount,
+    cash_account,
+    user,
+    notes='',
+    transaction_date=None,
+):
+    """Replace a receipt after fully reversing its accounting effects.
+
+    Reusing the normal reversal and collection paths keeps cash, customer
+    credit, and any allocated order balances consistent.
+    """
+    payment_transaction = PaymentTransaction.objects.select_for_update().get(
+        pk=payment_transaction.pk,
+    )
+    if (
+        payment_transaction.transaction_type != PaymentTransaction.TYPE_CUSTOMER_PAYMENT
+        or payment_transaction.direction != PaymentTransaction.DIRECTION_IN
+    ):
+        raise ValidationError('يمكن تعديل عمليات القبض من العملاء فقط')
+
+    delete_transaction(payment_transaction=payment_transaction, user=user)
+    return collect_customer_balance_payment(
+        customer=customer,
+        amount=amount,
+        user=user,
+        cash_account=cash_account,
+        notes=notes,
+        transaction_date=transaction_date,
+    )
+
+
+@transaction.atomic
 def transfer_between_accounts(*, from_account, to_account, amount, user, notes='', transaction_date=None):
     if from_account == to_account:
         raise ValidationError('لا يمكن التحويل إلى نفس الخزنة')

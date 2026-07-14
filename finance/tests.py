@@ -181,7 +181,7 @@ class FinanceServiceTests(TestCase):
             'transaction_date': '2026-06-12',
         })
 
-        self.assertRedirects(response, reverse('finance:transactions'))
+        self.assertRedirects(response, reverse('finance:collection_create'))
         self.cash.refresh_from_db()
         self.customer.refresh_from_db()
         self.assertEqual(self.cash.balance, Decimal('950.00'))
