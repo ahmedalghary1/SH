@@ -3,7 +3,6 @@ from django.utils import timezone
 
 from accounts.models import User
 from customers.models import Customer
-from customers.services import visible_customers_for_user
 from orders.models import Order
 from purchases.models import Supplier
 
@@ -62,7 +61,7 @@ class ExpenseForm(forms.Form):
 class CustomerCollectionForm(forms.Form):
     cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة')
     allowed_discount = forms.DecimalField(min_value=0, required=False, initial=0, label='خصم مسموح به')
-    customer = forms.ModelChoiceField(queryset=Customer.objects.filter(is_active=True), label='العميل')
+    customer = forms.ModelChoiceField(queryset=Customer.objects.filter(is_active=True).order_by('name'), label='العميل')
     order = forms.ModelChoiceField(
         queryset=Order.objects.exclude(
             status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED],
@@ -76,7 +75,7 @@ class CustomerCollectionForm(forms.Form):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        visible_customers = visible_customers_for_user(user, Customer.objects.filter(is_active=True))
+        visible_customers = Customer.objects.filter(is_active=True).order_by('name')
         self.fields['customer'].queryset = visible_customers
         self.fields['order'].queryset = self.fields['order'].queryset.filter(customer__in=visible_customers)
         self.fields['cash_account'].initial = CashAccount.get_cash_drawer()
@@ -99,7 +98,7 @@ class CustomerCollectionForm(forms.Form):
 
 
 class CustomerPaymentEditForm(forms.Form):
-    customer = forms.ModelChoiceField(queryset=Customer.objects.all(), label='العميل')
+    customer = forms.ModelChoiceField(queryset=Customer.objects.filter(is_active=True).order_by('name'), label='العميل')
     amount = forms.DecimalField(
         min_value=0.01,
         label='مبلغ القبض',
@@ -125,10 +124,7 @@ class CustomerPaymentEditForm(forms.Form):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['customer'].queryset = visible_customers_for_user(
-            user,
-            Customer.objects.all().order_by('name'),
-        )
+        self.fields['customer'].queryset = Customer.objects.filter(is_active=True).order_by('name')
         self.fields['cash_account'].queryset = CashAccount.objects.filter(
             is_active=True,
         ).order_by('name')
