@@ -4,7 +4,7 @@
 
     const config = {
         category: {
-            endpoint: "/products/ajax/quick-create-category/",
+            endpoint: form.dataset.categoryCreateUrl,
             selectId: "id_category",
             nameId: "id_new_category_name",
             modalId: "quick-category-modal",
@@ -13,7 +13,7 @@
             },
         },
         color: {
-            endpoint: "/products/ajax/quick-create-color/",
+            endpoint: form.dataset.colorCreateUrl,
             choiceContainerId: "product-color-choices",
             choiceName: "colors",
             nameId: "id_new_color_name",
@@ -24,7 +24,7 @@
             },
         },
         size: {
-            endpoint: "/products/ajax/quick-create-size/",
+            endpoint: form.dataset.sizeCreateUrl,
             choiceContainerId: "product-size-choices",
             choiceName: "sizes",
             nameId: "id_new_size_name",
@@ -35,7 +35,7 @@
             },
         },
         warehouse: {
-            endpoint: "/products/ajax/quick-create-warehouse/",
+            endpoint: form.dataset.warehouseCreateUrl,
             selectId: "id_warehouse",
             nameId: "id_new_warehouse_name",
             modalId: "quick-warehouse-modal",
@@ -52,8 +52,15 @@
         const response = await fetch(item.endpoint, {
             method: "POST",
             headers: { "X-CSRFToken": getCookie("csrftoken") },
+            credentials: "same-origin",
             body: payload,
         });
+        const contentType = response.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+            throw new Error(response.redirected
+                ? "انتهت الجلسة. حدّث الصفحة ثم سجّل الدخول مجددًا."
+                : "تعذّر الاتصال بالخادم. حاول مرة أخرى.");
+        }
         const data = await response.json();
         if (!response.ok || !data.success) {
             throw new Error(data.message || "تعذر الحفظ");
@@ -151,6 +158,12 @@
         return Array.from(container?.querySelectorAll('input[type="checkbox"]:checked') || []);
     }
 
+    function updateChoiceValidity(container, message) {
+        const inputs = Array.from(container?.querySelectorAll('input[type="checkbox"]') || []);
+        if (!inputs.length) return;
+        inputs[0].setCustomValidity(inputs.some((input) => input.checked) ? "" : message);
+    }
+
     function renderVariantRows() {
         if (!quantityRows) return;
         const currentValues = {};
@@ -159,6 +172,8 @@
         });
         const colors = checkedChoices(colorChoices);
         const sizes = checkedChoices(sizeChoices);
+        updateChoiceValidity(colorChoices, "اختر لونًا واحدًا على الأقل");
+        updateChoiceValidity(sizeChoices, "اختر مقاسًا واحدًا على الأقل");
         quantityRows.replaceChildren();
 
         colors.forEach((color) => {
@@ -174,6 +189,7 @@
                 input.type = "number";
                 input.name = `quantity_${color.value}_${size.value}`;
                 input.min = "0";
+                input.max = quantityRows.dataset.maxQuantity || "2147483647";
                 input.step = "1";
                 input.inputMode = "numeric";
                 input.dataset.key = key;

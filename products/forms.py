@@ -35,7 +35,7 @@ class SizeForm(forms.ModelForm):
 
 
 class ProductForm(forms.ModelForm):
-    new_category_name = forms.CharField(required=False, label='تصنيف جديد')
+    new_category_name = forms.CharField(required=False, max_length=100, label='تصنيف جديد')
 
     class Meta:
         model = Product
@@ -70,9 +70,12 @@ class ProductForm(forms.ModelForm):
         product = super().save(commit=False)
         new_category_name = (self.cleaned_data.get('new_category_name') or '').strip()
         if not product.category_id and new_category_name:
-            product.category, _ = Category.objects.get_or_create(
-                name=new_category_name,
-                defaults={'is_active': True},
+            # Category names were historically allowed to repeat.  Using
+            # get_or_create() here raises MultipleObjectsReturned when such
+            # data exists, which turns product creation into a server error.
+            product.category = (
+                Category.objects.filter(name=new_category_name).order_by('pk').first()
+                or Category.objects.create(name=new_category_name, is_active=True)
             )
         product.retail_price = product.retail_price or 0
         product.wholesale_price = product.wholesale_price or 0
@@ -105,9 +108,9 @@ class ProductVariantForm(forms.ModelForm):
 
 class InitialProductVariantForm(forms.ModelForm):
     color = forms.ModelChoiceField(queryset=Color.objects.all().order_by('name'), label='اللون', required=False)
-    new_color_name = forms.CharField(required=False, label='لون جديد')
+    new_color_name = forms.CharField(required=False, max_length=50, label='لون جديد')
     size = forms.ModelChoiceField(queryset=Size.objects.all().order_by('sort_order', 'name'), label='المقاس', required=False)
-    new_size_name = forms.CharField(required=False, label='مقاس جديد')
+    new_size_name = forms.CharField(required=False, max_length=20, label='مقاس جديد')
     image = forms.ImageField(label='صورة اللون / المقاس', required=False)
     cost_price = forms.DecimalField(label='سعر الشراء', min_value=0)
     retail_price = forms.DecimalField(label='سعر القطاعي', min_value=0)
@@ -143,7 +146,7 @@ class InitialStockForm(forms.Form):
         widget=forms.Select(attrs={'data-filterable-select': 'true'}),
         required=False,
     )
-    new_warehouse_name = forms.CharField(required=False, label='مخزن جديد')
+    new_warehouse_name = forms.CharField(required=False, max_length=100, label='مخزن جديد')
     quantity = forms.IntegerField(
         min_value=0,
         label='الرصيد الافتتاحي',

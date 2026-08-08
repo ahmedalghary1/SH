@@ -215,3 +215,89 @@ class ProductCreateViewTests(TestCase):
         self.assertContains(response, 'name="colors"')
         self.assertContains(response, 'name="sizes"')
         self.assertContains(response, 'id="variant-quantity-rows"')
+
+    def test_bulk_create_reports_product_and_quantity_errors_together(self):
+        response = self.client.post(reverse('products:create'), {
+            'bulk_variants': '1',
+            'name': '',
+            'sku': '',
+            'category': self.category.pk,
+            'pieces_per_dozen': '12',
+            'colors': [str(self.color.pk)],
+            'sizes': [str(self.size.pk)],
+            'cost_price': '25.00',
+            'retail_price': '50.00',
+            'wholesale_price': '40.00',
+            'quantity_{0}_{1}'.format(self.color.pk, self.size.pk): '-1',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['product_form'].errors['name'])
+        self.assertTrue(response.context['product_form'].errors['sku'])
+        self.assertContains(response, 'غير صحيحة')
+
+    def test_create_reuses_first_category_when_legacy_duplicates_exist(self):
+        Category.objects.create(name='Duplicate Category')
+        Category.objects.create(name='Duplicate Category')
+
+        response = self.client.post(reverse('products:create'), {
+            'bulk_variants': '1',
+            'name': 'Duplicate Category Product',
+            'sku': 'DUP-CATEGORY-001',
+            'category': '',
+            'new_category_name': 'Duplicate Category',
+            'pieces_per_dozen': '12',
+            'colors': [str(self.color.pk)],
+            'sizes': [str(self.size.pk)],
+            'cost_price': '25.00',
+            'retail_price': '50.00',
+            'wholesale_price': '40.00',
+        })
+
+        product = Product.objects.get(sku='DUP-CATEGORY-001')
+        self.assertRedirects(response, reverse('products:detail', args=[product.pk]))
+        self.assertEqual(product.category.name, 'Duplicate Category')
+
+    def test_create_reuses_first_warehouse_when_legacy_duplicates_exist(self):
+        Warehouse.objects.create(name=self.warehouse.name, warehouse_type=Warehouse.TYPE_MAIN)
+
+        response = self.client.post(reverse('products:create'), {
+            'bulk_variants': '1',
+            'name': 'Duplicate Warehouse Product',
+            'sku': 'DUP-WAREHOUSE-001',
+            'category': self.category.pk,
+            'pieces_per_dozen': '12',
+            'colors': [str(self.color.pk)],
+            'sizes': [str(self.size.pk)],
+            'cost_price': '25.00',
+            'retail_price': '50.00',
+            'wholesale_price': '40.00',
+            'new_warehouse_name': self.warehouse.name,
+            'quantity_{0}_{1}'.format(self.color.pk, self.size.pk): '3',
+        })
+
+        product = Product.objects.get(sku='DUP-WAREHOUSE-001')
+        self.assertRedirects(response, reverse('products:detail', args=[product.pk]))
+        stock = Stock.objects.get(variant__product=product)
+        self.assertEqual(stock.warehouse, self.warehouse)
+        self.assertEqual(stock.quantity, 3)
+
+    def test_bulk_create_rejects_quantity_larger_than_database_integer(self):
+        response = self.client.post(reverse('products:create'), {
+            'bulk_variants': '1',
+            'name': 'Oversized Stock Product',
+            'sku': 'OVERSIZED-STOCK-001',
+            'category': self.category.pk,
+            'pieces_per_dozen': '12',
+            'colors': [str(self.color.pk)],
+            'sizes': [str(self.size.pk)],
+            'cost_price': '25.00',
+            'retail_price': '50.00',
+            'wholesale_price': '40.00',
+            'warehouse': self.warehouse.pk,
+            'quantity_{0}_{1}'.format(self.color.pk, self.size.pk): '2147483648',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'غير صحيحة')
+        self.assertFalse(Product.objects.filter(sku='OVERSIZED-STOCK-001').exists())

@@ -3,7 +3,11 @@
 {% block title %}إضافة منتج{% endblock %}
 {% block content %}
 <div class="page-head"><h1>إضافة منتج</h1></div>
-<form method="post" enctype="multipart/form-data" class="card form-grid product-create-form" data-product-create-form>
+<form method="post" enctype="multipart/form-data" class="card form-grid product-create-form" data-product-create-form
+      data-category-create-url="{% url 'products:ajax_quick_create_category' %}"
+      data-color-create-url="{% url 'products:ajax_quick_create_color' %}"
+      data-size-create-url="{% url 'products:ajax_quick_create_size' %}"
+      data-warehouse-create-url="{% url 'products:ajax_quick_create_warehouse' %}">
     {% csrf_token %}
     <input type="hidden" name="bulk_variants" value="1">
     {% if product_form.non_field_errors %}<div class="form-errors">{{ product_form.non_field_errors }}</div>{% endif %}
@@ -126,7 +130,7 @@
         <div class="table-wrap">
             <table class="variant-quantity-table">
                 <thead><tr><th>اللون</th><th>المقاس</th><th>الكمية الافتتاحية</th></tr></thead>
-                <tbody id="variant-quantity-rows"></tbody>
+                <tbody id="variant-quantity-rows" data-max-quantity="2147483647"></tbody>
             </table>
         </div>
         <p class="variant-table-empty" id="variant-table-empty">اختر لونًا ومقاسًا واحدًا على الأقل لإظهار الكميات.</p>
@@ -178,7 +182,7 @@
             </div>
             <div class="form-grid">
                 <label><span>{{ variant_form.new_size_name.label }}</span>{{ variant_form.new_size_name }}</label>
-                <label><span>ترتيب العرض</span><input id="quick-size-sort-order" type="number" min="0" step="1" value="0"></label>
+                <label><span>ترتيب العرض</span><input id="quick-size-sort-order" type="number" min="0" max="2147483647" step="1" value="0"></label>
             </div>
             {% if variant_form.new_size_name.errors %}<small class="error">{{ variant_form.new_size_name.errors|join:', ' }}</small>{% endif %}
             <div class="form-actions">

@@ -24,6 +24,17 @@ from .forms import CategoryForm, ColorForm, InitialProductVariantForm, InitialSt
 from .models import Category, Color, Product, ProductVariant, Size
 
 
+MAX_DATABASE_INTEGER = 2_147_483_647
+
+
+def first_or_create_named(model, name, *, defaults=None):
+    """Reuse legacy duplicate-friendly named rows without get_or_create errors."""
+    instance = model.objects.filter(name=name).order_by('pk').first()
+    if instance:
+        return instance, False
+    return model.objects.create(name=name, **(defaults or {})), True
+
+
 def generate_variant_sku(product, color_id=None, size_id=None, current_pk=None):
     base = f'{product.sku}-{color_id or "0"}-{size_id or "0"}'
     sku = base
@@ -209,12 +220,18 @@ class ProductCreateView(ManagerRequiredMixin, View):
         product_form = ProductForm(request.POST, request.FILES)
         variant_form = InitialProductVariantForm(variant_data, request.FILES)
         stock_form = InitialStockForm(request.POST)
-        forms_are_valid = product_form.is_valid() and variant_form.is_valid() and stock_form.is_valid()
+        # Validate every section even when an earlier section is invalid so the
+        # user sees all actionable errors after a single submit.
+        forms_are_valid = all((
+            product_form.is_valid(),
+            variant_form.is_valid(),
+            stock_form.is_valid(),
+        ))
 
         colors = []
         sizes = []
         quantities = {}
-        if bulk_mode and forms_are_valid:
+        if bulk_mode:
             try:
                 requested_color_ids = {int(value) for value in selected_color_ids}
                 requested_size_ids = {int(value) for value in selected_size_ids}
@@ -234,14 +251,21 @@ class ProductCreateView(ManagerRequiredMixin, View):
                 variant_form.add_error(None, 'لا يمكن إضافة أكثر من 200 متغير للمنتج دفعة واحدة')
                 forms_are_valid = False
 
-            if forms_are_valid:
+            valid_choices = bool(
+                colors
+                and sizes
+                and {color.pk for color in colors} == requested_color_ids
+                and {size.pk for size in sizes} == requested_size_ids
+                and len(colors) * len(sizes) <= 200
+            )
+            if valid_choices:
                 for color in colors:
                     for size in sizes:
                         key = f'{color.pk}:{size.pk}'
                         raw_quantity = (request.POST.get(f'quantity_{color.pk}_{size.pk}', '0') or '0').strip()
                         try:
                             quantity = int(raw_quantity)
-                            if quantity < 0:
+                            if quantity < 0 or quantity > MAX_DATABASE_INTEGER:
                                 raise ValueError
                         except ValueError:
                             variant_form.add_error(None, f'كمية {color.name} / {size.name} غير صحيحة')
@@ -249,11 +273,11 @@ class ProductCreateView(ManagerRequiredMixin, View):
                             quantity = 0
                         quantities[key] = quantity
 
-                has_warehouse = bool(
-                    stock_form.cleaned_data.get('warehouse')
-                    or (stock_form.cleaned_data.get('new_warehouse_name') or '').strip()
+                has_warehouse_input = bool(
+                    request.POST.get('warehouse')
+                    or (request.POST.get('new_warehouse_name') or '').strip()
                 )
-                if any(quantity > 0 for quantity in quantities.values()) and not has_warehouse:
+                if any(quantity > 0 for quantity in quantities.values()) and not has_warehouse_input:
                     stock_form.add_error('warehouse', 'اختر المخزن لإضافة الكميات الافتتاحية')
                     forms_are_valid = False
 
@@ -263,8 +287,9 @@ class ProductCreateView(ManagerRequiredMixin, View):
                 if bulk_mode:
                     warehouse = stock_form.cleaned_data.get('warehouse')
                     if not warehouse and (stock_form.cleaned_data.get('new_warehouse_name') or '').strip():
-                        warehouse, _ = Warehouse.objects.get_or_create(
-                            name=stock_form.cleaned_data['new_warehouse_name'].strip(),
+                        warehouse, _ = first_or_create_named(
+                            Warehouse,
+                            stock_form.cleaned_data['new_warehouse_name'].strip(),
                             defaults={
                                 'warehouse_type': Warehouse.TYPE_MAIN,
                                 'is_active': True,
@@ -327,8 +352,9 @@ class ProductCreateView(ManagerRequiredMixin, View):
                     warehouse = stock_form.cleaned_data.get('warehouse')
                     if not warehouse:
                         warehouse_name = (stock_form.cleaned_data.get('new_warehouse_name') or '').strip()
-                        warehouse, _ = Warehouse.objects.get_or_create(
-                            name=warehouse_name,
+                        warehouse, _ = first_or_create_named(
+                            Warehouse,
+                            warehouse_name,
                             defaults={
                                 'warehouse_type': Warehouse.TYPE_MAIN,
                                 'is_active': True,
@@ -876,7 +902,9 @@ def ajax_quick_create_category(request):
     name = request.POST.get('name', '').strip()
     if not name:
         return JsonResponse({'success': False, 'message': 'اكتب اسم التصنيف'}, status=400)
-    category, _ = Category.objects.get_or_create(name=name, defaults={'is_active': True})
+    if len(name) > Category._meta.get_field('name').max_length:
+        return JsonResponse({'success': False, 'message': 'اسم التصنيف طويل جدًا'}, status=400)
+    category, _ = first_or_create_named(Category, name, defaults={'is_active': True})
     if not category.is_active:
         category.is_active = True
         category.save(update_fields=['is_active'])
@@ -894,6 +922,10 @@ def ajax_quick_create_color(request):
     hex_code = request.POST.get('hex_code', '').strip()
     if not name:
         return JsonResponse({'success': False, 'message': 'اكتب اسم اللون'}, status=400)
+    if len(name) > Color._meta.get_field('name').max_length:
+        return JsonResponse({'success': False, 'message': 'اسم اللون طويل جدًا'}, status=400)
+    if len(hex_code) > Color._meta.get_field('hex_code').max_length:
+        return JsonResponse({'success': False, 'message': 'كود اللون غير صحيح'}, status=400)
     color, created = Color.objects.get_or_create(name=name, defaults={'hex_code': hex_code or None})
     if not created and hex_code and color.hex_code != hex_code:
         color.hex_code = hex_code
@@ -912,9 +944,13 @@ def ajax_quick_create_size(request):
     sort_order = request.POST.get('sort_order', '').strip()
     if not name:
         return JsonResponse({'success': False, 'message': 'اكتب اسم المقاس'}, status=400)
+    if len(name) > Size._meta.get_field('name').max_length:
+        return JsonResponse({'success': False, 'message': 'اسم المقاس طويل جدًا'}, status=400)
     try:
         sort_order_value = int(sort_order or 0)
     except ValueError:
+        return JsonResponse({'success': False, 'message': 'ترتيب العرض غير صحيح'}, status=400)
+    if sort_order_value < 0 or sort_order_value > MAX_DATABASE_INTEGER:
         return JsonResponse({'success': False, 'message': 'ترتيب العرض غير صحيح'}, status=400)
     size, created = Size.objects.get_or_create(name=name, defaults={'sort_order': sort_order_value})
     if not created and sort_order and size.sort_order != sort_order_value:
@@ -934,10 +970,13 @@ def ajax_quick_create_warehouse(request):
     warehouse_type = request.POST.get('warehouse_type', Warehouse.TYPE_MAIN).strip() or Warehouse.TYPE_MAIN
     if not name:
         return JsonResponse({'success': False, 'message': 'اكتب اسم المخزن'}, status=400)
+    if len(name) > Warehouse._meta.get_field('name').max_length:
+        return JsonResponse({'success': False, 'message': 'اسم المخزن طويل جدًا'}, status=400)
     if warehouse_type not in {Warehouse.TYPE_MAIN, Warehouse.TYPE_STORE}:
         warehouse_type = Warehouse.TYPE_MAIN
-    warehouse, created = Warehouse.objects.get_or_create(
-        name=name,
+    warehouse, created = first_or_create_named(
+        Warehouse,
+        name,
         defaults={'warehouse_type': warehouse_type, 'is_active': True},
     )
     changed_fields = []
