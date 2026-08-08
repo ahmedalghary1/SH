@@ -150,3 +150,68 @@ class ProductCreateViewTests(TestCase):
         batch = StockBatch.objects.get(variant=variant, warehouse=self.warehouse)
         self.assertEqual(batch.source, 'opening_balance')
         self.assertEqual(batch.received_quantity, 7)
+
+    def test_create_multiple_color_size_combinations_with_independent_quantities(self):
+        second_color = Color.objects.create(name='White')
+        second_size = Size.objects.create(name='XL', sort_order=2)
+
+        response = self.client.post(reverse('products:create'), {
+            'bulk_variants': '1',
+            'name': 'Bulk Variant Product',
+            'sku': 'BULK-001',
+            'category': self.category.pk,
+            'material': '',
+            'pieces_per_dozen': '12',
+            'colors': [str(self.color.pk), str(second_color.pk)],
+            'sizes': [str(self.size.pk), str(second_size.pk)],
+            'cost_price': '25.00',
+            'retail_price': '50.00',
+            'wholesale_price': '40.00',
+            'warehouse': self.warehouse.pk,
+            'quantity_{0}_{1}'.format(self.color.pk, self.size.pk): '2',
+            'quantity_{0}_{1}'.format(self.color.pk, second_size.pk): '3',
+            'quantity_{0}_{1}'.format(second_color.pk, self.size.pk): '4',
+            'quantity_{0}_{1}'.format(second_color.pk, second_size.pk): '5',
+        })
+
+        product = Product.objects.get(sku='BULK-001')
+        self.assertRedirects(response, reverse('products:detail', args=[product.pk]))
+        self.assertEqual(product.variants.count(), 4)
+        quantities = {
+            (stock.variant.color_id, stock.variant.size_id): stock.quantity
+            for stock in Stock.objects.filter(variant__product=product).select_related('variant')
+        }
+        self.assertEqual(quantities, {
+            (self.color.pk, self.size.pk): 2,
+            (self.color.pk, second_size.pk): 3,
+            (second_color.pk, self.size.pk): 4,
+            (second_color.pk, second_size.pk): 5,
+        })
+        self.assertEqual(StockMovement.objects.filter(variant__product=product).count(), 4)
+
+    def test_bulk_quantities_require_a_warehouse(self):
+        response = self.client.post(reverse('products:create'), {
+            'bulk_variants': '1',
+            'name': 'No Warehouse Product',
+            'sku': 'NO-WAREHOUSE',
+            'category': self.category.pk,
+            'pieces_per_dozen': '12',
+            'colors': [str(self.color.pk)],
+            'sizes': [str(self.size.pk)],
+            'cost_price': '25.00',
+            'retail_price': '50.00',
+            'wholesale_price': '40.00',
+            'quantity_{0}_{1}'.format(self.color.pk, self.size.pk): '2',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'اختر المخزن لإضافة الكميات الافتتاحية')
+        self.assertFalse(Product.objects.filter(sku='NO-WAREHOUSE').exists())
+
+    def test_create_page_shows_bulk_variant_builder(self):
+        response = self.client.get(reverse('products:create'))
+
+        self.assertContains(response, 'name="bulk_variants"')
+        self.assertContains(response, 'name="colors"')
+        self.assertContains(response, 'name="sizes"')
+        self.assertContains(response, 'id="variant-quantity-rows"')

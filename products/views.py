@@ -175,22 +175,137 @@ class ProductMovementReportView(RoleRequiredMixin, DetailView):
 class ProductCreateView(ManagerRequiredMixin, View):
     template_name = 'products/create.html'
 
-    def get(self, request):
-        return render(request, self.template_name, {
-            'product_form': ProductForm(),
-            'variant_form': InitialProductVariantForm(),
-            'stock_form': InitialStockForm(),
+    def get_context(self, *, product_form=None, variant_form=None, stock_form=None,
+                    selected_color_ids=None, selected_size_ids=None, variant_quantities=None):
+        return {
+            'product_form': product_form or ProductForm(),
+            'variant_form': variant_form or InitialProductVariantForm(),
+            'stock_form': stock_form or InitialStockForm(),
             'product_names': Product.objects.filter(is_active=True).order_by('name').values_list('name', flat=True).distinct()[:200],
-            'can_view_costs': can_view_costs(request.user),
-        })
+            'can_view_costs': can_view_costs(self.request.user),
+            'colors': Color.objects.all().order_by('name'),
+            'sizes': Size.objects.all().order_by('sort_order', 'name'),
+            'selected_color_ids': selected_color_ids or [],
+            'selected_size_ids': selected_size_ids or [],
+            'variant_quantities': variant_quantities or {},
+        }
+
+    def get(self, request):
+        return render(request, self.template_name, self.get_context())
 
     def post(self, request):
+        bulk_mode = request.POST.get('bulk_variants') == '1'
+        selected_color_ids = request.POST.getlist('colors') if bulk_mode else []
+        selected_size_ids = request.POST.getlist('sizes') if bulk_mode else []
+
+        # The existing variant form continues to validate the shared prices. In
+        # bulk mode its single color/size fields receive the first selections;
+        # all requested combinations are validated separately below.
+        variant_data = request.POST.copy()
+        if bulk_mode:
+            variant_data['color'] = selected_color_ids[0] if selected_color_ids else ''
+            variant_data['size'] = selected_size_ids[0] if selected_size_ids else ''
+
         product_form = ProductForm(request.POST, request.FILES)
-        variant_form = InitialProductVariantForm(request.POST, request.FILES)
+        variant_form = InitialProductVariantForm(variant_data, request.FILES)
         stock_form = InitialStockForm(request.POST)
-        if product_form.is_valid() and variant_form.is_valid() and stock_form.is_valid():
+        forms_are_valid = product_form.is_valid() and variant_form.is_valid() and stock_form.is_valid()
+
+        colors = []
+        sizes = []
+        quantities = {}
+        if bulk_mode and forms_are_valid:
+            try:
+                requested_color_ids = {int(value) for value in selected_color_ids}
+                requested_size_ids = {int(value) for value in selected_size_ids}
+            except (TypeError, ValueError):
+                requested_color_ids = set()
+                requested_size_ids = set()
+
+            colors = list(Color.objects.filter(pk__in=requested_color_ids).order_by('name'))
+            sizes = list(Size.objects.filter(pk__in=requested_size_ids).order_by('sort_order', 'name'))
+            if not colors or {color.pk for color in colors} != requested_color_ids:
+                variant_form.add_error(None, 'اختر لونًا واحدًا على الأقل من القائمة')
+                forms_are_valid = False
+            if not sizes or {size.pk for size in sizes} != requested_size_ids:
+                variant_form.add_error(None, 'اختر مقاسًا واحدًا على الأقل من القائمة')
+                forms_are_valid = False
+            if len(colors) * len(sizes) > 200:
+                variant_form.add_error(None, 'لا يمكن إضافة أكثر من 200 متغير للمنتج دفعة واحدة')
+                forms_are_valid = False
+
+            if forms_are_valid:
+                for color in colors:
+                    for size in sizes:
+                        key = f'{color.pk}:{size.pk}'
+                        raw_quantity = (request.POST.get(f'quantity_{color.pk}_{size.pk}', '0') or '0').strip()
+                        try:
+                            quantity = int(raw_quantity)
+                            if quantity < 0:
+                                raise ValueError
+                        except ValueError:
+                            variant_form.add_error(None, f'كمية {color.name} / {size.name} غير صحيحة')
+                            forms_are_valid = False
+                            quantity = 0
+                        quantities[key] = quantity
+
+                has_warehouse = bool(
+                    stock_form.cleaned_data.get('warehouse')
+                    or (stock_form.cleaned_data.get('new_warehouse_name') or '').strip()
+                )
+                if any(quantity > 0 for quantity in quantities.values()) and not has_warehouse:
+                    stock_form.add_error('warehouse', 'اختر المخزن لإضافة الكميات الافتتاحية')
+                    forms_are_valid = False
+
+        if forms_are_valid:
             with transaction.atomic():
                 product = product_form.save()
+                if bulk_mode:
+                    warehouse = stock_form.cleaned_data.get('warehouse')
+                    if not warehouse and (stock_form.cleaned_data.get('new_warehouse_name') or '').strip():
+                        warehouse, _ = Warehouse.objects.get_or_create(
+                            name=stock_form.cleaned_data['new_warehouse_name'].strip(),
+                            defaults={
+                                'warehouse_type': Warehouse.TYPE_MAIN,
+                                'is_active': True,
+                            },
+                        )
+
+                    for color in colors:
+                        for size in sizes:
+                            variant = ProductVariant.objects.create(
+                                product=product,
+                                color=color,
+                                size=size,
+                                variant_sku=generate_variant_sku(product, color.pk, size.pk),
+                                cost_price=variant_form.cleaned_data['cost_price'],
+                                sale_price=variant_form.cleaned_data['retail_price'],
+                                retail_price=variant_form.cleaned_data['retail_price'],
+                                wholesale_price=variant_form.cleaned_data['wholesale_price'],
+                            )
+                            if warehouse:
+                                quantity = quantities.get(f'{color.pk}:{size.pk}', 0)
+                                if quantity > 0:
+                                    stock_in(
+                                        variant=variant,
+                                        warehouse=warehouse,
+                                        quantity=quantity,
+                                        user=request.user,
+                                        note='رصيد افتتاحي عند إضافة المنتج',
+                                        source='opening_balance',
+                                        movement_type=StockMovement.TYPE_OPENING_BALANCE,
+                                    )
+                                stock, _ = Stock.objects.get_or_create(
+                                    warehouse=warehouse,
+                                    variant=variant,
+                                    defaults={'quantity': 0},
+                                )
+                                stock.min_quantity = 0
+                                stock.save(update_fields=['min_quantity'])
+
+                    messages.success(request, f'تم إضافة المنتج و{len(colors) * len(sizes)} متغيرات')
+                    return redirect('products:detail', pk=product.pk)
+
                 variant = None
                 if variant_form.has_variant_data() or stock_form.has_stock_data():
                     variant = variant_form.save(commit=False)
@@ -239,13 +354,19 @@ class ProductCreateView(ManagerRequiredMixin, View):
                     stock.save(update_fields=['min_quantity'])
             messages.success(request, 'تم إضافة المنتج')
             return redirect('products:detail', pk=product.pk)
-        return render(request, self.template_name, {
-            'product_form': product_form,
-            'variant_form': variant_form,
-            'stock_form': stock_form,
-            'product_names': Product.objects.filter(is_active=True).order_by('name').values_list('name', flat=True).distinct()[:200],
-            'can_view_costs': can_view_costs(request.user),
-        })
+        posted_quantities = {
+            key.removeprefix('quantity_').replace('_', ':', 1): value
+            for key, value in request.POST.items()
+            if key.startswith('quantity_')
+        }
+        return render(request, self.template_name, self.get_context(
+            product_form=product_form,
+            variant_form=variant_form,
+            stock_form=stock_form,
+            selected_color_ids=[int(value) for value in selected_color_ids if value.isdigit()],
+            selected_size_ids=[int(value) for value in selected_size_ids if value.isdigit()],
+            variant_quantities=posted_quantities,
+        ))
 
 
 class ProductUpdateView(ManagerRequiredMixin, View):

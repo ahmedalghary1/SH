@@ -5,6 +5,7 @@
 <div class="page-head"><h1>إضافة منتج</h1></div>
 <form method="post" enctype="multipart/form-data" class="card form-grid product-create-form" data-product-create-form>
     {% csrf_token %}
+    <input type="hidden" name="bulk_variants" value="1">
     {% if product_form.non_field_errors %}<div class="form-errors">{{ product_form.non_field_errors }}</div>{% endif %}
     {% if variant_form.non_field_errors %}<div class="form-errors">{{ variant_form.non_field_errors }}</div>{% endif %}
     {% if stock_form.non_field_errors %}<div class="form-errors">{{ stock_form.non_field_errors }}</div>{% endif %}
@@ -71,23 +72,45 @@
         {% if product_form.image.errors %}<small class="error">{{ product_form.image.errors|join:', ' }}</small>{% endif %}
     </label>
 
-    <label class="quick-add-field">
-        <span>{{ variant_form.color.label }}</span>
-        <div class="quick-add-control">
-            {{ variant_form.color }}
-            <button class="quick-add-btn" type="button" data-open-modal="quick-color-modal" aria-label="إضافة لون" title="إضافة لون">+</button>
+    <section class="variant-builder span-all" aria-labelledby="variant-builder-title">
+        <div class="variant-builder-head">
+            <div>
+                <h2 id="variant-builder-title">الألوان والمقاسات</h2>
+                <p>اختر كل الألوان والمقاسات المطلوبة، وستظهر تركيباتها لتحديد كمية كل متغير.</p>
+            </div>
         </div>
-        {% if variant_form.color.errors %}<small class="error">{{ variant_form.color.errors|join:', ' }}</small>{% endif %}
-    </label>
 
-    <label class="quick-add-field">
-        <span>{{ variant_form.size.label }}</span>
-        <div class="quick-add-control">
-            {{ variant_form.size }}
-            <button class="quick-add-btn" type="button" data-open-modal="quick-size-modal" aria-label="إضافة مقاس" title="إضافة مقاس">+</button>
+        <div class="variant-pickers">
+            <fieldset>
+                <legend>الألوان</legend>
+                <div class="choice-grid" id="product-color-choices">
+                    {% for color in colors %}
+                    <label class="choice-chip">
+                        <input type="checkbox" name="colors" value="{{ color.pk }}" data-label="{{ color.name }}" {% if color.pk in selected_color_ids %}checked{% endif %}>
+                        {% if color.hex_code %}<i style="--choice-color: {{ color.hex_code }}"></i>{% endif %}
+                        <span>{{ color.name }}</span>
+                    </label>
+                    {% empty %}<p class="choice-empty">لا توجد ألوان بعد. أضف أول لون من الزر التالي.</p>{% endfor %}
+                </div>
+                <button class="btn btn-light btn-sm" type="button" data-open-modal="quick-color-modal">+ إضافة لون</button>
+                {% if variant_form.color.errors %}<small class="error">{{ variant_form.color.errors|join:', ' }}</small>{% endif %}
+            </fieldset>
+
+            <fieldset>
+                <legend>المقاسات</legend>
+                <div class="choice-grid" id="product-size-choices">
+                    {% for size in sizes %}
+                    <label class="choice-chip">
+                        <input type="checkbox" name="sizes" value="{{ size.pk }}" data-label="{{ size.name }}" {% if size.pk in selected_size_ids %}checked{% endif %}>
+                        <span>{{ size.name }}</span>
+                    </label>
+                    {% empty %}<p class="choice-empty">لا توجد مقاسات بعد. أضف أول مقاس من الزر التالي.</p>{% endfor %}
+                </div>
+                <button class="btn btn-light btn-sm" type="button" data-open-modal="quick-size-modal">+ إضافة مقاس</button>
+                {% if variant_form.size.errors %}<small class="error">{{ variant_form.size.errors|join:', ' }}</small>{% endif %}
+            </fieldset>
         </div>
-        {% if variant_form.size.errors %}<small class="error">{{ variant_form.size.errors|join:', ' }}</small>{% endif %}
-    </label>
+    </section>
 
     <label class="quick-add-field">
         <span>{{ stock_form.warehouse.label }}</span>
@@ -98,11 +121,16 @@
         {% if stock_form.warehouse.errors %}<small class="error">{{ stock_form.warehouse.errors|join:', ' }}</small>{% endif %}
     </label>
 
-    <label>
-        <span>{{ stock_form.quantity.label }}</span>
-        {{ stock_form.quantity }}
-        {% if stock_form.quantity.errors %}<small class="error">{{ stock_form.quantity.errors|join:', ' }}</small>{% endif %}
-    </label>
+    <section class="variant-quantities span-all" aria-labelledby="variant-quantities-title">
+        <h2 id="variant-quantities-title">كميات المتغيرات</h2>
+        <div class="table-wrap">
+            <table class="variant-quantity-table">
+                <thead><tr><th>اللون</th><th>المقاس</th><th>الكمية الافتتاحية</th></tr></thead>
+                <tbody id="variant-quantity-rows"></tbody>
+            </table>
+        </div>
+        <p class="variant-table-empty" id="variant-table-empty">اختر لونًا ومقاسًا واحدًا على الأقل لإظهار الكميات.</p>
+    </section>
 
     <div class="form-actions">
         <button class="btn btn-primary" type="submit"><svg class="ui-icon"><use href="#icon-box"></use></svg>حفظ</button>
@@ -182,5 +210,6 @@
         </div>
     </div>
 </form>
+{{ variant_quantities|json_script:"initial-variant-quantities" }}
 {% endblock %}
 {% block extra_js %}<script src="{% static 'js/product_create.js' %}"></script>{% endblock %}
