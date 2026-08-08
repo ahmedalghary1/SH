@@ -1,6 +1,8 @@
 (function () {
-    const form = document.querySelector("[data-product-create-form]");
-    if (!form) return;
+    function initializeProductCreate(root = document) {
+    const form = root.querySelector?.("[data-product-create-form]");
+    if (!form || form.dataset.productCreateInitialized === "1") return;
+    form.dataset.productCreateInitialized = "1";
 
     const config = {
         category: {
@@ -143,10 +145,10 @@
         }
     });
 
-    const colorChoices = document.getElementById("product-color-choices");
-    const sizeChoices = document.getElementById("product-size-choices");
-    const quantityRows = document.getElementById("variant-quantity-rows");
-    const emptyMessage = document.getElementById("variant-table-empty");
+    const colorChoices = form.querySelector("#product-color-choices");
+    const sizeChoices = form.querySelector("#product-size-choices");
+    const quantityRows = form.querySelector("#variant-quantity-rows");
+    const emptyMessage = form.querySelector("#variant-table-empty");
     let initialQuantities = {};
     try {
         initialQuantities = JSON.parse(document.getElementById("initial-variant-quantities")?.textContent || "{}");
@@ -206,4 +208,8 @@
     colorChoices?.addEventListener("change", renderVariantRows);
     sizeChoices?.addEventListener("change", renderVariantRows);
     renderVariantRows();
+    }
+
+    initializeProductCreate();
+    document.addEventListener("sh:page-loaded", () => initializeProductCreate());
 })();

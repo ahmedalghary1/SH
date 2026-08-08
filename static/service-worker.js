@@ -1,4 +1,7 @@
-const CACHE_VERSION = "sh-pwa-v2026-07-11-workspace-tabs-02";
+// Bump this whenever a cached shell asset changes. The bulk product variant
+// builder requires the current product_create.js; retaining the July cache
+// leaves clients running the pre-builder script against the new HTML.
+const CACHE_VERSION = "sh-pwa-v2026-08-08-product-variants-01";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const OFFLINE_URL = "/offline/";
