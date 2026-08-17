@@ -8,6 +8,7 @@
             <a class="btn btn-primary" href="{% url 'purchases:order_receive' purchase_order.pk %}">استلام</a>
         {% endif %}
         {% if request.user.is_manager %}
+            <a class="btn btn-primary" href="{% url 'purchases:order_update' purchase_order.pk %}">تعديل الفاتورة</a>
             <a class="btn btn-light" href="{% url 'purchases:order_pay' purchase_order.pk %}">دفع للمورد</a>
         {% endif %}
     </div>
@@ -22,6 +23,7 @@
 {% endif %}
 <div class="stats-grid">
     <div class="stat-card"><span>المورد</span><strong>{{ purchase_order.supplier }}</strong></div>
+    <div class="stat-card"><span>التاريخ والوقت</span><strong>{{ purchase_order.created_at|date:'Y-m-d H:i' }}</strong></div>
     <div class="stat-card"><span>الحالة</span><strong>{{ purchase_order.get_status_display }}</strong></div>
     <div class="stat-card"><span>قبل الخصم</span><strong>{{ purchase_order.subtotal_amount }}</strong></div>
     <div class="stat-card"><span>الخصم</span><strong>{{ purchase_order.discount_amount }}</strong></div>

@@ -1,5 +1,6 @@
 from io import BytesIO
-from datetime import date
+from datetime import date, time
+from decimal import Decimal
 
 from django.test import TestCase
 from django.urls import reverse
@@ -7,6 +8,8 @@ from openpyxl import load_workbook
 
 from accounts.models import User
 from customers.models import Customer
+from finance.models import CashAccount, PaymentTransaction
+from orders.models import Order
 
 
 class CustomerFeatureTests(TestCase):
@@ -55,3 +58,35 @@ class CustomerFeatureTests(TestCase):
         response = self.client.get(reverse('customers:simple_list'))
 
         self.assertContains(response, reverse('customers:delete', args=[self.customer.pk]))
+
+    def test_customer_accounts_show_latest_sale_and_receipt_values(self):
+        order = Order.objects.create(
+            order_number='ORD-CUSTOMER-LATEST',
+            order_type=Order.TYPE_B2C,
+            customer=self.customer,
+            status=Order.STATUS_COMPLETED,
+            total=Decimal('325.50'),
+            created_by=self.manager,
+        )
+        cash = CashAccount.objects.create(name='Customer latest receipt cash')
+        PaymentTransaction.objects.create(
+            transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+            direction=PaymentTransaction.DIRECTION_IN,
+            amount=Decimal('125.25'),
+            cash_account=cash,
+            related_customer=self.customer,
+            transaction_date=date(2026, 8, 16),
+            transaction_time=time(14, 35),
+            created_by=self.manager,
+        )
+
+        response = self.client.get(reverse('customers:simple_list'))
+        listed_customer = list(response.context['customers'])[0]
+
+        self.assertEqual(listed_customer.last_sale_at, order.created_at)
+        self.assertEqual(listed_customer.last_invoice_value, Decimal('325.50'))
+        self.assertEqual(listed_customer.last_receipt_date, date(2026, 8, 16))
+        self.assertEqual(listed_customer.last_receipt_time, time(14, 35))
+        self.assertEqual(listed_customer.last_receipt_amount, Decimal('125.25'))
+        self.assertContains(response, 'قيمة آخر فاتورة')
+        self.assertContains(response, 'قيمة آخر قبض')

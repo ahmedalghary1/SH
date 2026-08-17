@@ -25,6 +25,10 @@
                 <th>الهاتف</th>
                 <th>العنوان</th>
                 <th>مسؤول المبيعات</th>
+                <th>تاريخ آخر بيع</th>
+                <th>قيمة آخر فاتورة</th>
+                <th>تاريخ آخر قبض</th>
+                <th>قيمة آخر قبض</th>
                 <th>إجراءات</th>
             </tr>
         </thead>
@@ -36,6 +40,10 @@
                     <td>{{ customer.phone }}</td>
                     <td>{{ customer.address|default:'-' }}</td>
                     <td>{{ customer.sales_representative|default:'-' }}</td>
+                    <td>{{ customer.last_sale_at|date:'Y-m-d H:i'|default:'-' }}</td>
+                    <td>{{ customer.last_invoice_value|default:'-' }}</td>
+                    <td>{% if customer.last_receipt_date %}{{ customer.last_receipt_date|date:'Y-m-d' }} {{ customer.last_receipt_time|time:'H:i' }}{% else %}-{% endif %}</td>
+                    <td>{{ customer.last_receipt_amount|default:'-' }}</td>
                     <td class="actions">
                         <a class="btn btn-light" href="{% url 'customers:detail' customer.pk %}">عرض</a>
                         <a class="btn btn-light" href="{% url 'customers:update' customer.pk %}">تعديل</a>
@@ -45,7 +53,7 @@
                     </td>
                 </tr>
             {% empty %}
-                <tr><td colspan="6">لا يوجد عملاء</td></tr>
+                <tr><td colspan="10">لا يوجد عملاء</td></tr>
             {% endfor %}
         </tbody>
     </table>

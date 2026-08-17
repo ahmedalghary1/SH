@@ -99,7 +99,7 @@
             <tbody>
                 {% for item in order_items %}
                     <tr>
-                        <td>{{ item.order.created_at }}</td>
+                        <td>{{ item.order.created_at|date:'Y-m-d H:i' }}</td>
                         <td>{{ item.order.order_number }}</td>
                         <td>{{ item.order.customer|default:'-' }}</td>
                         <td>{{ item.variant.color|default:'-' }}</td>
@@ -126,7 +126,7 @@
             <tbody>
                 {% for movement in movement_rows %}
                     <tr>
-                        <td>{{ movement.created_at }}</td>
+                        <td>{{ movement.created_at|date:'Y-m-d H:i' }}</td>
                         <td>{{ movement.get_movement_type_display }}</td>
                         <td>{{ movement.from_warehouse|default:movement.to_warehouse|default:'-' }}</td>
                         <td>{{ movement.variant.color|default:'-' }}</td>

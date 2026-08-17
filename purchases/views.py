@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
@@ -7,6 +8,7 @@ from django.db.models import Max, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
+from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView, View
 
@@ -18,10 +20,10 @@ from finance.models import PaymentTransaction
 from inventory.models import Stock
 from products.models import Category, Color, Product, ProductVariant, Size
 
-from .forms import PurchaseOrderForm, PurchaseReceiveForm, PurchaseReturnForm, SupplierForm, SupplierPaymentForm, SimpleSupplierForm
+from .forms import PurchaseOrderForm, PurchaseOrderUpdateForm, PurchaseReceiveForm, PurchaseReturnForm, SupplierForm, SupplierPaymentForm, SimpleSupplierForm
 from .models import PurchaseOrder, Supplier
 from .raw_material import RawMaterialPurchaseForm, record_raw_material_purchase
-from .services import cancel_purchase_order, create_purchase_order, create_purchase_return, pay_supplier, receive_purchase_order_items, update_purchase_discount
+from .services import cancel_purchase_order, create_purchase_order, create_purchase_return, pay_supplier, receive_purchase_order_items, update_purchase_discount, update_purchase_order
 
 
 def _decimal_from_post(value, default=Decimal('0')):
@@ -361,6 +363,7 @@ class PurchaseOrderListView(ManagerRequiredMixin, ExportListMixin, ListView):
         ('المدفوع', 'paid_amount'),
         ('المتبقي', 'remaining_amount'),
         ('الموظف', 'created_by'),
+        ('التاريخ والوقت', 'created_at'),
     )
 
     def get_queryset(self):
@@ -437,12 +440,12 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
                 po = create_purchase_order(
                     supplier=supplier,
                     status=PurchaseOrder.STATUS_ORDERED,
-                    order_date=form.cleaned_data.get('order_date'),
+                    invoice_datetime=form.cleaned_data.get('invoice_datetime'),
                     expected_date=form.cleaned_data.get('expected_date'),
                     notes=form.cleaned_data.get('notes') or '',
                     items=items,
                     user=self.request.user,
-                    discount_type=form.cleaned_data['discount_type'],
+                    discount_type=form.cleaned_data.get('discount_type') or PurchaseOrder.DISCOUNT_FIXED,
                     discount_value=form.cleaned_data.get('discount_value') or Decimal('0'),
                 )
                 receive_purchase_order_items(
@@ -460,6 +463,7 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
                         amount=paid_amount,
                         user=self.request.user,
                         notes=form.cleaned_data.get('notes') or f'شراء مباشر {po.purchase_number}',
+                        transaction_date=form.cleaned_data.get('invoice_datetime'),
                     )
             if po.remaining_amount > 0:
                 messages.success(self.request, 'تم تسجيل شراء البضاعة وإضافتها للمخزن وتسجيل المتبقي على المورد')
@@ -468,6 +472,72 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
             return redirect('purchases:order_detail', pk=po.pk)
         except ValidationError as exc:
             form.add_error(None, exc.message)
+            return self.form_invalid(form)
+
+
+class PurchaseOrderUpdateView(ManagerRequiredMixin, FormView):
+    template_name = 'purchases/orders/update.html'
+    form_class = PurchaseOrderUpdateForm
+
+    def dispatch(self, request, *args, **kwargs):
+        self.purchase_order = get_object_or_404(
+            PurchaseOrder.objects.select_related('supplier').prefetch_related(
+                'items__product_variant__product',
+                'items__product_variant__color',
+                'items__product_variant__size',
+            ),
+            pk=kwargs['pk'],
+        )
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['purchase_order'] = self.purchase_order
+        return kwargs
+
+    def get_initial(self):
+        initial = super().get_initial()
+        items = [{
+            'purchase_item_id': item.pk,
+            'product_variant_id': item.product_variant_id,
+            'product_name': str(item.product_variant),
+            'quantity': item.quantity,
+            'unit_cost': str(item.unit_cost),
+            'received_quantity': item.received_quantity,
+        } for item in self.purchase_order.items.all()]
+        initial.update({
+            'supplier': self.purchase_order.supplier,
+            'invoice_datetime': timezone.localtime(self.purchase_order.created_at),
+            'expected_date': self.purchase_order.expected_date,
+            'discount_type': self.purchase_order.discount_type,
+            'discount_value': self.purchase_order.discount_value,
+            'notes': self.purchase_order.notes,
+            'items_json': json.dumps(items, ensure_ascii=False),
+        })
+        return initial
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['purchase_order'] = self.purchase_order
+        return context
+
+    def form_valid(self, form):
+        try:
+            purchase_order = update_purchase_order(
+                purchase_order=self.purchase_order,
+                supplier=form.cleaned_data['supplier'],
+                items=form.cleaned_data['purchase_items'],
+                invoice_datetime=form.cleaned_data['invoice_datetime'],
+                expected_date=form.cleaned_data.get('expected_date'),
+                notes=form.cleaned_data.get('notes') or '',
+                discount_type=form.cleaned_data['discount_type'],
+                discount_value=form.cleaned_data.get('discount_value') or Decimal('0'),
+                user=self.request.user,
+            )
+            messages.success(self.request, 'تم تعديل فاتورة الشراء وإعادة حساب رصيد المورد')
+            return redirect('purchases:order_detail', pk=purchase_order.pk)
+        except ValidationError as exc:
+            form.add_error(None, getattr(exc, 'message', None) or '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
@@ -633,6 +703,7 @@ class SupplierPaymentView(ManagerRequiredMixin, FormView):
                 amount=form.cleaned_data['amount'],
                 user=self.request.user,
                 notes=form.cleaned_data.get('notes') or '',
+                transaction_date=form.cleaned_data.get('transaction_datetime'),
             )
             messages.success(self.request, 'تم تسجيل دفع المورد')
             return redirect('purchases:order_detail', pk=self.purchase_order.pk)

@@ -2,6 +2,7 @@ import json
 from decimal import Decimal, InvalidOperation
 
 from django import forms
+from django.utils import timezone
 
 from finance.models import CashAccount
 from inventory.models import Stock, Warehouse
@@ -65,7 +66,16 @@ class PurchaseOrderForm(forms.Form):
         label='الحالة',
         required=False,
     )
-    order_date = forms.DateField(required=False, label='تاريخ الأمر', widget=forms.DateInput(attrs={'type': 'date'}))
+    invoice_datetime = forms.DateTimeField(
+        required=False,
+        label='تاريخ ووقت الفاتورة',
+        initial=timezone.now,
+        input_formats=['%Y-%m-%dT%H:%M'],
+        widget=forms.DateTimeInput(
+            format='%Y-%m-%dT%H:%M',
+            attrs={'type': 'datetime-local'},
+        ),
+    )
     expected_date = forms.DateField(required=False, label='تاريخ متوقع للاستلام', widget=forms.DateInput(attrs={'type': 'date'}))
     product_variant = forms.ModelChoiceField(
         queryset=ProductVariant.objects.filter(is_active=True).select_related('product', 'color', 'size'),
@@ -86,7 +96,12 @@ class PurchaseOrderForm(forms.Form):
     warehouse = forms.ModelChoiceField(queryset=Warehouse.objects.filter(is_active=True), label='مخزن الإضافة', required=False)
     cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة', required=False)
     paid_amount = forms.DecimalField(min_value=0, required=False, initial=0, label='المدفوع الآن')
-    discount_type = forms.ChoiceField(choices=PurchaseOrder.DISCOUNT_TYPE_CHOICES, initial=PurchaseOrder.DISCOUNT_FIXED, label='نوع الخصم')
+    discount_type = forms.ChoiceField(
+        choices=PurchaseOrder.DISCOUNT_TYPE_CHOICES,
+        initial=PurchaseOrder.DISCOUNT_FIXED,
+        label='نوع الخصم',
+        required=False,
+    )
     discount_value = forms.DecimalField(min_value=0, required=False, initial=0, label='قيمة الخصم')
     quantity = forms.IntegerField(min_value=1, label='الكمية', required=False)
     unit_cost = forms.DecimalField(min_value=0, label='سعر الشراء', required=False)
@@ -199,11 +214,94 @@ class PurchaseOrderForm(forms.Form):
             if unit_cost < 0:
                 raise forms.ValidationError('سعر الشراء لا يمكن أن يكون سالبا')
             items.append({
+                'item_id': posted.get('purchase_item_id') or posted.get('item_id'),
                 'variant_id': variant_id,
                 'quantity': quantity,
                 'unit_cost': unit_cost,
             })
         return items
+
+
+class PurchaseOrderUpdateForm(forms.Form):
+    items_json = forms.CharField(widget=forms.HiddenInput)
+    supplier = forms.ModelChoiceField(
+        queryset=Supplier.objects.filter(is_active=True),
+        label='المورد',
+    )
+    invoice_datetime = forms.DateTimeField(
+        label='تاريخ ووقت الفاتورة',
+        input_formats=['%Y-%m-%dT%H:%M'],
+        widget=forms.DateTimeInput(
+            format='%Y-%m-%dT%H:%M',
+            attrs={'type': 'datetime-local'},
+        ),
+    )
+    expected_date = forms.DateField(
+        required=False,
+        label='تاريخ متوقع للاستلام',
+        widget=forms.DateInput(attrs={'type': 'date'}),
+    )
+    product_variant = forms.ModelChoiceField(
+        queryset=ProductVariant.objects.filter(is_active=True).select_related('product', 'color', 'size'),
+        label='المنتج',
+        required=False,
+    )
+    quantity = forms.IntegerField(min_value=1, label='الكمية', required=False)
+    unit_cost = forms.DecimalField(min_value=0, label='سعر الشراء', required=False)
+    discount_type = forms.ChoiceField(
+        choices=PurchaseOrder.DISCOUNT_TYPE_CHOICES,
+        label='نوع الخصم',
+    )
+    discount_value = forms.DecimalField(min_value=0, initial=0, label='قيمة الخصم')
+    notes = forms.CharField(
+        widget=forms.Textarea,
+        required=False,
+        label='ملاحظات',
+    )
+
+    def __init__(self, *args, purchase_order=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.purchase_order = purchase_order
+
+    def clean(self):
+        cleaned = super().clean()
+        try:
+            items = PurchaseOrderForm()._clean_items_json(cleaned.get('items_json'))
+        except forms.ValidationError as exc:
+            self.add_error('items_json', exc)
+            items = []
+
+        if not items and cleaned.get('product_variant'):
+            if not cleaned.get('quantity'):
+                self.add_error('quantity', 'أدخل الكمية')
+            if cleaned.get('unit_cost') is None:
+                self.add_error('unit_cost', 'أدخل سعر الشراء')
+            if cleaned.get('quantity') and cleaned.get('unit_cost') is not None:
+                items = [{
+                    'variant_id': str(cleaned['product_variant'].pk),
+                    'quantity': cleaned['quantity'],
+                    'unit_cost': cleaned['unit_cost'],
+                }]
+        if not items:
+            self.add_error('items_json', 'لا يمكن حفظ فاتورة بدون أصناف')
+            return cleaned
+
+        discount_type = cleaned.get('discount_type') or PurchaseOrder.DISCOUNT_FIXED
+        discount_value = cleaned.get('discount_value') or Decimal('0')
+        subtotal = sum(
+            Decimal(str(item['quantity'])) * Decimal(str(item['unit_cost']))
+            for item in items
+        )
+        if discount_type == PurchaseOrder.DISCOUNT_PERCENT and discount_value > Decimal('100'):
+            self.add_error('discount_value', 'نسبة الخصم يجب أن تكون بين 0 و100')
+        discount = subtotal * discount_value / Decimal('100') if discount_type == PurchaseOrder.DISCOUNT_PERCENT else discount_value
+        if discount > subtotal:
+            self.add_error('discount_value', 'الخصم لا يمكن أن يتجاوز إجمالي الفاتورة')
+        net_total = subtotal - discount
+        if self.purchase_order and net_total < self.purchase_order.paid_amount:
+            self.add_error('discount_value', 'لا يمكن أن يقل إجمالي الفاتورة عن المبلغ المدفوع')
+        cleaned['purchase_items'] = items
+        return cleaned
 
 
 class PurchaseReceiveForm(forms.Form):
@@ -234,6 +332,12 @@ class PurchaseReceiveForm(forms.Form):
 class SupplierPaymentForm(forms.Form):
     cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة')
     amount = forms.DecimalField(min_value=0.01, label='المبلغ')
+    transaction_datetime = forms.DateTimeField(
+        label='تاريخ ووقت الدفع',
+        initial=timezone.now,
+        input_formats=['%Y-%m-%dT%H:%M', '%Y-%m-%d'],
+        widget=forms.DateTimeInput(format='%Y-%m-%dT%H:%M', attrs={'type': 'datetime-local'}),
+    )
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات الدفع')
 
 

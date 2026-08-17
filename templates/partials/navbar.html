@@ -9,6 +9,10 @@
         <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
         <span>{{ request.user.get_role_display }}</span>
     </div>
+    <div class="topbar-datetime" aria-label="التاريخ والوقت الحالي">
+        <span>التاريخ والوقت</span>
+        <strong data-live-datetime>--</strong>
+    </div>
     <button class="btn btn-light" type="button" data-pwa-install hidden>&#1578;&#1579;&#1576;&#1610;&#1578;</button>
     <button class="btn btn-light" type="button" data-pwa-sync>&#1605;&#1586;&#1575;&#1605;&#1606;&#1577;</button>
     <form method="post" action="{% url 'accounts:logout' %}">

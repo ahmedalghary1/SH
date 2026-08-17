@@ -40,6 +40,18 @@
         {% if form.unit_cost.errors %}<small class="error">{{ form.unit_cost.errors|join:', ' }}</small>{% endif %}
     </label>
 
+    <label>
+        <span>{{ form.invoice_datetime.label }}</span>
+        {{ form.invoice_datetime }}
+        {% if form.invoice_datetime.errors %}<small class="error">{{ form.invoice_datetime.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <label>
+        <span>{{ form.expected_date.label }}</span>
+        {{ form.expected_date }}
+        {% if form.expected_date.errors %}<small class="error">{{ form.expected_date.errors|join:', ' }}</small>{% endif %}
+    </label>
+
     <div class="form-actions">
         <button class="btn btn-light" type="button" data-add-purchase-item>إضافة للفاتورة</button>
     </div>

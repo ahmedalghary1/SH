@@ -54,7 +54,7 @@
             <thead><tr><th>العميل</th><th>النوع</th><th>العنوان</th><th>الموظف</th><th>التاريخ</th></tr></thead>
             <tbody>
                 {% for interaction in recent_interactions %}
-                    <tr><td>{{ interaction.customer }}</td><td>{{ interaction.get_interaction_type_display }}</td><td>{{ interaction.title }}</td><td>{{ interaction.created_by|default:'-' }}</td><td>{{ interaction.created_at }}</td></tr>
+                    <tr><td>{{ interaction.customer }}</td><td>{{ interaction.get_interaction_type_display }}</td><td>{{ interaction.title }}</td><td>{{ interaction.created_by|default:'-' }}</td><td>{{ interaction.created_at|date:'Y-m-d H:i' }}</td></tr>
                 {% empty %}
                     <tr><td colspan="5">لا توجد تفاعلات</td></tr>
                 {% endfor %}

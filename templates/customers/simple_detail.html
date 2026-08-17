@@ -48,7 +48,7 @@
             <span class="operation-label">آخر فاتورة</span>
             <strong class="operation-value">
                 {% if summary.last_order %}
-                    {{ summary.last_order.order_number }} - {{ summary.last_order.created_at|date:'Y-m-d' }}
+                    {{ summary.last_order.order_number }} - {{ summary.last_order.created_at|date:'Y-m-d H:i' }} - القيمة: {{ summary.last_order.total }}
                 {% else %}
                     لا توجد فواتير
                 {% endif %}
@@ -58,7 +58,7 @@
             <span class="operation-label">آخر تحصيل</span>
             <strong class="operation-value">
                 {% if summary.last_payment %}
-                    {{ summary.last_payment.amount }} - {{ summary.last_payment.created_at|date:'Y-m-d' }}
+                    {{ summary.last_payment.amount }} - {{ summary.last_payment.transaction_date|date:'Y-m-d' }} {{ summary.last_payment.transaction_time|time:'H:i' }}
                 {% else %}
                     لا توجد تحصيلات
                 {% endif %}
@@ -98,7 +98,7 @@
                                     <a href="{% url 'orders:detail' order.pk %}">{{ order.order_number }}</a>
                                 {% endif %}
                             </td>
-                            <td>{{ order.created_at|date:'Y-m-d' }}</td>
+                            <td>{{ order.created_at|date:'Y-m-d H:i' }}</td>
                             <td>{{ order.total }}</td>
                             <td>{{ order.paid_amount }}</td>
                             <td class="{% if order.remaining_amount > 0 %}debt{% endif %}">{{ order.remaining_amount }}</td>
@@ -128,7 +128,7 @@
                         {% for ret in returns %}
                         <tr>
                             <td><a href="{% url 'returns:detail' ret.pk %}">{{ ret.id }}</a></td>
-                            <td>{{ ret.created_at|date:'Y-m-d' }}</td>
+                            <td>{{ ret.created_at|date:'Y-m-d H:i' }}</td>
                             <td>{{ ret.get_return_type_display }}</td>
                             <td>{{ ret.refund_amount }}</td>
                             <td>{{ ret.get_status_display }}</td>
@@ -156,7 +156,7 @@
                     <tbody>
                         {% for payment in payments %}
                         <tr>
-                            <td>{{ payment.created_at|date:'Y-m-d' }}</td>
+                            <td>{{ payment.transaction_date|date:'Y-m-d' }} {{ payment.transaction_time|time:'H:i' }}</td>
                             <td class="credit">{{ payment.amount }}</td>
                             <td>{{ payment.cash_account }}</td>
                             <td>{{ payment.created_by }}</td>

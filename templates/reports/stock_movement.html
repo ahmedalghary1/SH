@@ -68,7 +68,7 @@
                     <tbody>
                         {% for movement in movements %}
                         <tr>
-                            <td>{{ movement.created_at }}</td>
+                            <td>{{ movement.created_at|date:'Y-m-d H:i' }}</td>
                             <td>{{ movement.variant.product.name|default:"-" }}</td>
                             <td>{{ movement.variant.variant_sku|default:"-" }}</td>
                             <td>{{ movement.report_movement_type|default:"-" }}</td>

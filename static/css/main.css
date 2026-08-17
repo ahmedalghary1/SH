@@ -462,6 +462,30 @@ textarea:disabled,
     margin-right: auto;
 }
 
+.topbar-datetime {
+    display: grid;
+    gap: .1rem;
+    min-width: 10.5rem;
+    text-align: center;
+}
+
+.topbar-datetime span {
+    color: rgba(255, 255, 255, .78);
+    font-size: .72rem;
+}
+
+.topbar-datetime strong {
+    direction: ltr;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.auto-recorded-at-field input[readonly] {
+    direction: ltr;
+    background: var(--surface-muted, #f5f7fb);
+    cursor: default;
+}
+
 .topbar-tools {
     display: flex;
     align-items: center;
@@ -5618,6 +5642,19 @@ tbody tr:hover {
         order: 0;
         min-width: 0;
         margin: 0;
+    }
+
+    .topbar-datetime {
+        min-width: 0;
+        text-align: start;
+    }
+
+    .topbar-datetime span {
+        display: none;
+    }
+
+    .topbar-datetime strong {
+        font-size: .76rem;
     }
 
     .topbar-user strong,

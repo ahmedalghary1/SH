@@ -21,7 +21,10 @@ def visible_customers_for_user(user, queryset=None):
 
 
 def _customer_orders(customer):
-    return Order.objects.filter(customer=customer).exclude(status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
+    return Order.objects.filter(
+        customer=customer,
+        document_type=Order.DOCUMENT_SALE,
+    ).exclude(status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED])
 
 
 def get_customer_summary(customer):
@@ -42,6 +45,14 @@ def get_customer_summary(customer):
     ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
     last_order = _customer_orders(customer).order_by('-created_at').first()
+    last_payment = PaymentTransaction.objects.filter(
+        related_customer=customer,
+        direction=PaymentTransaction.DIRECTION_IN,
+        transaction_type__in=[
+            PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+            PaymentTransaction.TYPE_SALES_REP_COLLECTION,
+        ],
+    ).order_by('-transaction_date', '-transaction_time', '-pk').first()
 
     interactions = customer.interactions.order_by('-created_at')
     last_interaction = interactions.first()
@@ -61,6 +72,7 @@ def get_customer_summary(customer):
         'total_paid': total_paid,
         'total_remaining': total_remaining,
         'last_order': last_order,
+        'last_payment': last_payment,
         'last_interaction': last_interaction,
         'next_follow_up': next_follow_up,
         'return_rate': return_rate,

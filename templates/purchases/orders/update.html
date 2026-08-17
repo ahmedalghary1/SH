@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}تعديل فاتورة شراء{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>تعديل {{ purchase_order.purchase_number }}</h1>
+    <a class="btn btn-light" href="{% url 'purchases:order_detail' purchase_order.pk %}">رجوع</a>
+</div>
+
+<form method="post" class="card form-grid purchase-direct-form" data-purchase-direct-form>
+    {% csrf_token %}
+    {{ form.items_json }}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    {% if form.items_json.errors %}<div class="form-errors">{{ form.items_json.errors }}</div>{% endif %}
+
+    <label>
+        <span>{{ form.supplier.label }}</span>
+        {{ form.supplier }}
+        {% if form.supplier.errors %}<small class="error">{{ form.supplier.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <label>
+        <span>{{ form.invoice_datetime.label }}</span>
+        {{ form.invoice_datetime }}
+        {% if form.invoice_datetime.errors %}<small class="error">{{ form.invoice_datetime.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <label>
+        <span>{{ form.expected_date.label }}</span>
+        {{ form.expected_date }}
+        {% if form.expected_date.errors %}<small class="error">{{ form.expected_date.errors|join:', ' }}</small>{% endif %}
+    </label>
+
+    <div class="card span-2">
+        لا يمكن تغيير صنف تم استلامه أو كميته، ويمكن تصحيح سعر شرائه. الأصناف الجديدة تحفظ كغير مستلمة ثم تُستلم من صفحة الفاتورة.
+    </div>
+    <label>
+        <span>{{ form.product_variant.label }}</span>
+        {{ form.product_variant }}
+        {% if form.product_variant.errors %}<small class="error">{{ form.product_variant.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <label>
+        <span>{{ form.quantity.label }}</span>
+        {{ form.quantity }}
+        {% if form.quantity.errors %}<small class="error">{{ form.quantity.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <label>
+        <span>{{ form.unit_cost.label }}</span>
+        {{ form.unit_cost }}
+        {% if form.unit_cost.errors %}<small class="error">{{ form.unit_cost.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <div class="form-actions">
+        <button class="btn btn-light" type="button" data-add-purchase-item>إضافة للفاتورة</button>
+    </div>
+
+    <div class="table-wrap span-2">
+        <table>
+            <thead><tr><th>الصنف</th><th>الكمية</th><th>سعر الشراء</th><th>الإجمالي</th><th></th></tr></thead>
+            <tbody data-purchase-items-body></tbody>
+            <tfoot><tr><th colspan="3">الإجمالي قبل الخصم</th><th data-purchase-total>0.00</th><th></th></tr></tfoot>
+        </table>
+    </div>
+
+    <label><span>{{ form.discount_type.label }}</span>{{ form.discount_type }}</label>
+    <label><span>{{ form.discount_value.label }}</span>{{ form.discount_value }}{% if form.discount_value.errors %}<small class="error">{{ form.discount_value.errors|join:', ' }}</small>{% endif %}</label>
+    <div class="card span-2" data-purchase-totals>قبل الخصم: <b data-subtotal>0.00</b> · الخصم: <b data-discount>0.00</b> · الصافي: <b data-net>0.00</b></div>
+
+    <label class="span-2">
+        <span>{{ form.notes.label }}</span>
+        {{ form.notes }}
+        {% if form.notes.errors %}<small class="error">{{ form.notes.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <div class="form-actions span-2">
+        <button class="btn btn-primary" type="submit">حفظ التعديلات</button>
+        <a class="btn btn-light" href="{% url 'purchases:order_detail' purchase_order.pk %}">إلغاء</a>
+    </div>
+</form>
+{% endblock %}
+{% block extra_js %}<script src="{% static 'js/purchase_create.js' %}"></script>{% endblock %}

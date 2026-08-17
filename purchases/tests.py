@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from accounts.models import User
 from finance.models import CashAccount, PaymentTransaction
@@ -344,3 +345,76 @@ class PurchaseServiceTests(TestCase):
         self.assertEqual(response.status_code, 302)
         supplier.refresh_from_db()
         self.assertEqual(supplier.current_balance, Decimal('-10.00'))
+
+    def test_manager_can_edit_purchase_invoice_and_supplier_balance_is_recalculated(self):
+        self.client.force_login(self.manager)
+        purchase_order = self.create_order()
+        item = purchase_order.items.get()
+
+        response = self.client.post(reverse('purchases:order_update', args=[purchase_order.pk]), {
+            'supplier': self.supplier.pk,
+            'invoice_datetime': '2026-08-15T10:30',
+            'expected_date': '',
+            'items_json': json.dumps([{
+                'purchase_item_id': item.pk,
+                'product_variant_id': self.variant.pk,
+                'quantity': 10,
+                'unit_cost': '100.00',
+            }]),
+            'discount_type': PurchaseOrder.DISCOUNT_FIXED,
+            'discount_value': '50.00',
+            'notes': 'corrected invoice',
+        }, secure=True)
+
+        self.assertRedirects(response, reverse('purchases:order_detail', args=[purchase_order.pk]))
+        purchase_order.refresh_from_db()
+        self.supplier.refresh_from_db()
+        self.assertEqual(purchase_order.total_amount, Decimal('950.00'))
+        self.assertEqual(purchase_order.remaining_amount, Decimal('950.00'))
+        self.assertEqual(self.supplier.current_balance, Decimal('950.00'))
+        self.assertEqual(purchase_order.notes, 'corrected invoice')
+        self.assertEqual(timezone.localtime(purchase_order.created_at).strftime('%Y-%m-%d %H:%M'), '2026-08-15 10:30')
+
+    def test_received_purchase_quantity_cannot_be_changed_during_edit(self):
+        self.client.force_login(self.manager)
+        purchase_order = self.create_order()
+        item = purchase_order.items.get()
+        receive_purchase_order_items(
+            purchase_order=purchase_order,
+            warehouse=self.warehouse,
+            received_items={item.pk: item.quantity},
+            user=self.manager,
+        )
+
+        response = self.client.post(reverse('purchases:order_update', args=[purchase_order.pk]), {
+            'supplier': self.supplier.pk,
+            'invoice_datetime': '2026-08-15T10:30',
+            'expected_date': '',
+            'items_json': json.dumps([{
+                'purchase_item_id': item.pk,
+                'product_variant_id': self.variant.pk,
+                'quantity': 9,
+                'unit_cost': '125.00',
+            }]),
+            'discount_type': PurchaseOrder.DISCOUNT_FIXED,
+            'discount_value': '0',
+            'notes': '',
+        }, secure=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'لا يمكن تغيير الصنف أو الكمية بعد استلامه')
+        item.refresh_from_db()
+        self.assertEqual(item.quantity, 10)
+
+    def test_warehouse_user_cannot_edit_purchase_invoice(self):
+        warehouse_user = User.objects.create_user(
+            username='purchase-warehouse',
+            password='pass',
+            role=User.ROLE_WAREHOUSE,
+        )
+        self.client.force_login(warehouse_user)
+        purchase_order = self.create_order()
+
+        response = self.client.get(reverse('purchases:order_update', args=[purchase_order.pk]))
+
+        self.assertEqual(response.status_code, 403)

@@ -32,7 +32,7 @@
                 <td>{{ ret.get_return_type_display }}</td>
                 <td><span class="badge">{{ ret.get_status_display }}</span></td>
                 <td>{{ ret.refund_amount }}</td>
-                <td>{{ ret.created_at }}</td>
+                <td>{{ ret.created_at|date:'Y-m-d H:i' }}</td>
                 <td>
                     <a class="btn btn-light" href="{% url 'returns:detail' ret.pk %}">عرض</a>
                     {% if request.user.can_hard_delete %}

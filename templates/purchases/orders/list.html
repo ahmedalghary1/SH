@@ -8,16 +8,16 @@
 {% include 'partials/export_buttons.html' %}
 <div class="table-wrap card">
     <table>
-        <thead><tr><th>الرقم</th><th>المورد</th><th>الحالة</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th></th></tr></thead>
+        <thead><tr><th>الرقم</th><th>المورد</th><th>التاريخ والوقت</th><th>الحالة</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th></th></tr></thead>
         <tbody>
         {% for po in purchase_orders %}
             <tr>
-                <td>{{ po.purchase_number }}</td><td>{{ po.supplier }}</td><td>{{ po.get_status_display }}</td>
+                <td>{{ po.purchase_number }}</td><td>{{ po.supplier }}</td><td>{{ po.created_at|date:'Y-m-d H:i' }}</td><td>{{ po.get_status_display }}</td>
                 <td>{{ po.total_amount }}</td><td>{{ po.paid_amount }}</td><td>{{ po.remaining_amount }}</td>
-                <td><a class="btn btn-light" href="{% url 'purchases:order_detail' po.pk %}">التفاصيل</a></td>
+                <td><a class="btn btn-light" href="{% url 'purchases:order_detail' po.pk %}">التفاصيل</a> <a class="btn btn-light" href="{% url 'purchases:order_update' po.pk %}">تعديل</a></td>
             </tr>
         {% empty %}
-            <tr><td colspan="7">لا توجد عمليات شراء</td></tr>
+            <tr><td colspan="8">لا توجد عمليات شراء</td></tr>
         {% endfor %}
         </tbody>
     </table>

@@ -14,6 +14,8 @@
     const totalCell = form.querySelector("[data-purchase-total]");
     const discountType = field("id_discount_type");
     const discountValue = field("id_discount_value");
+    const addItemButton = form.querySelector("[data-add-purchase-item]");
+    let editingIndex = null;
     let items = [];
     try {
         items = itemsJson?.value ? JSON.parse(itemsJson.value || "[]") : [];
@@ -49,12 +51,19 @@
                     row.appendChild(cell);
                 });
                 const actions = document.createElement("td");
-                const button = document.createElement("button");
-                button.className = "btn btn-danger btn-small";
-                button.type = "button";
-                button.dataset.removePurchaseItem = String(index);
-                button.textContent = "حذف";
-                actions.appendChild(button);
+                const editButton = document.createElement("button");
+                editButton.className = "btn btn-light btn-small";
+                editButton.type = "button";
+                editButton.dataset.editPurchaseItem = String(index);
+                editButton.textContent = "تعديل";
+                actions.appendChild(editButton);
+                const removeButton = document.createElement("button");
+                removeButton.className = "btn btn-danger btn-small";
+                removeButton.type = "button";
+                removeButton.dataset.removePurchaseItem = String(index);
+                removeButton.disabled = Number(item.received_quantity || 0) > 0;
+                removeButton.textContent = removeButton.disabled ? "مستلم" : "حذف";
+                actions.appendChild(removeButton);
                 row.appendChild(actions);
                 itemsBody.appendChild(row);
             });
@@ -126,12 +135,19 @@
             unitCost?.focus({ preventScroll: true });
             return;
         }
-        items.push({
+        const nextItem = {
             product_variant_id: variantId,
             product_name: selectedText(productVariant),
             quantity: quantityValue,
             unit_cost: unitCostValue,
-        });
+        };
+        if (editingIndex === null) {
+            items.push(nextItem);
+        } else {
+            items[editingIndex] = { ...items[editingIndex], ...nextItem };
+            editingIndex = null;
+            if (addItemButton) addItemButton.textContent = "إضافة للفاتورة";
+        }
         renderItems();
         if (productVariant) productVariant.value = "";
         if (quantity) quantity.value = "1";
@@ -261,6 +277,21 @@
             event.preventDefault();
             items.splice(Number(removeItem.dataset.removePurchaseItem), 1);
             renderItems();
+            return;
+        }
+
+        const editItem = event.target.closest("[data-edit-purchase-item]");
+        if (editItem) {
+            event.preventDefault();
+            editingIndex = Number(editItem.dataset.editPurchaseItem);
+            const item = items[editingIndex];
+            if (!item) return;
+            if (productVariant) productVariant.value = String(item.product_variant_id || item.variant_id || "");
+            if (quantity) quantity.value = String(item.quantity || "");
+            if (unitCost) unitCost.value = String(item.unit_cost ?? "");
+            productVariant?.dispatchEvent(new Event("change", { bubbles: true }));
+            if (addItemButton) addItemButton.textContent = "تحديث الصنف";
+            productVariant?.focus({ preventScroll: true });
             return;
         }
 

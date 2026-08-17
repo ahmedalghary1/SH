@@ -49,7 +49,10 @@
                         {% if request.user.is_manager %}<th>مسؤول المبيعات</th>{% endif %}
                         <th>إجمالي المشتريات</th>
                         <th>الرصيد الحالي</th>
-                        <th>آخر تعامل</th>
+                        <th>تاريخ آخر بيع</th>
+                        <th>قيمة آخر فاتورة</th>
+                        <th>تاريخ آخر قبض</th>
+                        <th>قيمة آخر قبض</th>
                         <th>الحالة</th>
                         <th>الإجراءات</th>
                     </tr>
@@ -69,7 +72,14 @@
                         <td class="balance {% if customer.current_balance > 0 %}positive{% elif customer.current_balance < 0 %}negative{% endif %}">
                             {{ customer.current_balance|default:0 }}
                         </td>
-                        <td>{{ customer.last_transaction_date|date:'Y-m-d' }}</td>
+                        <td>{{ customer.last_sale_at|date:'Y-m-d H:i'|default:'-' }}</td>
+                        <td class="purchases">{{ customer.last_invoice_value|default:'-' }}</td>
+                        <td>
+                            {% if customer.last_receipt_date %}
+                                {{ customer.last_receipt_date|date:'Y-m-d' }} {{ customer.last_receipt_time|time:'H:i' }}
+                            {% else %}-{% endif %}
+                        </td>
+                        <td class="credit">{{ customer.last_receipt_amount|default:'-' }}</td>
                         <td>
                             <span class="status-badge {% if customer.is_active %}active{% else %}inactive{% endif %}">
                                 {% if customer.is_active %}نشط{% else %}متوقف{% endif %}
@@ -83,7 +93,7 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="{% if request.user.is_manager %}9{% else %}8{% endif %}">لا توجد عملاء</td></tr>
+                    <tr><td colspan="{% if request.user.is_manager %}12{% else %}11{% endif %}">لا توجد عملاء</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

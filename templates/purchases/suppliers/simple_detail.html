@@ -37,7 +37,7 @@
             <span class="operation-label">آخر فاتورة شراء</span>
             <strong class="operation-value">
                 {% if summary.last_order %}
-                    {{ summary.last_order.purchase_number }} - {{ summary.last_order.created_at|date:'Y-m-d' }}
+                    {{ summary.last_order.purchase_number }} - {{ summary.last_order.created_at|date:'Y-m-d H:i' }}
                 {% else %}
                     لا توجد فواتير
                 {% endif %}
@@ -47,7 +47,7 @@
             <span class="operation-label">آخر دفعة</span>
             <strong class="operation-value">
                 {% if summary.last_payment %}
-                    {{ summary.last_payment.amount }} - {{ summary.last_payment.created_at|date:'Y-m-d' }}
+                    {{ summary.last_payment.amount }} - {{ summary.last_payment.transaction_date|date:'Y-m-d' }} {{ summary.last_payment.transaction_time|time:'H:i' }}
                 {% else %}
                     لا توجد دفعات
                 {% endif %}
@@ -80,7 +80,7 @@
                         {% for order in purchase_orders %}
                         <tr>
                             <td><a href="{% url 'purchases:order_detail' order.pk %}">{{ order.purchase_number }}</a></td>
-                            <td>{{ order.created_at|date:'Y-m-d' }}</td>
+                            <td>{{ order.created_at|date:'Y-m-d H:i' }}</td>
                             <td>{{ order.total_amount }}</td>
                             <td>{{ order.paid_amount }}</td>
                             <td class="{% if order.remaining_amount > 0 %}debt{% endif %}">{{ order.remaining_amount }}</td>
@@ -109,7 +109,7 @@
                     <tbody>
                         {% for payment in transactions %}
                         <tr>
-                            <td>{{ payment.created_at|date:'Y-m-d' }}</td>
+                            <td>{{ payment.transaction_date|date:'Y-m-d' }} {{ payment.transaction_time|time:'H:i' }}</td>
                             <td class="credit">{{ payment.amount }}</td>
                             <td>{{ payment.cash_account }}</td>
                             <td>{{ payment.created_by }}</td>

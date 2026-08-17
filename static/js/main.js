@@ -13,6 +13,57 @@ function getCookie(name) {
     return cookieValue;
 }
 
+function localDateTimeParts(date = new Date()) {
+    const pad = (value) => String(value).padStart(2, "0");
+    return {
+        display: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`,
+        input: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`,
+    };
+}
+
+function updateLiveDateTime() {
+    const value = localDateTimeParts();
+    document.querySelectorAll("[data-live-datetime]").forEach((node) => {
+        node.textContent = value.display;
+        node.setAttribute("datetime", new Date().toISOString());
+    });
+    document.querySelectorAll("[data-auto-recorded-at]").forEach((input) => {
+        input.value = value.input;
+    });
+}
+
+function addAutomaticDateTimeToCreateForm(root = document) {
+    const heading = root.querySelector?.("h1")?.textContent?.trim() || document.querySelector("h1")?.textContent?.trim() || "";
+    const path = window.location.pathname;
+    const isCreatePage = /\/(create|add)\//.test(path)
+        || /(إضافة|تسجيل|شراء|تحصيل|مصروف|تحويل|استلام|مرتجع|تسوية|تعيين|تسليم)/.test(heading);
+    if (!isCreatePage) return;
+
+    const forms = Array.from(root.querySelectorAll?.(".page-content form") || document.querySelectorAll(".page-content form"));
+    const form = forms.find((candidate) => {
+        if (candidate.dataset.autoDateTimeReady || candidate.querySelector("input[type='datetime-local']")) return false;
+        return candidate.querySelector("input:not([type='hidden']), select, textarea");
+    });
+    if (!form) return;
+    form.dataset.autoDateTimeReady = "1";
+    const label = document.createElement("label");
+    label.className = "auto-recorded-at-field";
+    const title = document.createElement("span");
+    title.textContent = "التاريخ والوقت (يسجل تلقائيًا)";
+    const input = document.createElement("input");
+    input.type = "datetime-local";
+    input.readOnly = true;
+    input.dataset.autoRecordedAt = "true";
+    label.append(title, input);
+    const csrf = form.querySelector("input[name='csrfmiddlewaretoken']");
+    if (csrf?.nextSibling) form.insertBefore(label, csrf.nextSibling);
+    else form.prepend(label);
+    updateLiveDateTime();
+}
+
+updateLiveDateTime();
+window.setInterval(updateLiveDateTime, 1000);
+
 const isAuthPage = window.location.pathname.startsWith("/accounts/");
 
 if ("serviceWorker" in navigator && isAuthPage) {
@@ -279,7 +330,11 @@ function enhanceSharedPageUi(root = document) {
     });
 }
 document.addEventListener('DOMContentLoaded', () => enhanceSharedPageUi());
-document.addEventListener('sh:page-loaded', () => enhanceSharedPageUi());
+document.addEventListener('DOMContentLoaded', () => addAutomaticDateTimeToCreateForm());
+document.addEventListener('sh:page-loaded', () => {
+    enhanceSharedPageUi();
+    addAutomaticDateTimeToCreateForm();
+});
 
 new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {

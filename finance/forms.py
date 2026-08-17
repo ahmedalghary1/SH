@@ -50,7 +50,12 @@ class ExpenseForm(forms.Form):
         empty_label='اختر الخزنة',
     )
     amount = forms.DecimalField(min_value=0.01, label='المبلغ')
-    transaction_date = forms.DateField(label='تاريخ المصروف', initial=timezone.localdate, widget=forms.DateInput(attrs={'type': 'date'}))
+    transaction_date = forms.DateTimeField(
+        label='تاريخ ووقت المصروف',
+        initial=timezone.now,
+        input_formats=['%Y-%m-%dT%H:%M', '%Y-%m-%d'],
+        widget=forms.DateTimeInput(format='%Y-%m-%dT%H:%M', attrs={'type': 'datetime-local'}),
+    )
     notes = forms.CharField(widget=forms.Textarea, required=False, label='بيان المصروف')
 
     def __init__(self, *args, **kwargs):
@@ -134,7 +139,12 @@ class TransferForm(forms.Form):
     from_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='من خزنة')
     to_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='إلى خزنة')
     amount = forms.DecimalField(min_value=0.01, label='المبلغ')
-    transaction_date = forms.DateField(label='تاريخ التحويل', initial=timezone.localdate, widget=forms.DateInput(attrs={'type': 'date'}))
+    transaction_date = forms.DateTimeField(
+        label='تاريخ ووقت التحويل',
+        initial=timezone.now,
+        input_formats=['%Y-%m-%dT%H:%M', '%Y-%m-%d'],
+        widget=forms.DateTimeInput(format='%Y-%m-%dT%H:%M', attrs={'type': 'datetime-local'}),
+    )
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
 
     def __init__(self, *args, user=None, **kwargs):
@@ -172,5 +182,10 @@ class SupplierPaymentForm(forms.Form):
     supplier = forms.ModelChoiceField(queryset=Supplier.objects.filter(is_active=True), label='المورد')
     cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.filter(is_active=True), label='الخزنة')
     amount = forms.DecimalField(min_value=0.01, label='المبلغ')
-    transaction_date = forms.DateField(label='تاريخ الدفع', initial=timezone.localdate, widget=forms.DateInput(attrs={'type': 'date'}))
+    transaction_date = forms.DateTimeField(
+        label='تاريخ ووقت الدفع',
+        initial=timezone.now,
+        input_formats=['%Y-%m-%dT%H:%M', '%Y-%m-%d'],
+        widget=forms.DateTimeInput(format='%Y-%m-%dT%H:%M', attrs={'type': 'datetime-local'}),
+    )
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')

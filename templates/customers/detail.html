@@ -24,7 +24,10 @@
 <div class="stats-grid">
     <div class="stat-card"><span>إجمالي مشتريات العميل</span><strong>{{ summary.total_purchases }}</strong></div>
     <div class="stat-card"><span>عدد الفواتير</span><strong>{{ orders|length }}</strong></div>
-    <div class="stat-card"><span>آخر عملية شراء</span><strong>{{ summary.last_order.created_at|default:'-' }}</strong></div>
+    <div class="stat-card"><span>تاريخ آخر بيع</span><strong>{{ summary.last_order.created_at|date:'Y-m-d H:i'|default:'-' }}</strong></div>
+    <div class="stat-card"><span>قيمة آخر فاتورة</span><strong>{{ summary.last_order.total|default:'-' }}</strong></div>
+    <div class="stat-card"><span>آخر قبض</span><strong>{% if summary.last_payment %}{{ summary.last_payment.transaction_date|date:'Y-m-d' }} {{ summary.last_payment.transaction_time|time:'H:i' }}{% else %}-{% endif %}</strong></div>
+    <div class="stat-card"><span>قيمة آخر قبض</span><strong>{{ summary.last_payment.amount|default:'-' }}</strong></div>
     <div class="stat-card"><span>إجمالي الخصومات</span><strong>{{ total_discounts }}</strong></div>
 </div>
 
@@ -36,7 +39,7 @@
             <tbody>
                 {% for order in orders %}
                     <tr>
-                        <td>{{ order.created_at }}</td>
+                        <td>{{ order.created_at|date:'Y-m-d H:i' }}</td>
                         <td>{{ order.order_number }}</td>
                         <td>{{ order.total }}</td>
                         <td>{{ order.discount }}</td>
@@ -65,7 +68,7 @@
             <tbody>
                 {% for item in movement_rows %}
                     <tr>
-                        <td>{{ item.order.created_at }}</td>
+                        <td>{{ item.order.created_at|date:'Y-m-d H:i' }}</td>
                         <td>{{ item.order.order_number }}</td>
                         <td>{{ item.variant.product.name|default:'-' }}</td>
                         <td>{{ item.variant.product.sku|default:'-' }}</td>

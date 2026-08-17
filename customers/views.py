@@ -1,5 +1,16 @@
 from django.contrib import messages
-from django.db.models import DecimalField, F, Max, Q, Sum, Value
+from django.db.models import (
+    DateField,
+    DateTimeField,
+    DecimalField,
+    F,
+    OuterRef,
+    Q,
+    Subquery,
+    Sum,
+    TimeField,
+    Value,
+)
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.utils import timezone
@@ -38,6 +49,46 @@ class CustomerVisibilityMixin:
         return visible_customers_for_user(self.request.user, qs)
 
 
+def _customer_account_annotations(queryset):
+    """Attach the latest sale and receipt values without multiplying joins."""
+    latest_sale = Order.objects.filter(
+        customer=OuterRef('pk'),
+        document_type=Order.DOCUMENT_SALE,
+    ).exclude(
+        status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED],
+    ).order_by('-created_at', '-pk')
+    latest_receipt = PaymentTransaction.objects.filter(
+        related_customer=OuterRef('pk'),
+        direction=PaymentTransaction.DIRECTION_IN,
+        transaction_type__in=[
+            PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+            PaymentTransaction.TYPE_SALES_REP_COLLECTION,
+        ],
+    ).order_by('-transaction_date', '-transaction_time', '-pk')
+    return queryset.annotate(
+        last_sale_at=Subquery(
+            latest_sale.values('created_at')[:1],
+            output_field=DateTimeField(),
+        ),
+        last_invoice_value=Subquery(
+            latest_sale.values('total')[:1],
+            output_field=DecimalField(max_digits=12, decimal_places=2),
+        ),
+        last_receipt_date=Subquery(
+            latest_receipt.values('transaction_date')[:1],
+            output_field=DateField(),
+        ),
+        last_receipt_time=Subquery(
+            latest_receipt.values('transaction_time')[:1],
+            output_field=TimeField(),
+        ),
+        last_receipt_amount=Subquery(
+            latest_receipt.values('amount')[:1],
+            output_field=DecimalField(max_digits=14, decimal_places=2),
+        ),
+    )
+
+
 class SimpleCustomerListView(SalesRequiredMixin, ListView):
     model = Customer
     template_name = 'customers/simple_list.html'
@@ -52,11 +103,8 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
                 Sum('order__remaining_amount', filter=Q(order__status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED])),
                 Value(0), output_field=DecimalField(max_digits=14, decimal_places=2),
             ),
-            last_transaction_date=Max(
-                'order__created_at',
-                filter=~Q(order__status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED])
-            ),
         )
+        qs = _customer_account_annotations(qs)
         
         q = self.request.GET.get('q')
         customer_type = self.request.GET.get('type')
@@ -106,6 +154,11 @@ class CustomerListView(SalesRequiredMixin, ExportListMixin, ListView):
         ('الشركة', 'company_name'),
         ('العنوان', 'address'),
         ('مسؤول المبيعات', 'sales_representative'),
+        ('تاريخ آخر بيع', 'last_sale_at'),
+        ('قيمة آخر فاتورة', 'last_invoice_value'),
+        ('تاريخ آخر قبض', 'last_receipt_date'),
+        ('وقت آخر قبض', 'last_receipt_time'),
+        ('قيمة آخر قبض', 'last_receipt_amount'),
         ('أضيف بواسطة', 'created_by'),
         ('تاريخ الإضافة', 'created_at'),
     )
@@ -118,6 +171,7 @@ class CustomerListView(SalesRequiredMixin, ExportListMixin, ListView):
                 Value(0), output_field=DecimalField(max_digits=14, decimal_places=2),
             )
         )
+        qs = _customer_account_annotations(qs)
         q = self.request.GET.get('q')
         customer_type = self.request.GET.get('type')
         valid_types = {choice[0] for choice in Customer.CUSTOMER_TYPE_CHOICES}
@@ -219,8 +273,8 @@ class SimpleCustomerDetailView(CustomerVisibilityMixin, SalesRequiredMixin, Deta
         # Calculate total returns
         total_returns = returns.filter(status=SalesReturn.STATUS_COMPLETED).aggregate(v=Sum('refund_amount'))['v'] or 0
         
-        # Get last payment
-        last_payment = payments.first()
+        # Use the business date/time so backdated receipts are ordered correctly.
+        last_payment = summary['last_payment']
         
         # Generate statement
         statement_data = build_customer_statement(customer)

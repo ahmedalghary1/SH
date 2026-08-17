@@ -23,7 +23,7 @@
         <div><span>العنوان</span><strong>{{ customer.address|default:'-' }}</strong></div>
         <div><span>حد الائتمان</span><strong>{{ customer.credit_limit }}</strong></div>
         <div><span>المسؤول</span><strong>{{ customer.created_by|default:'-' }}</strong></div>
-        <div><span>تاريخ الإضافة</span><strong>{{ customer.created_at|date:'Y-m-d' }}</strong></div>
+        <div><span>تاريخ ووقت الإضافة</span><strong>{{ customer.created_at|date:'Y-m-d H:i' }}</strong></div>
         <div><span>الحالة</span><strong>{% if customer.is_active %}نشط{% else %}متوقف{% endif %}</strong></div>
     </div>
 </section>

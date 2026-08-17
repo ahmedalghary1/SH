@@ -38,7 +38,7 @@
                     <td>{{ invoice.order.remaining_amount }}</td>
                     <td><span class="badge {% if invoice.order.payment_status == 'paid' %}success{% elif invoice.order.payment_status == 'partial' %}warning{% else %}danger{% endif %}">{{ invoice.order.get_payment_status_display }}</span></td>
                     <td>{{ invoice.order.get_payment_method_display }}</td>
-                    <td>{{ invoice.issued_at }}</td>
+                    <td>{{ invoice.issued_at|date:'Y-m-d H:i' }}</td>
                     <td class="actions">
                         <a class="btn btn-light" href="{% url 'invoices:detail' invoice.pk %}">عرض</a>
                         <a class="btn btn-accent" href="{% url 'invoices:print' invoice.pk %}" target="_blank">طباعة</a>

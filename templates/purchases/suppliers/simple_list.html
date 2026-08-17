@@ -61,7 +61,7 @@
                                 {% if supplier.current_balance > 0 %}له{% elif supplier.current_balance < 0 %}عليه{% endif %}
                             </span>
                         </td>
-                        <td>{{ supplier.last_transaction_date|date:'Y-m-d' }}</td>
+                        <td>{{ supplier.last_transaction_date|date:'Y-m-d H:i' }}</td>
                         <td>
                             <span class="status-badge {% if supplier.is_active %}active{% else %}inactive{% endif %}">
                                 {% if supplier.is_active %}نشط{% else %}متوقف{% endif %}
