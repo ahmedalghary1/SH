@@ -3,6 +3,7 @@ from django.db.models import (
     DateField,
     DateTimeField,
     DecimalField,
+    Exists,
     F,
     OuterRef,
     Q,
@@ -109,6 +110,7 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
         q = self.request.GET.get('q')
         customer_type = self.request.GET.get('type')
         debt = self.request.GET.get('debt')
+        payment_method = self.request.GET.get('payment_method')
         
         valid_types = {choice[0] for choice in Customer.CUSTOMER_TYPE_CHOICES}
         debt_order_statuses = [
@@ -126,6 +128,12 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
             qs = qs.filter(Q(opening_balance__gt=0) | Q(order__remaining_amount__gt=0, order__status__in=debt_order_statuses))
         elif debt == 'no':
             qs = qs.exclude(Q(opening_balance__gt=0) | Q(order__remaining_amount__gt=0, order__status__in=debt_order_statuses))
+        if payment_method in {Order.METHOD_CASH, Order.METHOD_CREDIT}:
+            matching_orders = Order.objects.filter(
+                customer=OuterRef('pk'),
+                payment_method=payment_method,
+            ).exclude(status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED])
+            qs = qs.annotate(has_matching_payment=Exists(matching_orders)).filter(has_matching_payment=True)
         
         ordering = self.request.GET.get('sort')
         if ordering in {'balance', '-balance'}:
@@ -174,11 +182,18 @@ class CustomerListView(SalesRequiredMixin, ExportListMixin, ListView):
         qs = _customer_account_annotations(qs)
         q = self.request.GET.get('q')
         customer_type = self.request.GET.get('type')
+        payment_method = self.request.GET.get('payment_method')
         valid_types = {choice[0] for choice in Customer.CUSTOMER_TYPE_CHOICES}
         if q:
             qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name', 'address'), q))
         if customer_type in valid_types:
             qs = qs.filter(customer_type=customer_type)
+        if payment_method in {Order.METHOD_CASH, Order.METHOD_CREDIT}:
+            matching_orders = Order.objects.filter(
+                customer=OuterRef('pk'),
+                payment_method=payment_method,
+            ).exclude(status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED])
+            qs = qs.annotate(has_matching_payment=Exists(matching_orders)).filter(has_matching_payment=True)
         ordering = self.request.GET.get('sort')
         return qs.order_by('current_balance' if ordering == 'balance' else '-current_balance' if ordering == '-balance' else '-created_at')
 

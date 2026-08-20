@@ -1,16 +1,17 @@
 {% extends 'base.html' %}
+{% load arabic_dates %}
 {% block title %}الفواتير{% endblock %}
 {% block content %}
 <div class="page-head">
     <h1>الفواتير</h1>
     <a class="btn btn-accent" href="{% url 'orders:create' %}">إضافة فاتورة</a>
 </div>
-<form class="filters" method="get">
+{% include 'partials/invoice_navigation.html' %}
+<form class="filters invoice-filters" method="get">
     {{ filter_form.q }}
-    {{ filter_form.date_from }}
-    {{ filter_form.date_to }}
     {{ filter_form.payment_method }}
     {{ filter_form.payment_status }}
+    {% include 'partials/date_period_filter.html' %}
     <button class="btn btn-primary" type="submit">تصفية</button>
     <a class="btn btn-light" href="{% url 'invoices:list' %}">إعادة ضبط</a>
 </form>
@@ -38,10 +39,12 @@
                     <td>{{ invoice.order.remaining_amount }}</td>
                     <td><span class="badge {% if invoice.order.payment_status == 'paid' %}success{% elif invoice.order.payment_status == 'partial' %}warning{% else %}danger{% endif %}">{{ invoice.order.get_payment_status_display }}</span></td>
                     <td>{{ invoice.order.get_payment_method_display }}</td>
-                    <td>{{ invoice.issued_at|date:'Y-m-d H:i' }}</td>
+                    <td>{{ invoice.issued_at|arabic_datetime }}</td>
                     <td class="actions">
                         <a class="btn btn-light" href="{% url 'invoices:detail' invoice.pk %}">عرض</a>
                         <a class="btn btn-accent" href="{% url 'invoices:print' invoice.pk %}" target="_blank">طباعة</a>
+                        {% if request.user.is_manager %}<a class="btn btn-light" href="{% url 'orders:update' invoice.order.pk %}">تعديل</a>{% endif %}
+                        {% if request.user.can_hard_delete %}<a class="btn btn-danger" href="{% url 'orders:delete' invoice.order.pk %}">حذف</a>{% endif %}
                     </td>
                 </tr>
             {% empty %}

@@ -1,0 +1,14 @@
+<div class="period-filter" data-period-filter>
+    <label class="period-filter__select">
+        <span>الفترة</span>
+        <select name="period" data-period-select aria-label="اختيار الفترة">
+            <option value="">كل الفترات</option>
+            {% for value, label in period_choices %}<option value="{{ value }}"{% if date_filter.period == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+    </label>
+    <div class="period-filter__custom{% if date_filter.period == 'custom' %} is-open{% endif %}" data-custom-period-fields>
+        <label><span>من</span><input type="datetime-local" name="datetime_from" value="{{ date_filter.datetime_from_value }}" aria-label="من تاريخ ووقت"></label>
+        <span class="period-filter__arrow" aria-hidden="true">←</span>
+        <label><span>إلى</span><input type="datetime-local" name="datetime_to" value="{{ date_filter.datetime_to_value }}" aria-label="إلى تاريخ ووقت"></label>
+    </div>
+</div>

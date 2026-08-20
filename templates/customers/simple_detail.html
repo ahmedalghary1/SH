@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load arabic_dates %}
 {% block title %}{{ customer.name }}{% endblock %}
 {% block content %}
 <div class="simple-customer-detail-page">
@@ -48,7 +49,7 @@
             <span class="operation-label">آخر فاتورة</span>
             <strong class="operation-value">
                 {% if summary.last_order %}
-                    {{ summary.last_order.order_number }} - {{ summary.last_order.created_at|date:'Y-m-d H:i' }} - القيمة: {{ summary.last_order.total }}
+                    {{ summary.last_order.order_number }} - {{ summary.last_order.created_at|arabic_datetime }} - القيمة: {{ summary.last_order.total }}
                 {% else %}
                     لا توجد فواتير
                 {% endif %}
@@ -58,7 +59,7 @@
             <span class="operation-label">آخر تحصيل</span>
             <strong class="operation-value">
                 {% if summary.last_payment %}
-                    {{ summary.last_payment.amount }} - {{ summary.last_payment.transaction_date|date:'Y-m-d' }} {{ summary.last_payment.transaction_time|time:'H:i' }}
+                    {{ summary.last_payment.amount }} - {{ summary.last_payment.transaction_date|arabic_date }}، {{ summary.last_payment.transaction_time|arabic_time }}
                 {% else %}
                     لا توجد تحصيلات
                 {% endif %}
@@ -98,7 +99,7 @@
                                     <a href="{% url 'orders:detail' order.pk %}">{{ order.order_number }}</a>
                                 {% endif %}
                             </td>
-                            <td>{{ order.created_at|date:'Y-m-d H:i' }}</td>
+                            <td>{{ order.created_at|arabic_datetime }}</td>
                             <td>{{ order.total }}</td>
                             <td>{{ order.paid_amount }}</td>
                             <td class="{% if order.remaining_amount > 0 %}debt{% endif %}">{{ order.remaining_amount }}</td>
@@ -128,7 +129,7 @@
                         {% for ret in returns %}
                         <tr>
                             <td><a href="{% url 'returns:detail' ret.pk %}">{{ ret.id }}</a></td>
-                            <td>{{ ret.created_at|date:'Y-m-d H:i' }}</td>
+                            <td>{{ ret.created_at|arabic_datetime }}</td>
                             <td>{{ ret.get_return_type_display }}</td>
                             <td>{{ ret.refund_amount }}</td>
                             <td>{{ ret.get_status_display }}</td>
@@ -156,7 +157,7 @@
                     <tbody>
                         {% for payment in payments %}
                         <tr>
-                            <td>{{ payment.transaction_date|date:'Y-m-d' }} {{ payment.transaction_time|time:'H:i' }}</td>
+                            <td>{{ payment.transaction_date|arabic_date }}، {{ payment.transaction_time|arabic_time }}</td>
                             <td class="credit">{{ payment.amount }}</td>
                             <td>{{ payment.cash_account }}</td>
                             <td>{{ payment.created_by }}</td>
@@ -193,7 +194,7 @@
                     <tbody>
                         {% for entry in statement %}
                         <tr>
-                            <td>{{ entry.date|date:'Y-m-d' }}</td>
+                            <td>{{ entry.date|arabic_date }}</td>
                             <td>{{ entry.type }}</td>
                             <td>{{ entry.description }}</td>
                             <td class="debt">{{ entry.debit|default:'' }}</td>

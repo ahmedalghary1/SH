@@ -1,9 +1,11 @@
 {% extends 'base.html' %}
+{% load arabic_dates %}
 {% block title %}قبض العملاء{% endblock %}
 {% block content %}
 <div class="page-head">
     <h1>قبض العملاء</h1>
 </div>
+{% include 'partials/invoice_navigation.html' %}
 
 <section class="card">
     <h2>إضافة قبض جديد</h2>
@@ -53,7 +55,7 @@
     </div>
 </div>
 
-<form method="get" class="filters">
+<form method="get" class="filters invoice-filters">
     <input type="search" name="q" value="{{ filters.q }}" placeholder="بحث بالعميل أو المرجع أو الملاحظات">
     <select name="customer">
         <option value="">كل العملاء</option>
@@ -67,8 +69,7 @@
             <option value="{{ account.pk }}" {% if filters.cash_account == account.pk|stringformat:'s' %}selected{% endif %}>{{ account }}</option>
         {% endfor %}
     </select>
-    <input type="date" name="date_from" value="{{ filters.date_from }}" aria-label="من تاريخ">
-    <input type="date" name="date_to" value="{{ filters.date_to }}" aria-label="إلى تاريخ">
+    {% include 'partials/date_period_filter.html' %}
     <button class="btn btn-primary" type="submit">تصفية</button>
     <a class="btn btn-light" href="{% url 'finance:collection_create' %}">إعادة ضبط</a>
 </form>
@@ -91,8 +92,8 @@
         <tbody>
         {% for payment in collections %}
             <tr>
-                <td>{{ payment.transaction_date|date:'Y-m-d' }}</td>
-                <td>{{ payment.transaction_time|time:'H:i' }}</td>
+                <td>{{ payment.transaction_date|arabic_date }}</td>
+                <td>{{ payment.transaction_time|arabic_time }}</td>
                 <td>{{ payment.related_customer }}</td>
                 <td>{{ payment.amount }}</td>
                 <td>{{ payment.cash_account }}</td>
@@ -102,6 +103,7 @@
                 <td>
                     {% if request.user.is_manager %}
                         <a class="btn btn-light btn-small" href="{% url 'finance:collection_update' payment.pk %}">تعديل</a>
+                        {% if request.user.can_hard_delete %}<a class="btn btn-danger btn-small" href="{% url 'finance:transaction_delete' payment.pk %}">حذف</a>{% endif %}
                     {% elif payment.created_by_id == request.user.id %}
                         <a class="btn btn-light btn-small" href="{% url 'finance:collection_update' payment.pk %}">تعديل</a>
                     {% else %}-{% endif %}

@@ -14,6 +14,7 @@ from django.views.generic import DetailView, FormView, ListView, UpdateView, Vie
 from accounts.models import User
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, SalesRequiredMixin, can_view_costs, sales_required
 from config.delete_views import ManagerDeleteView
+from config.date_ranges import PERIOD_CHOICES, filter_by_date_period
 from config.exports import ExportListMixin
 from config.ratelimit import RateLimitExceeded, rate_limit
 from config.search import arabic_search_q
@@ -111,6 +112,7 @@ class OrderListView(RoleRequiredMixin, ExportListMixin, ListView):
         q = self.request.GET.get('q')
         if q:
             qs = qs.filter(arabic_search_q(('order_number', 'customer__name', 'customer__phone'), q))
+        qs, self.date_filter = filter_by_date_period(qs, self.request.GET, 'created_at__date')
         return qs
 
     def get_context_data(self, **kwargs):
@@ -118,6 +120,9 @@ class OrderListView(RoleRequiredMixin, ExportListMixin, ListView):
         context['is_quote_list'] = self.document_type == Order.DOCUMENT_QUOTE
         context['page_title'] = 'عروض السعر' if context['is_quote_list'] else 'الفواتير'
         context['empty_message'] = 'لا توجد عروض سعر' if context['is_quote_list'] else 'لا توجد فواتير'
+        context['invoice_section'] = 'quotes' if context['is_quote_list'] else 'sales'
+        context['period_choices'] = PERIOD_CHOICES
+        context['date_filter'] = getattr(self, 'date_filter', {})
         return context
 
 

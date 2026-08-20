@@ -90,3 +90,32 @@ class CustomerFeatureTests(TestCase):
         self.assertEqual(listed_customer.last_receipt_amount, Decimal('125.25'))
         self.assertContains(response, 'قيمة آخر فاتورة')
         self.assertContains(response, 'قيمة آخر قبض')
+
+    def test_customer_list_filters_by_cash_or_credit_transactions(self):
+        credit_customer = Customer.objects.create(name='عميل آجل', created_by=self.manager)
+        Order.objects.create(
+            order_number='ORD-CUSTOMER-CASH',
+            document_type=Order.DOCUMENT_SALE,
+            order_type=Order.TYPE_B2C,
+            customer=self.customer,
+            status=Order.STATUS_COMPLETED,
+            payment_method=Order.METHOD_CASH,
+            created_by=self.manager,
+        )
+        Order.objects.create(
+            order_number='ORD-CUSTOMER-CREDIT',
+            document_type=Order.DOCUMENT_SALE,
+            order_type=Order.TYPE_B2C,
+            customer=credit_customer,
+            status=Order.STATUS_COMPLETED,
+            payment_method=Order.METHOD_CREDIT,
+            created_by=self.manager,
+        )
+
+        cash_response = self.client.get(reverse('customers:simple_list'), {'payment_method': 'cash'})
+        credit_response = self.client.get(reverse('customers:simple_list'), {'payment_method': 'credit'})
+
+        self.assertContains(cash_response, self.customer.name)
+        self.assertNotContains(cash_response, credit_customer.name)
+        self.assertContains(credit_response, credit_customer.name)
+        self.assertNotContains(credit_response, self.customer.name)

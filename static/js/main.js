@@ -921,3 +921,22 @@ document.addEventListener("click", (event) => {
         advancedPanel.setAttribute("aria-hidden", isExpanded);
     }
 });
+document.addEventListener('change', function (event) {
+    const periodSelect = event.target.closest('[data-period-select]');
+    if (!periodSelect) return;
+    const fields = periodSelect.closest('[data-period-filter]')?.querySelector('[data-custom-period-fields]');
+    if (!fields) return;
+    const isCustom = periodSelect.value === 'custom';
+    fields.classList.toggle('is-open', isCustom);
+    fields.querySelectorAll('input').forEach((input) => { input.disabled = !isCustom; });
+    if (isCustom) fields.querySelector('input')?.focus();
+});
+
+document.querySelectorAll('[data-period-filter]').forEach((filter) => {
+    const select = filter.querySelector('[data-period-select]');
+    const fields = filter.querySelector('[data-custom-period-fields]');
+    if (!select || !fields) return;
+    const isCustom = select.value === 'custom';
+    fields.classList.toggle('is-open', isCustom);
+    fields.querySelectorAll('input').forEach((input) => { input.disabled = !isCustom; });
+});

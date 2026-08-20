@@ -1,11 +1,12 @@
 {% extends 'base.html' %}
+{% load arabic_dates %}
 {% block title %}تفاصيل الفاتورة{% endblock %}
 {% block content %}
 <div class="page-head"><h1>{{ order.order_number }}</h1><span class="badge">{{ order.invoice_kind_display }}</span></div>
 <section class="card detail-grid">
     <div><span>العميل</span><strong>{{ order.customer|default:'-' }}</strong></div>
     <div><span>النوع</span><strong>{{ order.invoice_kind_display }}</strong></div>
-    <div><span>التاريخ والوقت</span><strong>{{ order.created_at|date:'Y-m-d H:i' }}</strong></div>
+    <div><span>التاريخ والوقت</span><strong>{{ order.created_at|arabic_datetime }}</strong></div>
     <div><span>المخزن</span><strong>{{ order.warehouse|default:'متعدد حسب الأصناف' }}</strong></div>
     <div><span>الدفع</span><strong>{{ order.get_payment_method_display }}</strong></div>
     {% if order.payment_method == 'wallet_transfer' %}

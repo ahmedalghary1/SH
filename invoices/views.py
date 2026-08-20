@@ -10,6 +10,7 @@ from django.views.generic import DetailView, ListView, View
 
 from accounts.permissions import SalesRequiredMixin
 from config.search import arabic_search_q
+from config.date_ranges import PERIOD_CHOICES, filter_by_date_period
 from finance.models import PaymentTransaction
 from finance.services import collect_order_payment
 from orders.models import Order
@@ -76,11 +77,15 @@ class InvoiceListView(SalesRequiredMixin, ListView):
                 qs = qs.filter(order__payment_method=payment_method)
             if payment_status:
                 qs = qs.filter(order__payment_status=payment_status)
+        qs, self.date_filter = filter_by_date_period(qs, self.request.GET, 'issued_at__date')
         return qs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['filter_form'] = getattr(self, 'filter_form', InvoiceFilterForm(self.request.GET))
+        context['invoice_section'] = 'sales'
+        context['period_choices'] = PERIOD_CHOICES
+        context['date_filter'] = getattr(self, 'date_filter', {})
         return context
 
 
@@ -92,7 +97,7 @@ class InvoiceExportMixin:
         selected_ids = request.POST.getlist('invoice_ids') or request.GET.getlist('invoice_ids')
         if selected_ids:
             qs = qs.filter(pk__in=selected_ids)
-        form = InvoiceFilterForm(request.POST or request.GET)
+        form = InvoiceFilterForm(request.GET)
         if form.is_valid():
             q = form.cleaned_data.get('q')
             date_from = form.cleaned_data.get('date_from')
@@ -109,6 +114,7 @@ class InvoiceExportMixin:
                 qs = qs.filter(order__payment_method=payment_method)
             if payment_status:
                 qs = qs.filter(order__payment_status=payment_status)
+        qs, _ = filter_by_date_period(qs, request.GET, 'issued_at__date')
         return qs
 
 

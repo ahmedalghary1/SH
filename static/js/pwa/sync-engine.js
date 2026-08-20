@@ -66,6 +66,8 @@ const APP_SHELL_URLS = [
     "/finance/accounts/",
     "/finance/accounts/create/",
     "/finance/transactions/",
+    "/finance/transactions/?type=customer_payment",
+    "/finance/transactions/?type=expense",
     "/finance/transactions/expense/",
     "/finance/transactions/collection/",
     "/finance/transactions/supplier-payment/",
@@ -137,7 +139,7 @@ export async function cacheAppShell(extraUrls = []) {
     if (!("serviceWorker" in navigator)) return;
     const urls = uniqueUrls([
         ...APP_SHELL_URLS,
-        window.location.pathname,
+        `${window.location.pathname}${window.location.search}`,
         ...extraUrls,
     ]);
     if (!urls.length) return;

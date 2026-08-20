@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}تعديل سند الصرف{% endblock %}
+{% block content %}
+<div class="page-head">
+    <div><h1>تعديل سند الصرف</h1><p class="muted">سيُعاد احتساب رصيد الخزنة تلقائياً بعد الحفظ.</p></div>
+</div>
+<form method="post" class="card form-grid">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <div class="form-actions">
+        <button class="btn btn-primary" type="submit">حفظ التعديل</button>
+        <a class="btn btn-light" href="{% url 'finance:transactions' %}?type=expense">إلغاء</a>
+    </div>
+</form>
+{% endblock %}

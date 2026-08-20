@@ -1,4 +1,4 @@
-{% load static %}
+{% load static arabic_dates %}
 <section class="invoice-box receipt-invoice" dir="rtl">
     <header class="receipt-head">
         <img class="receipt-logo" src="{% static 'images/sh-family-Logo.png' %}" alt="{{ company_settings.company_name }}">
@@ -15,7 +15,7 @@
 
     <dl class="receipt-info">
         <div><dt>رقم الفاتورة</dt><dd>{{ invoice.invoice_number }}</dd></div>
-        <div><dt>التاريخ</dt><dd>{{ invoice.issued_at|date:'Y-m-d' }}</dd></div>
+        <div><dt>التاريخ</dt><dd>{{ invoice.issued_at|arabic_date }}</dd></div>
         <div><dt>الوقت</dt><dd>{{ invoice.issued_at|date:'H:i' }}</dd></div>
         <div><dt>الكاشير</dt><dd>{{ invoice.order.created_by|default:'-' }}</dd></div>
         <div><dt>العميل</dt><dd>{{ invoice.order.customer|default:'عميل نقدي' }}</dd></div>

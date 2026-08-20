@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load arabic_dates %}
 {% block title %}CRM العملاء{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -54,7 +55,7 @@
             <thead><tr><th>العميل</th><th>النوع</th><th>العنوان</th><th>الموظف</th><th>التاريخ</th></tr></thead>
             <tbody>
                 {% for interaction in recent_interactions %}
-                    <tr><td>{{ interaction.customer }}</td><td>{{ interaction.get_interaction_type_display }}</td><td>{{ interaction.title }}</td><td>{{ interaction.created_by|default:'-' }}</td><td>{{ interaction.created_at|date:'Y-m-d H:i' }}</td></tr>
+                    <tr><td>{{ interaction.customer }}</td><td>{{ interaction.get_interaction_type_display }}</td><td>{{ interaction.title }}</td><td>{{ interaction.created_by|default:'-' }}</td><td>{{ interaction.created_at|arabic_datetime }}</td></tr>
                 {% empty %}
                     <tr><td colspan="5">لا توجد تفاعلات</td></tr>
                 {% endfor %}

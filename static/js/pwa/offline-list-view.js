@@ -160,7 +160,7 @@ function renderOrders(queue, lookup, mode = "orders") {
             const { order } = orderPayload(item);
             if (mode === "quotes") return order.document_type === "quote";
             if (mode === "invoices") return order.document_type !== "quote";
-            return true;
+            return order.document_type !== "quote";
         })
         .map((item) => {
             const { order, items } = orderPayload(item);
@@ -341,13 +341,52 @@ function renderFinance(queue) {
         return;
     }
 
+    if (path.startsWith("/finance/transactions/collection/")) {
+        const rows = queue
+            .filter((item) => item.entity_name === "cash")
+            .filter((item) => (item.payload?.original_url || "").startsWith("/finance/transactions/collection/"))
+            .map((item) => {
+                const data = paymentData(item);
+                const recordedAt = data.transaction_date || item.timestamp;
+                return makeRow(item, [
+                    td(formatDate(recordedAt)),
+                    td(recordedAt ? new Date(recordedAt).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }) : "-"),
+                    td(data.customer || "عميل محلي"),
+                    td(money(data.amount)),
+                    td(data.cash_account || "-"),
+                    td(data.order || "-"),
+                    td(data.notes || "-"),
+                    td(badge(statusLabel(item))),
+                    td(badge("محلي"), "actions"),
+                ]);
+            });
+        insertRows(rows);
+        return;
+    }
+
+    const selectedType = new URLSearchParams(window.location.search).get("type") || "";
+    function inferredTransactionType(item, data) {
+        if (data.transaction_type) return data.transaction_type;
+        const originalUrl = item.payload?.original_url || "";
+        if (originalUrl.includes("/collection/")) return "customer_payment";
+        if (originalUrl.includes("/expense/")) return "expense";
+        if (originalUrl.includes("/supplier-payment/")) return "supplier_payment";
+        if (originalUrl.includes("/transfer/")) return "transfer";
+        return "";
+    }
+
     const rows = queue
         .filter((item) => item.entity_name === "cash" && !(item.payload?.original_url || "").startsWith("/finance/accounts/"))
+        .filter((item) => {
+            if (!selectedType) return true;
+            return inferredTransactionType(item, paymentData(item)) === selectedType;
+        })
         .map((item) => {
             const data = paymentData(item);
+            const transactionType = inferredTransactionType(item, data);
             return makeRow(item, [
-                td(data.transaction_type || item.action_type || "حركة مالية"),
-                td(Number(data.amount || 0) < 0 ? "خارج" : "داخل"),
+                td(transactionType || item.action_type || "حركة مالية"),
+                td(transactionType === "expense" || transactionType === "supplier_payment" ? "خارج" : "داخل"),
                 td(data.cash_account || data.from_account || "-"),
                 td(money(data.amount)),
                 td(data.order || "-"),
@@ -356,6 +395,7 @@ function renderFinance(queue) {
                 td(data.sales_rep || "-"),
                 td(data.transaction_date || formatDate(item.timestamp)),
                 td(badge(statusLabel(item))),
+                td(badge("محلي"), "actions"),
             ]);
         });
     insertRows(rows);
@@ -414,7 +454,11 @@ function purchaseData(item) {
 function renderPurchases(queue) {
     const rows = queue
         .filter((item) => item.entity_name === "purchases")
-        .filter((item) => !(item.payload?.original_url || "").includes("/ajax/quick-create-"))
+        .filter((item) => {
+            const originalUrl = item.payload?.original_url || "";
+            return originalUrl.startsWith("/purchases/orders/")
+                && !["/return/", "/pay/", "/receive/", "/cancel/", "/delete/"].some((part) => originalUrl.includes(part));
+        })
         .map((item) => {
             const data = purchaseData(item);
             const items = (() => {
@@ -431,6 +475,7 @@ function renderPurchases(queue) {
             return makeRow(item, [
                 td(localRef(item, "شراء")),
                 td(data.new_supplier_name || data.supplier_name || data.supplier || "مورد محلي"),
+                td(data.invoice_datetime ? formatDate(data.invoice_datetime) : formatDate(item.timestamp)),
                 td(badge(statusLabel(item))),
                 td(money(total)),
                 td(money(data.paid_amount || 0)),

@@ -13,6 +13,23 @@
             <span class="nav-arrow">‹</span>
         </a>
 
+        {% if request.user.is_manager or request.user.is_sales %}
+            <div class="nav-group">
+                <button class="nav-group-toggle" type="button" data-nav-group-toggle aria-expanded="false">
+                    <svg class="ui-icon color-blue"><use href="#icon-receipt"></use></svg>
+                    <span class="nav-text">قوائم الفواتير</span>
+                    <span class="nav-chevron" aria-hidden="true">‹</span>
+                </button>
+                <div class="nav-group-panel">
+                    <a class="nav-link" href="{% url 'orders:list' %}"><span class="nav-text">فواتير البيع</span><span class="nav-arrow">‹</span></a>
+                    {% if request.user.is_manager %}<a class="nav-link" href="{% url 'purchases:orders' %}"><span class="nav-text">شراء بضاعة</span><span class="nav-arrow">‹</span></a>{% endif %}
+                    <a class="nav-link" href="{% url 'orders:quote_list' %}"><span class="nav-text">عروض السعر</span><span class="nav-arrow">‹</span></a>
+                    {% if request.user.is_manager %}<a class="nav-link" href="{% url 'finance:transactions' %}?type=customer_payment"><span class="nav-text">سندات القبض</span><span class="nav-arrow">‹</span></a>{% else %}<a class="nav-link" href="{% url 'finance:collection_create' %}"><span class="nav-text">سندات القبض</span><span class="nav-arrow">‹</span></a>{% endif %}
+                    {% if request.user.is_manager %}<a class="nav-link" href="{% url 'finance:transactions' %}?type=expense"><span class="nav-text">سندات الصرف</span><span class="nav-arrow">‹</span></a>{% endif %}
+                </div>
+            </div>
+        {% endif %}
+
         {% if request.user.is_manager or request.user.is_warehouse %}
             <div class="nav-group">
                 <button class="nav-group-toggle" type="button" data-nav-group-toggle aria-expanded="false">
@@ -37,9 +54,6 @@
                     <span class="nav-chevron" aria-hidden="true">‹</span>
                 </button>
                 <div class="nav-group-panel">
-                    <a class="nav-link" href="{% url 'orders:list' %}"><span class="nav-text">الفواتير</span><span class="nav-arrow">‹</span></a>
-                    <a class="nav-link" href="{% url 'orders:quote_list' %}"><span class="nav-text">عروض السعر</span><span class="nav-arrow">‹</span></a>
-                    <a class="nav-link" href="{% url 'finance:collection_create' %}"><span class="nav-text">قبض من عميل</span><span class="nav-arrow">‹</span></a>
                     <a class="nav-link" href="{% url 'returns:list' %}"><span class="nav-text">المرتجع</span><span class="nav-arrow">‹</span></a>
                     <a class="nav-link" href="{% url 'customers:simple_list' %}"><span class="nav-text">العملاء</span><span class="nav-arrow">‹</span></a>
                 </div>
@@ -55,7 +69,6 @@
                 </button>
                 <div class="nav-group-panel">
                     <a class="nav-link" href="{% url 'purchases:simple_supplier_list' %}"><span class="nav-text">الموردين</span><span class="nav-arrow">‹</span></a>
-                    <a class="nav-link" href="{% url 'purchases:orders' %}"><span class="nav-text">شراء بضاعة</span><span class="nav-arrow">‹</span></a>
                     <a class="nav-link" href="{% url 'purchases:purchase_return' %}"><span class="nav-text">مرتجع شراء</span><span class="nav-arrow">‹</span></a>
                 </div>
             </div>

@@ -757,6 +757,22 @@ def delete_transaction(*, payment_transaction, user=None):
 
 
 @transaction.atomic
+def replace_expense(*, payment_transaction, amount, cash_account, user, notes='', transaction_date=None):
+    """Safely edit an expense by reversing the old entry then recording its replacement."""
+    payment_transaction = PaymentTransaction.objects.select_for_update().get(pk=payment_transaction.pk)
+    if payment_transaction.transaction_type != PaymentTransaction.TYPE_EXPENSE:
+        raise ValidationError('يمكن تعديل سندات الصرف فقط من هذه الصفحة')
+    delete_transaction(payment_transaction=payment_transaction, user=user)
+    return add_expense(
+        amount=amount,
+        cash_account=cash_account,
+        user=user,
+        notes=notes,
+        transaction_date=transaction_date,
+    )
+
+
+@transaction.atomic
 def replace_customer_payment(
     *,
     payment_transaction,

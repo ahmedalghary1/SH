@@ -1,6 +1,6 @@
 // Bump this whenever a cached shell asset changes so installed clients receive
 // the unified date/time UI and purchase invoice editor scripts immediately.
-const CACHE_VERSION = "sh-pwa-v2026-08-17-purchase-edit-datetime-01";
+const CACHE_VERSION = "sh-pwa-v2026-08-20-invoice-filter-datetime-02";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const OFFLINE_URL = "/offline/";
@@ -68,6 +68,8 @@ const APP_SHELL_PAGES = [
   "/finance/accounts/",
   "/finance/accounts/create/",
   "/finance/transactions/",
+  "/finance/transactions/?type=customer_payment",
+  "/finance/transactions/?type=expense",
   "/finance/transactions/expense/",
   "/finance/transactions/collection/",
   "/finance/transactions/supplier-payment/",
@@ -604,7 +606,9 @@ function cloneForCache(response) {
 }
 
 async function putInCache(cacheName, request, response) {
-  const stripSearch = isNavigationRequest(request) || isShellPageUrl(sameOriginUrl(request) || new URL(self.location.href));
+  const requestUrl = sameOriginUrl(request) || new URL(self.location.href);
+  // Preserve filtered page queries so receipt/expense/date views reopen correctly offline.
+  const stripSearch = !requestUrl.search && (isNavigationRequest(request) || isShellPageUrl(requestUrl));
   const cacheRequest = normalizedRequest(request, stripSearch);
   if (!shouldStoreResponse(cacheRequest, response)) return false;
   const cache = await caches.open(cacheName);
