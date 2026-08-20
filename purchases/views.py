@@ -14,6 +14,7 @@ from django.views.generic import CreateView, DetailView, FormView, ListView, Tem
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, WarehouseRequiredMixin, can_view_costs, role_required
 from config.delete_views import ManagerDeleteView
+from config.date_ranges import PERIOD_CHOICES, filter_by_date_period
 from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
@@ -371,7 +372,16 @@ class PurchaseOrderListView(ManagerRequiredMixin, ExportListMixin, ListView):
         status = self.request.GET.get('status')
         if status:
             qs = qs.filter(status=status)
+        qs, self.date_filter = filter_by_date_period(qs, self.request.GET, 'order_date')
         return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['invoice_section'] = 'purchases'
+        context['period_choices'] = PERIOD_CHOICES
+        context['date_filter'] = getattr(self, 'date_filter', {})
+        context['status_choices'] = PurchaseOrder.STATUS_CHOICES
+        return context
 
 
 class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):

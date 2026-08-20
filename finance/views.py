@@ -12,6 +12,7 @@ from django.views.generic import CreateView, DetailView, FormView, ListView, Tem
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, can_view_costs, SalesRequiredMixin
 from config.delete_views import ManagerDeleteView
+from config.date_ranges import PERIOD_CHOICES, filter_by_date_period
 from config.exports import ExportListMixin
 from customers.models import Customer
 from customers.services import visible_customers_for_user
@@ -19,7 +20,7 @@ from orders.models import Order
 
 from .forms import CashAccountForm, CashAccountStatementForm, CustomerCollectionForm, CustomerPaymentEditForm, ExpenseForm, SalesRepStatementForm, TransferForm, SupplierPaymentForm
 from .models import CashAccount, PaymentTransaction
-from .services import add_expense, build_cash_account_statement, build_customer_statement, collect_customer_balance_payment, collect_order_payment, delete_transaction, record_customer_allowed_discount, record_customer_payment, record_customer_refund_payment, record_supplier_payment, replace_customer_payment, transfer_between_accounts
+from .services import add_expense, build_cash_account_statement, build_customer_statement, collect_customer_balance_payment, collect_order_payment, delete_transaction, record_customer_allowed_discount, record_customer_payment, record_customer_refund_payment, record_supplier_payment, replace_customer_payment, replace_expense, transfer_between_accounts
 
 
 def _validation_error_message(exc):
@@ -326,12 +327,7 @@ class TransactionListView(ManagerRequiredMixin, ExportListMixin, ListView):
             qs = qs.filter(transaction_type=transaction_type)
         if direction:
             qs = qs.filter(direction=direction)
-        date_from = parse_date(self.request.GET.get('date_from', ''))
-        date_to = parse_date(self.request.GET.get('date_to', ''))
-        if date_from:
-            qs = qs.filter(transaction_date__gte=date_from)
-        if date_to:
-            qs = qs.filter(transaction_date__lte=date_to)
+        qs, self.date_filter = filter_by_date_period(qs, self.request.GET, 'transaction_date')
         return qs
 
     def get_context_data(self, **kwargs):
@@ -344,6 +340,19 @@ class TransactionListView(ManagerRequiredMixin, ExportListMixin, ListView):
             'date_from': self.request.GET.get('date_from', ''),
             'date_to': self.request.GET.get('date_to', ''),
         }
+        selected_type = self.request.GET.get('type', '')
+        context['invoice_section'] = (
+            'receipts' if selected_type == PaymentTransaction.TYPE_CUSTOMER_PAYMENT
+            else 'expenses' if selected_type == PaymentTransaction.TYPE_EXPENSE
+            else ''
+        )
+        context['page_title'] = (
+            'سندات القبض' if context['invoice_section'] == 'receipts'
+            else 'سندات الصرف' if context['invoice_section'] == 'expenses'
+            else 'الحركات المالية'
+        )
+        context['period_choices'] = PERIOD_CHOICES
+        context['date_filter'] = getattr(self, 'date_filter', {})
         return context
 
 
@@ -351,6 +360,12 @@ class PaymentTransactionDeleteView(ManagerDeleteView):
     model = PaymentTransaction
     success_url = reverse_lazy('finance:transactions')
     success_message = 'تم حذف الحركة المالية'
+
+    def get_queryset(self):
+        return super().get_queryset().filter(transaction_type__in=[
+            PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+            PaymentTransaction.TYPE_EXPENSE,
+        ])
 
     def form_valid(self, form):
         success_url = self.get_success_url()
@@ -415,18 +430,13 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
 
         customer_id = self.request.GET.get('customer', '').strip()
         cash_account_id = self.request.GET.get('cash_account', '').strip()
-        date_from = parse_date(self.request.GET.get('date_from', ''))
-        date_to = parse_date(self.request.GET.get('date_to', ''))
         query = self.request.GET.get('q', '').strip()
 
         if customer_id.isdigit():
             queryset = queryset.filter(related_customer_id=customer_id)
         if cash_account_id.isdigit():
             queryset = queryset.filter(cash_account_id=cash_account_id)
-        if date_from:
-            queryset = queryset.filter(transaction_date__gte=date_from)
-        if date_to:
-            queryset = queryset.filter(transaction_date__lte=date_to)
+        queryset, self.date_filter = filter_by_date_period(queryset, self.request.GET, 'transaction_date')
         if query:
             queryset = queryset.filter(
                 Q(related_customer__name__icontains=query)
@@ -461,6 +471,9 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
                 'date_to': self.request.GET.get('date_to', ''),
                 'q': self.request.GET.get('q', ''),
             },
+            'invoice_section': 'receipts',
+            'period_choices': PERIOD_CHOICES,
+            'date_filter': getattr(self, 'date_filter', {}),
         })
         return context
 
@@ -523,6 +536,55 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
                     )
             messages.success(self.request, 'تم تسجيل التحصيل')
             return redirect(self.success_url)
+        except ValidationError as exc:
+            form.add_error(None, _validation_error_message(exc))
+            return self.form_invalid(form)
+
+
+class ExpenseUpdateView(ManagerRequiredMixin, FormView):
+    template_name = 'finance/transactions/expense_edit.html'
+    form_class = ExpenseForm
+    success_url = reverse_lazy('finance:transactions')
+
+    def get_object(self):
+        return get_object_or_404(
+            PaymentTransaction.objects.select_related('cash_account'),
+            pk=self.kwargs['pk'],
+            transaction_type=PaymentTransaction.TYPE_EXPENSE,
+            direction=PaymentTransaction.DIRECTION_OUT,
+        )
+
+    def get_initial(self):
+        initial = super().get_initial()
+        expense = self.get_object()
+        transaction_datetime = datetime.combine(expense.transaction_date, expense.transaction_time)
+        if timezone.is_naive(transaction_datetime):
+            transaction_datetime = timezone.make_aware(transaction_datetime, timezone.get_current_timezone())
+        initial.update({
+            'cash_account': expense.cash_account_id,
+            'amount': expense.amount,
+            'transaction_date': transaction_datetime,
+            'notes': expense.notes or '',
+        })
+        return initial
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['expense'] = self.get_object()
+        return context
+
+    def form_valid(self, form):
+        try:
+            replace_expense(
+                payment_transaction=self.get_object(),
+                amount=form.cleaned_data['amount'],
+                cash_account=form.cleaned_data['cash_account'],
+                transaction_date=form.cleaned_data['transaction_date'],
+                notes=form.cleaned_data.get('notes') or '',
+                user=self.request.user,
+            )
+            messages.success(self.request, 'تم تعديل سند الصرف وإعادة احتساب أثره المالي')
+            return redirect(f"{self.success_url}?type={PaymentTransaction.TYPE_EXPENSE}")
         except ValidationError as exc:
             form.add_error(None, _validation_error_message(exc))
             return self.form_invalid(form)

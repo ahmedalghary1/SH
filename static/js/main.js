@@ -921,3 +921,14 @@ document.addEventListener("click", (event) => {
         advancedPanel.setAttribute("aria-hidden", isExpanded);
     }
 });
+document.addEventListener('click', function (event) {
+    const customPeriodButton = event.target.closest('[data-custom-period]');
+    if (!customPeriodButton) return;
+    const periodFilter = customPeriodButton.closest('[data-period-filter]');
+    const fields = periodFilter && periodFilter.querySelector('[data-custom-period-fields]');
+    if (fields) {
+        fields.classList.toggle('is-open');
+        customPeriodButton.classList.toggle('is-active', fields.classList.contains('is-open'));
+        if (fields.classList.contains('is-open')) fields.querySelector('input')?.focus();
+    }
+});

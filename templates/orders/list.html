@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load arabic_dates %}
 {% block title %}{{ page_title }}{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -15,10 +16,13 @@
         </a>
     {% endif %}
 </div>
+{% include 'partials/invoice_navigation.html' %}
 {% include 'partials/export_buttons.html' %}
-<form class="filters">
-    <input name="q" placeholder="رقم الطلب أو العميل" value="{{ request.GET.q }}">
-    <button class="btn btn-primary">بحث</button>
+<form class="filters invoice-filters" method="get">
+    <input name="q" placeholder="رقم الفاتورة أو اسم العميل" value="{{ request.GET.q }}">
+    {% include 'partials/date_period_filter.html' %}
+    <button class="btn btn-primary">تصفية</button>
+    <a class="btn btn-light" href="{% if is_quote_list %}{% url 'orders:quote_list' %}{% else %}{% url 'orders:list' %}{% endif %}">إعادة ضبط</a>
 </form>
 <div class="table-wrap">
     <table>
@@ -44,11 +48,11 @@
                     <td>{{ order.get_payment_method_display }}</td>
                     <td>{{ order.total }}</td>
                     <td>{{ order.discount }}</td>
-                    <td>{{ order.created_at|date:'Y-m-d H:i' }}</td>
+                    <td>{{ order.created_at|arabic_datetime }}</td>
                     <td>{{ order.created_by|default:'-' }}</td>
                     <td>
                         <a class="btn btn-light" href="{% url 'orders:detail' order.pk %}">عرض</a>
-                        {% if order.status == 'draft' %}
+                        {% if request.user.is_manager %}
                             <a class="btn btn-light" href="{% url 'orders:update' order.pk %}">تعديل</a>
                         {% endif %}
                         {% if request.user.can_hard_delete %}

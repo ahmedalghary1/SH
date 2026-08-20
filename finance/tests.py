@@ -21,6 +21,7 @@ from .services import (
     record_customer_refund_payment,
     record_order_sale_payment,
     transfer_between_accounts,
+    replace_expense,
 )
 
 
@@ -62,6 +63,22 @@ class FinanceServiceTests(TestCase):
 
         self.cash.refresh_from_db()
         self.assertEqual(self.cash.balance, Decimal('1000.00'))
+
+    def test_replace_expense_reverses_old_value_and_applies_new_value(self):
+        expense = add_expense(amount=Decimal('150.00'), cash_account=self.cash, user=self.user)
+
+        replacement = replace_expense(
+            payment_transaction=expense,
+            amount=Decimal('90.00'),
+            cash_account=self.cash,
+            user=self.user,
+            notes='Corrected expense',
+        )
+
+        self.cash.refresh_from_db()
+        self.assertEqual(self.cash.balance, Decimal('910.00'))
+        self.assertFalse(PaymentTransaction.objects.filter(pk=expense.pk).exists())
+        self.assertEqual(replacement.amount, Decimal('90.00'))
 
     def test_expense_form_requires_cash_account_to_deduct_from(self):
         form = ExpenseForm(data={

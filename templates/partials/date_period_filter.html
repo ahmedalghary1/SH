@@ -1,0 +1,15 @@
+<div class="period-filter" data-period-filter>
+    <div class="period-filter__quick" role="group" aria-label="اختيار الفترة">
+        {% for value, label in period_choices %}
+            {% if value != 'custom' %}
+                <button type="submit" name="period" value="{{ value }}" class="period-chip{% if date_filter.period == value %} is-active{% endif %}">{{ label }}</button>
+            {% endif %}
+        {% endfor %}
+        <button type="button" class="period-chip{% if date_filter.period == 'custom' %} is-active{% endif %}" data-custom-period>مخصص</button>
+    </div>
+    <div class="period-filter__custom{% if date_filter.period == 'custom' %} is-open{% endif %}" data-custom-period-fields>
+        <label>من <input type="date" name="date_from" value="{{ date_filter.date_from_value }}" aria-label="من تاريخ"></label>
+        <label>إلى <input type="date" name="date_to" value="{{ date_filter.date_to_value }}" aria-label="إلى تاريخ"></label>
+        <button class="btn btn-primary" type="submit" name="period" value="custom">تطبيق الفترة</button>
+    </div>
+</div>

@@ -1,16 +1,18 @@
 {% extends 'base.html' %}
-{% block title %}الحركات المالية{% endblock %}
+{% load arabic_dates %}
+{% block title %}{{ page_title }}{% endblock %}
 {% block content %}
 <div class="page-head">
-    <h1>الحركات المالية</h1>
+    <h1>{{ page_title }}</h1>
     <div class="actions">
         <a class="btn btn-primary" href="{% url 'finance:collection_create' %}">تحصيل</a>
         <a class="btn btn-light" href="{% url 'finance:expense_create' %}">مصروف</a>
         <a class="btn btn-light" href="{% url 'finance:transfer' %}">تحويل</a>
     </div>
 </div>
+{% include 'partials/invoice_navigation.html' %}
 {% include 'partials/export_buttons.html' %}
-<form method="get" class="filters">
+<form method="get" class="filters invoice-filters">
     <select name="type">
         <option value="">كل أنواع الحركات</option>
         {% for value, label in transaction_type_choices %}
@@ -23,14 +25,13 @@
             <option value="{{ value }}" {% if filters.direction == value %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
     </select>
-    <input type="date" name="date_from" value="{{ filters.date_from }}">
-    <input type="date" name="date_to" value="{{ filters.date_to }}">
+    {% include 'partials/date_period_filter.html' %}
     <button class="btn btn-primary" type="submit">تصفية</button>
     <a class="btn btn-light" href="{% url 'finance:transactions' %}">إعادة ضبط</a>
 </form>
 <div class="table-wrap card">
     <table>
-        <thead><tr><th>النوع</th><th>الاتجاه</th><th>الحساب</th><th>المبلغ</th><th>الطلب</th><th>العميل</th><th>المورد</th><th>المندوب</th><th>تاريخ الحركة</th><th>وقت التسجيل</th></tr></thead>
+        <thead><tr><th>النوع</th><th>الاتجاه</th><th>الحساب</th><th>المبلغ</th><th>الطلب</th><th>العميل</th><th>المورد</th><th>المندوب</th><th>تاريخ الحركة</th><th>وقت التسجيل</th><th>إجراءات</th></tr></thead>
         <tbody>
         {% for tx in transactions %}
             <tr>
@@ -42,11 +43,16 @@
                 <td>{{ tx.related_customer|default:'-' }}</td>
                 <td>{% if tx.related_supplier %}{{ tx.related_supplier }}{% elif tx.related_supplier_name %}{{ tx.related_supplier_name }}{% else %}-{% endif %}</td>
                 <td>{{ tx.related_sales_rep|default:'-' }}</td>
-                <td>{{ tx.transaction_date|date:'Y-m-d' }} {{ tx.transaction_time|time:'H:i' }}</td>
-                <td>{{ tx.created_at|date:'Y-m-d H:i' }}</td>
+                <td>{{ tx.transaction_date|arabic_date }}، {{ tx.transaction_time|arabic_time }}</td>
+                <td>{{ tx.created_at|arabic_datetime }}</td>
+                <td class="actions">
+                    {% if tx.transaction_type == 'customer_payment' %}<a class="btn btn-light" href="{% url 'finance:collection_update' tx.pk %}">تعديل</a>{% endif %}
+                    {% if tx.transaction_type == 'expense' %}<a class="btn btn-light" href="{% url 'finance:expense_update' tx.pk %}">تعديل</a>{% endif %}
+                    {% if request.user.can_hard_delete and tx.transaction_type == 'customer_payment' or request.user.can_hard_delete and tx.transaction_type == 'expense' %}<a class="btn btn-danger" href="{% url 'finance:transaction_delete' tx.pk %}">حذف</a>{% endif %}
+                </td>
             </tr>
         {% empty %}
-            <tr><td colspan="10">لا توجد حركات مالية</td></tr>
+            <tr><td colspan="11">لا توجد حركات مالية</td></tr>
         {% endfor %}
         </tbody>
     </table>

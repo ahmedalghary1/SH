@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load arabic_dates %}
 {% block title %}العملاء{% endblock %}
 {% block content %}
 <div class="simple-customers-page">
@@ -29,6 +30,14 @@
                         <option value="">الكل</option>
                         <option value="yes" {% if request.GET.debt == 'yes' %}selected{% endif %}>عليهم مديونية</option>
                         <option value="no" {% if request.GET.debt == 'no' %}selected{% endif %}>بدون مديونية</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>السداد</label>
+                    <select name="payment_method">
+                        <option value="">الكل</option>
+                        <option value="cash" {% if request.GET.payment_method == 'cash' %}selected{% endif %}>نقدي</option>
+                        <option value="credit" {% if request.GET.payment_method == 'credit' %}selected{% endif %}>آجل</option>
                     </select>
                 </div>
                 <div class="filter-group"><label>ترتيب الرصيد</label><select name="sort"><option value="">الأحدث</option><option value="-balance" {% if sort == '-balance' %}selected{% endif %}>الأعلى أولًا</option><option value="balance" {% if sort == 'balance' %}selected{% endif %}>الأقل أولًا</option></select></div>
@@ -72,11 +81,11 @@
                         <td class="balance {% if customer.current_balance > 0 %}positive{% elif customer.current_balance < 0 %}negative{% endif %}">
                             {{ customer.current_balance|default:0 }}
                         </td>
-                        <td>{{ customer.last_sale_at|date:'Y-m-d H:i'|default:'-' }}</td>
+                        <td>{{ customer.last_sale_at|arabic_datetime|default:'-' }}</td>
                         <td class="purchases">{{ customer.last_invoice_value|default:'-' }}</td>
                         <td>
                             {% if customer.last_receipt_date %}
-                                {{ customer.last_receipt_date|date:'Y-m-d' }} {{ customer.last_receipt_time|time:'H:i' }}
+                                {{ customer.last_receipt_date|arabic_date }}، {{ customer.last_receipt_time|arabic_time }}
                             {% else %}-{% endif %}
                         </td>
                         <td class="credit">{{ customer.last_receipt_amount|default:'-' }}</td>

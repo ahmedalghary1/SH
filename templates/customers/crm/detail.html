@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load arabic_dates %}
 {% block title %}CRM {{ customer.name }}{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -72,10 +73,10 @@
             <thead><tr><th>النوع</th><th>القيمة</th><th>الحالة/الحساب</th><th>التاريخ</th></tr></thead>
             <tbody>
                 {% for payment in payments %}
-                    <tr><td>{{ payment.get_transaction_type_display }}</td><td>{{ payment.amount }}</td><td>{{ payment.cash_account }}</td><td>{{ payment.transaction_date|date:'Y-m-d' }} {{ payment.transaction_time|time:'H:i' }}</td></tr>
+                    <tr><td>{{ payment.get_transaction_type_display }}</td><td>{{ payment.amount }}</td><td>{{ payment.cash_account }}</td><td>{{ payment.transaction_date|arabic_date }}، {{ payment.transaction_time|arabic_time }}</td></tr>
                 {% endfor %}
                 {% for sales_return in returns %}
-                    <tr><td>مرتجع</td><td>{{ sales_return.refund_amount }}</td><td>{{ sales_return.get_status_display }}</td><td>{{ sales_return.created_at|date:'Y-m-d H:i' }}</td></tr>
+                    <tr><td>مرتجع</td><td>{{ sales_return.refund_amount }}</td><td>{{ sales_return.get_status_display }}</td><td>{{ sales_return.created_at|arabic_datetime }}</td></tr>
                 {% empty %}
                     {% if not payments %}<tr><td colspan="4">لا توجد مدفوعات أو مرتجعات</td></tr>{% endif %}
                 {% endfor %}

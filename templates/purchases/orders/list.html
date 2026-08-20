@@ -1,20 +1,31 @@
 {% extends 'base.html' %}
+{% load arabic_dates %}
 {% block title %}شراء بضاعة{% endblock %}
 {% block content %}
 <div class="page-head">
     <h1>شراء بضاعة</h1>
     <a class="btn btn-primary" href="{% url 'purchases:order_create' %}">شراء مباشر</a>
 </div>
+{% include 'partials/invoice_navigation.html' %}
 {% include 'partials/export_buttons.html' %}
+<form class="filters invoice-filters" method="get">
+    <select name="status" aria-label="حالة فاتورة الشراء">
+        <option value="">كل الحالات</option>
+        {% for value, label in status_choices %}<option value="{{ value }}"{% if request.GET.status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    {% include 'partials/date_period_filter.html' %}
+    <button class="btn btn-primary" type="submit">تصفية</button>
+    <a class="btn btn-light" href="{% url 'purchases:orders' %}">إعادة ضبط</a>
+</form>
 <div class="table-wrap card">
     <table>
         <thead><tr><th>الرقم</th><th>المورد</th><th>التاريخ والوقت</th><th>الحالة</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th></th></tr></thead>
         <tbody>
         {% for po in purchase_orders %}
             <tr>
-                <td>{{ po.purchase_number }}</td><td>{{ po.supplier }}</td><td>{{ po.created_at|date:'Y-m-d H:i' }}</td><td>{{ po.get_status_display }}</td>
+                <td>{{ po.purchase_number }}</td><td>{{ po.supplier }}</td><td>{{ po.created_at|arabic_datetime }}</td><td>{{ po.get_status_display }}</td>
                 <td>{{ po.total_amount }}</td><td>{{ po.paid_amount }}</td><td>{{ po.remaining_amount }}</td>
-                <td><a class="btn btn-light" href="{% url 'purchases:order_detail' po.pk %}">التفاصيل</a> <a class="btn btn-light" href="{% url 'purchases:order_update' po.pk %}">تعديل</a></td>
+                <td class="actions"><a class="btn btn-light" href="{% url 'purchases:order_detail' po.pk %}">التفاصيل</a> <a class="btn btn-light" href="{% url 'purchases:order_update' po.pk %}">تعديل</a> {% if request.user.can_hard_delete %}<a class="btn btn-danger" href="{% url 'purchases:order_delete' po.pk %}">حذف</a>{% endif %}</td>
             </tr>
         {% empty %}
             <tr><td colspan="8">لا توجد عمليات شراء</td></tr>

@@ -1,4 +1,4 @@
-{% load static %}
+{% load static arabic_dates %}
 <section class="invoice-box screen-invoice" dir="rtl">
     <header class="screen-invoice-head">
         <div class="screen-invoice-brand">
@@ -12,7 +12,7 @@
         <div class="screen-invoice-number">
             <span>فاتورة</span>
             <strong>{{ invoice.invoice_number }}</strong>
-            <p>{{ invoice.issued_at|date:'Y-m-d H:i' }}</p>
+            <p>{{ invoice.issued_at|arabic_datetime }}</p>
         </div>
     </header>
 
