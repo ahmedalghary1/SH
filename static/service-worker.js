@@ -1,6 +1,6 @@
 // Bump this whenever a cached shell asset changes so installed clients receive
-// the unified date/time UI and purchase invoice editor scripts immediately.
-const CACHE_VERSION = "sh-pwa-v2026-08-20-invoice-filter-datetime-02";
+// the latest dashboard shortcuts and shell assets immediately.
+const CACHE_VERSION = "sh-pwa-v2026-08-20-dashboard-products-03";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const OFFLINE_URL = "/offline/";

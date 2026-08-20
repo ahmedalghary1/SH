@@ -55,6 +55,7 @@ class DashboardView(RoleRequiredMixin, TemplateView):
                 {'label': 'إدخال مخزون', 'href': reverse('inventory:stock_in'), 'icon': 'icon-plus'},
                 {'label': 'تحويل مخزون', 'href': reverse('inventory:transfer'), 'icon': 'icon-arrow'},
                 {'label': 'تسليم مندوب', 'href': reverse('inventory:representative_issue'), 'icon': 'icon-users'},
+                {'label': 'المنتجات', 'href': reverse('products:list'), 'icon': 'icon-box'},
                 {'label': 'المخزون', 'href': reverse('inventory:stock'), 'icon': 'icon-warehouse'},
             ]
             context.update({
