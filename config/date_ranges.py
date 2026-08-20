@@ -88,7 +88,6 @@ def resolve_date_period(params, today=None):
     if datetime_from and datetime_to and datetime_to < datetime_from:
         datetime_from, datetime_to = datetime_to, datetime_from
         date_from, date_to = datetime_from.date(), datetime_to.date()
-
     return {
         'period': period,
         'date_from': date_from,
