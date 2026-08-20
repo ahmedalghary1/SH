@@ -3190,6 +3190,12 @@ tbody tr:hover {
     --action-border: #a5f3fc;
 }
 
+.quick-action-btn.action-products {
+    --action-color: #c2410c;
+    --action-bg: #fff7ed;
+    --action-border: #fdba74;
+}
+
 .quick-action-btn.action-report,
 .stat-icon.profit {
     --action-color: #4338ca;
