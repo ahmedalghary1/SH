@@ -8,6 +8,8 @@ from django.db import DataError, IntegrityError, transaction
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 
+from config.search import normalize_arabic
+
 from .models import Product, ProductVariant
 
 
@@ -33,6 +35,14 @@ def _normalize_arabic_digits(value):
 
 def _clean_text(value):
     return str(value).translate(str.maketrans('', '', INVISIBLE_TEXT_MARKS)).strip()
+
+
+def _sku_duplicate_key(value):
+    return _normalize_arabic_digits(_clean_text(value)).casefold()
+
+
+def _name_duplicate_key(value):
+    return normalize_arabic(_clean_text(value))
 
 
 def _normalized_header(value):
@@ -149,6 +159,7 @@ def import_products_workbook(uploaded_file):
 
         parsed_rows = []
         file_skus = set()
+        file_names = set()
         result = ProductImportResult()
 
         for excel_row_number, row in enumerate(rows, start=2):
@@ -180,10 +191,12 @@ def import_products_workbook(uploaded_file):
             if len(season) > 100:
                 row_errors.append('السنة أطول من 100 حرف')
 
-            if sku and sku in file_skus:
+            sku_key = _sku_duplicate_key(sku) if sku else ''
+            name_key = _name_duplicate_key(name) if name else ''
+            if sku_key and sku_key in file_skus:
                 row_errors.append('الكود مكرر داخل الملف')
-            elif sku:
-                file_skus.add(sku)
+            if name_key and name_key in file_names:
+                row_errors.append('اسم الصنف مكرر داخل الملف')
 
             try:
                 cost_price = _parse_price(cell_for('cost_price').value if cell_for('cost_price') else None)
@@ -206,6 +219,8 @@ def import_products_workbook(uploaded_file):
                 result.errors.append(f'الصف {excel_row_number}: ' + '، '.join(row_errors))
                 continue
 
+            file_skus.add(sku_key)
+            file_names.add(name_key)
             parsed_rows.append({
                 'row_number': excel_row_number,
                 'sku': sku,
@@ -219,15 +234,19 @@ def import_products_workbook(uploaded_file):
         if not parsed_rows and not result.errors:
             raise ProductImportFileError('لا توجد بيانات منتجات تحت صف العناوين.')
 
-        existing_skus = set(
-            Product.objects.filter(sku__in=[values['sku'] for values in parsed_rows])
-            .values_list('sku', flat=True)
-        )
+        existing_products = Product.objects.values_list('sku', 'name')
+        existing_skus = {_sku_duplicate_key(sku) for sku, _ in existing_products}
+        existing_names = {_name_duplicate_key(name) for _, name in existing_products}
         new_rows = []
         for values in parsed_rows:
-            if values['sku'] in existing_skus:
+            duplicate_reasons = []
+            if _sku_duplicate_key(values['sku']) in existing_skus:
+                duplicate_reasons.append('الكود موجود بالفعل في النظام')
+            if _name_duplicate_key(values['name']) in existing_names:
+                duplicate_reasons.append('اسم الصنف موجود بالفعل في النظام')
+            if duplicate_reasons:
                 result.skipped_count += 1
-                result.errors.append(f"الصف {values['row_number']}: الكود موجود بالفعل في النظام")
+                result.errors.append(f"الصف {values['row_number']}: " + '، '.join(duplicate_reasons))
             else:
                 new_rows.append(values)
         parsed_rows = new_rows

@@ -112,6 +112,31 @@ class ProductImportViewTests(TestCase):
         self.assertEqual(existing.name, 'الاسم القديم')
         self.assertContains(response, 'الكود موجود بالفعل في النظام')
 
+    def test_duplicate_names_in_file_are_skipped_even_with_different_spelling(self):
+        product_file = product_import_file([
+            [1, 'NAME-1', 'عباءة موديل', 40, 50, 60, 2026],
+            [2, 'NAME-2', 'عباءه موديل', 45, 55, 65, 2026],
+        ])
+
+        response = self.client.post(reverse('products:import'), {'product_file': product_file})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Product.objects.filter(sku='NAME-1').exists())
+        self.assertFalse(Product.objects.filter(sku='NAME-2').exists())
+        self.assertContains(response, 'اسم الصنف مكرر داخل الملف')
+
+    def test_existing_product_name_is_not_imported_with_another_code(self):
+        Product.objects.create(name='عباءة مميزة', sku='OLD-NAME')
+        product_file = product_import_file([
+            [1, 'NEW-NAME', 'عباءه مميزه', 40, 50, 60, 2026],
+        ])
+
+        response = self.client.post(reverse('products:import'), {'product_file': product_file})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Product.objects.filter(sku='NEW-NAME').exists())
+        self.assertContains(response, 'اسم الصنف موجود بالفعل في النظام')
+
     def test_wrong_headers_are_rejected(self):
         product_file = product_import_file(
             [[1, 'P-1', 'منتج']],
