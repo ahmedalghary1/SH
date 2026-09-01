@@ -84,6 +84,21 @@ class ProductImportViewTests(TestCase):
         self.assertContains(response, 'تم استيراد <strong>1</strong> منتج', html=True)
         self.assertContains(response, 'الصف 3')
 
+    def test_import_normalizes_arabic_digits_in_sku_season_and_prices(self):
+        product_file = product_import_file([
+            ['١', '٠٠٨', 'صنف بأرقام عربية', '٨٠٫٥٠', '١٠٠', '١٢٥٫٧٥', '٢٠٢٦'],
+        ])
+
+        response = self.client.post(reverse('products:import'), {'product_file': product_file})
+
+        self.assertRedirects(response, reverse('products:list'))
+        product = Product.objects.get(sku='008')
+        self.assertEqual(product.season, '2026')
+        variant = product.variants.get()
+        self.assertEqual(variant.cost_price, Decimal('80.50'))
+        self.assertEqual(variant.wholesale_price, Decimal('100.00'))
+        self.assertEqual(variant.retail_price, Decimal('125.75'))
+
     def test_existing_sku_is_skipped_without_overwriting_product(self):
         existing = Product.objects.create(name='الاسم القديم', sku='DUP-1')
         product_file = product_import_file([

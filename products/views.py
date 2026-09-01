@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
@@ -25,6 +26,7 @@ from .importer import ProductImportFileError, import_products_workbook
 from .models import Category, Color, Product, ProductVariant, Size
 
 
+logger = logging.getLogger(__name__)
 MAX_DATABASE_INTEGER = 2_147_483_647
 
 
@@ -111,6 +113,13 @@ class ProductImportView(ManagerRequiredMixin, View):
             result = import_products_workbook(form.cleaned_data['product_file'])
         except ProductImportFileError as exc:
             form.add_error('product_file', str(exc))
+            return render(request, self.template_name, {'form': form})
+        except Exception:
+            logger.exception('Unexpected product Excel import failure')
+            form.add_error(
+                'product_file',
+                'تعذر إكمال الاستيراد. تأكد من تنسيق الملف ثم حاول مجددًا؛ تم تسجيل تفاصيل الخطأ للمراجعة.',
+            )
             return render(request, self.template_name, {'form': form})
 
         if result.created_count:

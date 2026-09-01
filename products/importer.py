@@ -1,9 +1,10 @@
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, DecimalException, InvalidOperation
 from xml.etree.ElementTree import ParseError
 from zipfile import BadZipFile
 
-from django.db import transaction
+from django.core.exceptions import ValidationError
+from django.db import DataError, IntegrityError, transaction
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 
@@ -12,6 +13,7 @@ from .models import Product, ProductVariant
 
 MAX_IMPORT_ROWS = 5000
 MAX_PRICE = Decimal('99999999.99')
+INVISIBLE_TEXT_MARKS = '\ufeff\u200b\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e'
 
 
 class ProductImportFileError(ValueError):
@@ -29,11 +31,16 @@ def _normalize_arabic_digits(value):
     return str(value).translate(str.maketrans('٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'))
 
 
+def _clean_text(value):
+    return str(value).translate(str.maketrans('', '', INVISIBLE_TEXT_MARKS)).strip()
+
+
 def _normalized_header(value):
-    text = _normalize_arabic_digits(value or '').strip().replace('\u0640', '')
+    text = _normalize_arabic_digits(_clean_text(value or '')).replace('\u0640', '')
     text = ' '.join(text.split())
     aliases = {
         'م': 'serial',
+        'م.': 'serial',
         'الكود': 'sku',
         'كود': 'sku',
         'اسم الصنف': 'name',
@@ -54,7 +61,7 @@ def _normalized_header(value):
     return aliases.get(text)
 
 
-def _cell_text(cell, *, max_length):
+def _cell_text(cell, *, max_length, normalize_digits=False):
     value = cell.value
     if value is None:
         return ''
@@ -68,7 +75,10 @@ def _cell_text(cell, *, max_length):
     elif isinstance(value, float) and value.is_integer():
         text = str(int(value))
     else:
-        text = str(value).strip()
+        text = _clean_text(value)
+    text = _clean_text(text)
+    if normalize_digits:
+        text = _normalize_arabic_digits(text)
     return text[:max_length + 1]
 
 
@@ -93,7 +103,10 @@ def _parse_price(value):
         raise ValueError('السعر غير صحيح')
     if not price.is_finite() or price < 0 or price > MAX_PRICE:
         raise ValueError('السعر يجب أن يكون بين 0 و 99,999,999.99')
-    return price.quantize(Decimal('0.01'))
+    try:
+        return price.quantize(Decimal('0.01'))
+    except DecimalException:
+        raise ValueError('السعر غير صحيح')
 
 
 def _variant_sku_for(product_sku):
@@ -150,10 +163,10 @@ def import_products_workbook(uploaded_file):
 
             sku_cell = cell_for('sku')
             name_cell = cell_for('name')
-            sku = _cell_text(sku_cell, max_length=100) if sku_cell else ''
+            sku = _cell_text(sku_cell, max_length=100, normalize_digits=True) if sku_cell else ''
             name = _cell_text(name_cell, max_length=200) if name_cell else ''
             season_cell = cell_for('season')
-            season = _cell_text(season_cell, max_length=100) if season_cell else ''
+            season = _cell_text(season_cell, max_length=100, normalize_digits=True) if season_cell else ''
 
             row_errors = []
             if not sku:
@@ -219,23 +232,32 @@ def import_products_workbook(uploaded_file):
                 new_rows.append(values)
         parsed_rows = new_rows
 
-        with transaction.atomic():
-            for values in parsed_rows:
-                product = Product.objects.create(
-                    name=values['name'],
-                    sku=values['sku'],
-                    season=values['season'],
-                    retail_price=values['retail_price'],
-                    wholesale_price=values['wholesale_price'],
+        for values in parsed_rows:
+            try:
+                # Each row has its own transaction. A bad row is rolled back
+                # completely without cancelling products imported before it.
+                with transaction.atomic():
+                    product = Product.objects.create(
+                        name=values['name'],
+                        sku=values['sku'],
+                        season=values['season'],
+                        retail_price=values['retail_price'],
+                        wholesale_price=values['wholesale_price'],
+                    )
+                    ProductVariant.objects.create(
+                        product=product,
+                        variant_sku=_variant_sku_for(product.sku),
+                        cost_price=values['cost_price'],
+                        sale_price=values['retail_price'],
+                        retail_price=values['retail_price'],
+                        wholesale_price=values['wholesale_price'],
+                    )
+            except (IntegrityError, DataError, ValidationError, ValueError):
+                result.skipped_count += 1
+                result.errors.append(
+                    f"الصف {values['row_number']}: تعذر حفظ المنتج؛ راجع الكود والأسعار ثم حاول مجددًا"
                 )
-                ProductVariant.objects.create(
-                    product=product,
-                    variant_sku=_variant_sku_for(product.sku),
-                    cost_price=values['cost_price'],
-                    sale_price=values['retail_price'],
-                    retail_price=values['retail_price'],
-                    wholesale_price=values['wholesale_price'],
-                )
+            else:
                 result.created_count += 1
 
         return result
