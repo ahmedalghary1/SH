@@ -39,12 +39,14 @@ class ProductForm(forms.ModelForm):
 
     class Meta:
         model = Product
-        fields = ('name', 'sku', 'category', 'material', 'pieces_per_dozen', 'image')
+        fields = ('name', 'sku', 'category', 'agent', 'material', 'season', 'pieces_per_dozen', 'image')
         labels = {
             'name': 'اسم المنتج',
             'sku': 'كود المنتج',
             'category': 'التصنيف',
+            'agent': 'الوكيل',
             'material': 'الخامة',
+            'season': 'السنة',
             'pieces_per_dozen': 'عدد القطع في الدستة',
             'image': 'صورة المنتج',
         }
@@ -52,7 +54,9 @@ class ProductForm(forms.ModelForm):
             'name': forms.TextInput(attrs={'placeholder': 'اكتب اسم المنتج', 'list': 'product-name-options'}),
             'sku': forms.TextInput(attrs={'placeholder': 'مثال: 001'}),
             'category': forms.Select(attrs={'data-filterable-select': 'true'}),
+            'agent': forms.TextInput(attrs={'placeholder': 'اسم الوكيل'}),
             'material': forms.TextInput(attrs={'placeholder': 'مثال: قطن'}),
+            'season': forms.TextInput(attrs={'placeholder': 'مثال: 2026'}),
             'pieces_per_dozen': forms.NumberInput(attrs={'min': '1', 'step': '1', 'placeholder': '12'}),
         }
 
@@ -83,6 +87,23 @@ class ProductForm(forms.ModelForm):
             product.save()
             self.save_m2m()
         return product
+
+
+class ProductImportForm(forms.Form):
+    product_file = forms.FileField(
+        label='ملف Excel',
+        help_text='الملفات المدعومة: XLSX و XLSM، بحد أقصى 5 ميجابايت.',
+        widget=forms.ClearableFileInput(attrs={'accept': '.xlsx,.xlsm'}),
+    )
+
+    def clean_product_file(self):
+        product_file = self.cleaned_data['product_file']
+        extension = product_file.name.rsplit('.', 1)[-1].lower() if '.' in product_file.name else ''
+        if extension not in {'xlsx', 'xlsm'}:
+            raise forms.ValidationError('اختر ملف Excel بصيغة XLSX أو XLSM.')
+        if product_file.size > 5 * 1024 * 1024:
+            raise forms.ValidationError('حجم الملف أكبر من الحد المسموح (5 ميجابايت).')
+        return product_file
 
 
 class ProductVariantForm(forms.ModelForm):

@@ -39,6 +39,7 @@ class Product(models.Model):
     name = models.CharField(max_length=200, db_index=True)
     sku = models.CharField(max_length=100, unique=True, db_index=True)
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True)
+    agent = models.CharField(max_length=200, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     material = models.CharField(max_length=100, blank=True, null=True)
     season = models.CharField(max_length=100, blank=True, null=True)

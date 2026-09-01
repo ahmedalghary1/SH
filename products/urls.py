@@ -23,6 +23,7 @@ urlpatterns = [
     path('variants/<int:pk>/deactivate/', views.ProductVariantDeactivateView.as_view(), name='variant_deactivate'),
     path('variants/<int:pk>/delete/', views.ProductVariantDeleteView.as_view(), name='variant_delete'),
     path('bulk-price-update/', views.BulkPriceUpdateView.as_view(), name='bulk_price_update'),
+    path('import/', views.ProductImportView.as_view(), name='import'),
     path('create/', views.ProductCreateView.as_view(), name='create'),
     path('<int:pk>/movement-report/', views.ProductMovementReportView.as_view(), name='movement_report'),
     path('<int:pk>/', views.ProductDetailView.as_view(), name='detail'),

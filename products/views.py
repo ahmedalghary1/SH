@@ -20,7 +20,8 @@ from inventory.models import StockMovement
 from inventory.services import adjust_stock, stock_in, transfer_stock
 from orders.models import Order, OrderItem
 
-from .forms import CategoryForm, ColorForm, InitialProductVariantForm, InitialStockForm, ProductForm, ProductVariantForm, SizeForm
+from .forms import CategoryForm, ColorForm, InitialProductVariantForm, InitialStockForm, ProductForm, ProductImportForm, ProductVariantForm, SizeForm
+from .importer import ProductImportFileError, import_products_workbook
 from .models import Category, Color, Product, ProductVariant, Size
 
 
@@ -62,8 +63,12 @@ class ProductListView(RoleRequiredMixin, ExportListMixin, ListView):
     export_columns = (
         ('اسم المنتج', 'name'),
         ('كود المنتج', 'sku'),
+        ('الوكيل', 'agent'),
         ('التصنيف', 'category'),
         ('الخامة', 'material'),
+        ('السنة', 'season'),
+        ('سعر الجملة', 'wholesale_price'),
+        ('سعر القطاعي', 'retail_price'),
         ('عدد القطع في الدستة', 'pieces_per_dozen'),
         ('عدد الألوان/المقاسات', 'variant_count'),
         ('الكمية المتاحة', 'total_quantity'),
@@ -79,7 +84,7 @@ class ProductListView(RoleRequiredMixin, ExportListMixin, ListView):
         category = self.request.GET.get('category')
         status = self.request.GET.get('status')
         if q:
-            qs = qs.filter(arabic_search_q(('name', 'sku'), q))
+            qs = qs.filter(arabic_search_q(('name', 'sku', 'agent'), q))
         if category:
             qs = qs.filter(category_id=category)
         if status in {'active', 'inactive'}:
@@ -90,6 +95,33 @@ class ProductListView(RoleRequiredMixin, ExportListMixin, ListView):
         context = super().get_context_data(**kwargs)
         context['categories'] = Category.objects.filter(is_active=True)
         return context
+
+
+class ProductImportView(ManagerRequiredMixin, View):
+    template_name = 'products/import.html'
+
+    def get(self, request):
+        return render(request, self.template_name, {'form': ProductImportForm()})
+
+    def post(self, request):
+        form = ProductImportForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return render(request, self.template_name, {'form': form})
+
+        try:
+            result = import_products_workbook(form.cleaned_data['product_file'])
+        except ProductImportFileError as exc:
+            form.add_error('product_file', str(exc))
+            return render(request, self.template_name, {'form': form})
+
+        if result.created_count:
+            messages.success(request, f'تم استيراد {result.created_count} منتج بنجاح.')
+        if not result.errors:
+            return redirect('products:list')
+        return render(request, self.template_name, {
+            'form': ProductImportForm(),
+            'result': result,
+        })
 
 
 class ProductDetailView(RoleRequiredMixin, DetailView):

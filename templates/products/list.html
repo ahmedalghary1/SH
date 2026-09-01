@@ -6,6 +6,10 @@
     <h1>المنتجات</h1>
     {% if request.user.is_manager %}
         <div class="button-row">
+            <a class="btn btn-secondary" href="{% url 'products:import' %}">
+                <svg class="ui-icon"><use href="#icon-plus"></use></svg>
+                استيراد من Excel
+            </a>
             <a class="btn btn-secondary" href="{% url 'products:bulk_price_update' %}">
                 <svg class="ui-icon"><use href="#icon-chart"></use></svg>
                 تحديث الأسعار
@@ -21,7 +25,7 @@
 
     <form class="simple-filters">
         <div class="filter-group">
-            <input name="q" placeholder="بحث بالاسم أو الكود..." value="{{ request.GET.q }}">
+            <input name="q" placeholder="بحث بالاسم أو الكود أو الوكيل..." value="{{ request.GET.q }}">
         </div>
         <div class="filter-group">
             <select name="category">

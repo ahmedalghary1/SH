@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}استيراد المنتجات من Excel{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>استيراد المنتجات من Excel</h1>
+    <a class="btn btn-light" href="{% url 'products:list' %}">رجوع للمنتجات</a>
+</div>
+
+<section class="card">
+    <h2>تنسيق الملف</h2>
+    <p>ضع العناوين في الصف الأول بهذا الترتيب، ويبدأ الجدول من اليمين:</p>
+    <div class="table-wrap" dir="rtl">
+        <table>
+            <thead><tr><th>م</th><th>الكود</th><th>اسم الصنف</th><th>الوكيل</th><th>الجملة</th><th>القطاعي</th><th>السنه</th></tr></thead>
+            <tbody><tr><td>1</td><td>001</td><td>اسم المنتج</td><td>اسم الوكيل</td><td>100</td><td>120</td><td>2026</td></tr></tbody>
+        </table>
+    </div>
+    <p class="helptext">يتم تجاهل عمود «م». يجب أن يكون الكود فريدًا، والأسعار أرقامًا موجبة أو صفرًا. الحد الأقصى 5000 منتج.</p>
+</section>
+
+<form method="post" enctype="multipart/form-data" class="card form-grid">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <label>
+        <span>{{ form.product_file.label }}</span>
+        {{ form.product_file }}
+        {% if form.product_file.help_text %}<small class="helptext">{{ form.product_file.help_text }}</small>{% endif %}
+        {% if form.product_file.errors %}<small class="error">{{ form.product_file.errors|join:', ' }}</small>{% endif %}
+    </label>
+    <div class="form-actions span-all">
+        <button class="btn btn-primary" type="submit">بدء الاستيراد</button>
+    </div>
+</form>
+
+{% if result %}
+<section class="card">
+    <h2>نتيجة الاستيراد</h2>
+    <p>تم استيراد <strong>{{ result.created_count }}</strong> منتج، وتم تخطي <strong>{{ result.skipped_count }}</strong> صف.</p>
+    {% if result.errors %}
+        <div class="form-errors">
+            <strong>الصفوف التي تحتاج إلى مراجعة:</strong>
+            <ul>{% for error in result.errors|slice:':100' %}<li>{{ error }}</li>{% endfor %}</ul>
+            {% if result.errors|length > 100 %}<p>يتم عرض أول 100 خطأ فقط.</p>{% endif %}
+        </div>
+    {% endif %}
+</section>
+{% endif %}
+{% endblock %}

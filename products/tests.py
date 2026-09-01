@@ -1,13 +1,121 @@
 from decimal import Decimal
+from io import BytesIO
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
+from openpyxl import Workbook
 
 from accounts.models import User
 from config.pdf_utils import shape_arabic
 from inventory.models import Stock, StockBatch, StockMovement, Warehouse
 
 from .models import Category, Color, Product, ProductVariant, Size
+
+
+def product_import_file(rows, headers=None, *, right_to_left=True, filename='products.xlsx'):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.sheet_view.rightToLeft = right_to_left
+    sheet.append(headers or ['م', 'الكود', 'اسم الصنف', 'الوكيل', 'الجملة', 'القطاعي', 'السنه'])
+    for row in rows:
+        sheet.append(row)
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return SimpleUploadedFile(
+        filename,
+        output.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+
+
+class ProductImportViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='import-manager', password='pass', role=User.ROLE_MANAGER)
+        self.client.force_login(self.user)
+
+    def test_products_page_has_excel_import_action(self):
+        response = self.client.get(reverse('products:list'))
+
+        self.assertContains(response, reverse('products:import'))
+        self.assertContains(response, 'استيراد من Excel')
+
+    def test_import_creates_product_and_default_variant_from_rtl_sheet(self):
+        # Excel number formatting is commonly used to retain leading zeros in codes.
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.sheet_view.rightToLeft = True
+        sheet.append(['م', 'الكود', 'اسم الصنف', 'الوكيل', 'الجملة', 'القطاعي', 'السنه'])
+        sheet.append([1, 7, 'صنف تجريبي', 'وكيل القاهرة', 100, 125.5, 2026])
+        sheet['B2'].number_format = '000'
+        output = BytesIO()
+        workbook.save(output)
+        workbook.close()
+        product_file = SimpleUploadedFile('products.xlsx', output.getvalue())
+
+        response = self.client.post(reverse('products:import'), {'product_file': product_file})
+
+        self.assertRedirects(response, reverse('products:list'))
+        product = Product.objects.get(sku='007')
+        self.assertEqual(product.name, 'صنف تجريبي')
+        self.assertEqual(product.agent, 'وكيل القاهرة')
+        self.assertEqual(product.season, '2026')
+        self.assertEqual(product.wholesale_price, Decimal('100.00'))
+        self.assertEqual(product.retail_price, Decimal('125.50'))
+        variant = product.variants.get()
+        self.assertIsNone(variant.color)
+        self.assertIsNone(variant.size)
+        self.assertEqual(variant.sale_price, Decimal('125.50'))
+        self.assertEqual(variant.retail_price, Decimal('125.50'))
+        self.assertEqual(variant.wholesale_price, Decimal('100.00'))
+
+    def test_invalid_row_is_skipped_while_valid_rows_are_imported(self):
+        product_file = product_import_file([
+            [1, 'OK-1', 'صنف صحيح', 'وكيل', '50', '60', '2026'],
+            [2, 'BAD-1', '', 'وكيل', 'not-a-price', '70', '2026'],
+        ])
+
+        response = self.client.post(reverse('products:import'), {'product_file': product_file})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Product.objects.filter(sku='OK-1').exists())
+        self.assertFalse(Product.objects.filter(sku='BAD-1').exists())
+        self.assertContains(response, 'تم استيراد <strong>1</strong> منتج', html=True)
+        self.assertContains(response, 'الصف 3')
+
+    def test_existing_sku_is_skipped_without_overwriting_product(self):
+        existing = Product.objects.create(name='الاسم القديم', sku='DUP-1')
+        product_file = product_import_file([
+            [1, 'DUP-1', 'الاسم الجديد', 'وكيل', 50, 60, 2026],
+        ])
+
+        response = self.client.post(reverse('products:import'), {'product_file': product_file})
+
+        self.assertEqual(response.status_code, 200)
+        existing.refresh_from_db()
+        self.assertEqual(existing.name, 'الاسم القديم')
+        self.assertContains(response, 'الكود موجود بالفعل في النظام')
+
+    def test_wrong_headers_are_rejected(self):
+        product_file = product_import_file(
+            [[1, 'P-1', 'منتج']],
+            headers=['م', 'الكود', 'اسم الصنف'],
+        )
+
+        response = self.client.post(reverse('products:import'), {'product_file': product_file})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'عناوين الصف الأول غير صحيحة')
+        self.assertFalse(Product.objects.exists())
+
+    def test_non_manager_cannot_open_import_page(self):
+        warehouse_user = User.objects.create_user(username='warehouse-import', password='pass', role=User.ROLE_WAREHOUSE)
+        self.client.force_login(warehouse_user)
+
+        response = self.client.get(reverse('products:import'))
+
+        self.assertEqual(response.status_code, 403)
 
 
 class BulkPriceUpdateViewTests(TestCase):
