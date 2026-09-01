@@ -38,8 +38,10 @@ def _normalized_header(value):
         'كود': 'sku',
         'اسم الصنف': 'name',
         'اسم المنتج': 'name',
-        'الوكيل': 'agent',
-        'وكيل': 'agent',
+        'سعر القطعة الرئيسي': 'cost_price',
+        'سعر القطعه الرئيسي': 'cost_price',
+        'سعر القطعة الرئيسى': 'cost_price',
+        'سعر القطعه الرئيسى': 'cost_price',
         'الجملة': 'wholesale_price',
         'سعر الجملة': 'wholesale_price',
         'القطاعي': 'retail_price',
@@ -124,12 +126,12 @@ def import_products_workbook(uploaded_file):
             if key and key not in columns:
                 columns[key] = index
 
-        required = {'serial', 'sku', 'name', 'agent', 'wholesale_price', 'retail_price', 'season'}
+        required = {'serial', 'sku', 'name', 'cost_price', 'wholesale_price', 'retail_price', 'season'}
         missing = required - columns.keys()
         if missing:
             raise ProductImportFileError(
                 'عناوين الصف الأول غير صحيحة. الترتيب المطلوب من اليمين: '
-                'م - الكود - اسم الصنف - الوكيل - الجملة - القطاعي - السنه.'
+                'م - الكود - اسم الصنف - سعر القطعة الرئيسي - الجملة - القطاعي - السنه.'
             )
 
         parsed_rows = []
@@ -150,9 +152,7 @@ def import_products_workbook(uploaded_file):
             name_cell = cell_for('name')
             sku = _cell_text(sku_cell, max_length=100) if sku_cell else ''
             name = _cell_text(name_cell, max_length=200) if name_cell else ''
-            agent_cell = cell_for('agent')
             season_cell = cell_for('season')
-            agent = _cell_text(agent_cell, max_length=200) if agent_cell else ''
             season = _cell_text(season_cell, max_length=100) if season_cell else ''
 
             row_errors = []
@@ -164,8 +164,6 @@ def import_products_workbook(uploaded_file):
                 row_errors.append('اسم الصنف مطلوب')
             elif len(name) > 200:
                 row_errors.append('اسم الصنف أطول من 200 حرف')
-            if len(agent) > 200:
-                row_errors.append('اسم الوكيل أطول من 200 حرف')
             if len(season) > 100:
                 row_errors.append('السنة أطول من 100 حرف')
 
@@ -174,6 +172,11 @@ def import_products_workbook(uploaded_file):
             elif sku:
                 file_skus.add(sku)
 
+            try:
+                cost_price = _parse_price(cell_for('cost_price').value if cell_for('cost_price') else None)
+            except ValueError as exc:
+                cost_price = None
+                row_errors.append(f'سعر القطعة الرئيسي: {exc}')
             try:
                 wholesale_price = _parse_price(cell_for('wholesale_price').value if cell_for('wholesale_price') else None)
             except ValueError as exc:
@@ -194,8 +197,8 @@ def import_products_workbook(uploaded_file):
                 'row_number': excel_row_number,
                 'sku': sku,
                 'name': name,
-                'agent': agent or None,
                 'season': season or None,
+                'cost_price': cost_price,
                 'wholesale_price': wholesale_price,
                 'retail_price': retail_price,
             })
@@ -221,7 +224,6 @@ def import_products_workbook(uploaded_file):
                 product = Product.objects.create(
                     name=values['name'],
                     sku=values['sku'],
-                    agent=values['agent'],
                     season=values['season'],
                     retail_price=values['retail_price'],
                     wholesale_price=values['wholesale_price'],
@@ -229,7 +231,7 @@ def import_products_workbook(uploaded_file):
                 ProductVariant.objects.create(
                     product=product,
                     variant_sku=_variant_sku_for(product.sku),
-                    cost_price=0,
+                    cost_price=values['cost_price'],
                     sale_price=values['retail_price'],
                     retail_price=values['retail_price'],
                     wholesale_price=values['wholesale_price'],

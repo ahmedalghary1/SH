@@ -39,12 +39,11 @@ class ProductForm(forms.ModelForm):
 
     class Meta:
         model = Product
-        fields = ('name', 'sku', 'category', 'agent', 'material', 'season', 'pieces_per_dozen', 'image')
+        fields = ('name', 'sku', 'category', 'material', 'season', 'pieces_per_dozen', 'image')
         labels = {
             'name': 'اسم المنتج',
             'sku': 'كود المنتج',
             'category': 'التصنيف',
-            'agent': 'الوكيل',
             'material': 'الخامة',
             'season': 'السنة',
             'pieces_per_dozen': 'عدد القطع في الدستة',
@@ -54,7 +53,6 @@ class ProductForm(forms.ModelForm):
             'name': forms.TextInput(attrs={'placeholder': 'اكتب اسم المنتج', 'list': 'product-name-options'}),
             'sku': forms.TextInput(attrs={'placeholder': 'مثال: 001'}),
             'category': forms.Select(attrs={'data-filterable-select': 'true'}),
-            'agent': forms.TextInput(attrs={'placeholder': 'اسم الوكيل'}),
             'material': forms.TextInput(attrs={'placeholder': 'مثال: قطن'}),
             'season': forms.TextInput(attrs={'placeholder': 'مثال: 2026'}),
             'pieces_per_dozen': forms.NumberInput(attrs={'min': '1', 'step': '1', 'placeholder': '12'}),

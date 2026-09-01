@@ -63,7 +63,6 @@ class ProductListView(RoleRequiredMixin, ExportListMixin, ListView):
     export_columns = (
         ('اسم المنتج', 'name'),
         ('كود المنتج', 'sku'),
-        ('الوكيل', 'agent'),
         ('التصنيف', 'category'),
         ('الخامة', 'material'),
         ('السنة', 'season'),
@@ -84,7 +83,7 @@ class ProductListView(RoleRequiredMixin, ExportListMixin, ListView):
         category = self.request.GET.get('category')
         status = self.request.GET.get('status')
         if q:
-            qs = qs.filter(arabic_search_q(('name', 'sku', 'agent'), q))
+            qs = qs.filter(arabic_search_q(('name', 'sku'), q))
         if category:
             qs = qs.filter(category_id=category)
         if status in {'active', 'inactive'}:

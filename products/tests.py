@@ -17,7 +17,7 @@ def product_import_file(rows, headers=None, *, right_to_left=True, filename='pro
     workbook = Workbook()
     sheet = workbook.active
     sheet.sheet_view.rightToLeft = right_to_left
-    sheet.append(headers or ['م', 'الكود', 'اسم الصنف', 'الوكيل', 'الجملة', 'القطاعي', 'السنه'])
+    sheet.append(headers or ['م', 'الكود', 'اسم الصنف', 'سعر القطعة الرئيسي', 'الجملة', 'القطاعي', 'السنه'])
     for row in rows:
         sheet.append(row)
     output = BytesIO()
@@ -46,8 +46,8 @@ class ProductImportViewTests(TestCase):
         workbook = Workbook()
         sheet = workbook.active
         sheet.sheet_view.rightToLeft = True
-        sheet.append(['م', 'الكود', 'اسم الصنف', 'الوكيل', 'الجملة', 'القطاعي', 'السنه'])
-        sheet.append([1, 7, 'صنف تجريبي', 'وكيل القاهرة', 100, 125.5, 2026])
+        sheet.append(['م', 'الكود', 'اسم الصنف', 'سعر القطعة الرئيسي', 'الجملة', 'القطاعي', 'السنه'])
+        sheet.append([1, 7, 'صنف تجريبي', 80, 100, 125.5, 2026])
         sheet['B2'].number_format = '000'
         output = BytesIO()
         workbook.save(output)
@@ -59,21 +59,21 @@ class ProductImportViewTests(TestCase):
         self.assertRedirects(response, reverse('products:list'))
         product = Product.objects.get(sku='007')
         self.assertEqual(product.name, 'صنف تجريبي')
-        self.assertEqual(product.agent, 'وكيل القاهرة')
         self.assertEqual(product.season, '2026')
         self.assertEqual(product.wholesale_price, Decimal('100.00'))
         self.assertEqual(product.retail_price, Decimal('125.50'))
         variant = product.variants.get()
         self.assertIsNone(variant.color)
         self.assertIsNone(variant.size)
+        self.assertEqual(variant.cost_price, Decimal('80.00'))
         self.assertEqual(variant.sale_price, Decimal('125.50'))
         self.assertEqual(variant.retail_price, Decimal('125.50'))
         self.assertEqual(variant.wholesale_price, Decimal('100.00'))
 
     def test_invalid_row_is_skipped_while_valid_rows_are_imported(self):
         product_file = product_import_file([
-            [1, 'OK-1', 'صنف صحيح', 'وكيل', '50', '60', '2026'],
-            [2, 'BAD-1', '', 'وكيل', 'not-a-price', '70', '2026'],
+            [1, 'OK-1', 'صنف صحيح', '40', '50', '60', '2026'],
+            [2, 'BAD-1', '', '30', 'not-a-price', '70', '2026'],
         ])
 
         response = self.client.post(reverse('products:import'), {'product_file': product_file})
@@ -87,7 +87,7 @@ class ProductImportViewTests(TestCase):
     def test_existing_sku_is_skipped_without_overwriting_product(self):
         existing = Product.objects.create(name='الاسم القديم', sku='DUP-1')
         product_file = product_import_file([
-            [1, 'DUP-1', 'الاسم الجديد', 'وكيل', 50, 60, 2026],
+            [1, 'DUP-1', 'الاسم الجديد', 40, 50, 60, 2026],
         ])
 
         response = self.client.post(reverse('products:import'), {'product_file': product_file})

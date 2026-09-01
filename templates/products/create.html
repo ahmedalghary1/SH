@@ -51,12 +51,6 @@
     </label>
 
     <label>
-        <span>{{ product_form.agent.label }}</span>
-        {{ product_form.agent }}
-        {% if product_form.agent.errors %}<small class="error">{{ product_form.agent.errors|join:', ' }}</small>{% endif %}
-    </label>
-
-    <label>
         <span>{{ product_form.season.label }}</span>
         {{ product_form.season }}
         {% if product_form.season.errors %}<small class="error">{{ product_form.season.errors|join:', ' }}</small>{% endif %}
