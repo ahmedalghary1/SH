@@ -2,6 +2,7 @@ from django import forms
 
 from inventory.models import Warehouse
 from .models import Category, Color, Product, ProductVariant, Size
+from config.branching import branch_context_is_set, get_current_branch_id
 
 
 class CategoryForm(forms.ModelForm):
@@ -24,6 +25,15 @@ class ColorForm(forms.ModelForm):
         }
 
 
+    def clean_name(self):
+        name = self.cleaned_data['name'].strip()
+        branch_id = self.instance.branch_id or get_current_branch_id()
+        duplicate = Color.all_objects.filter(branch_id=branch_id, name=name).exclude(pk=self.instance.pk)
+        if branch_id and duplicate.exists():
+            raise forms.ValidationError('هذا اللون موجود بالفعل في المعرض.')
+        return name
+
+
 class SizeForm(forms.ModelForm):
     class Meta:
         model = Size
@@ -32,6 +42,15 @@ class SizeForm(forms.ModelForm):
             'name': 'اسم المقاس',
             'sort_order': 'ترتيب العرض',
         }
+
+
+    def clean_name(self):
+        name = self.cleaned_data['name'].strip()
+        branch_id = self.instance.branch_id or get_current_branch_id()
+        duplicate = Size.all_objects.filter(branch_id=branch_id, name=name).exclude(pk=self.instance.pk)
+        if branch_id and duplicate.exists():
+            raise forms.ValidationError('هذا المقاس موجود بالفعل في المعرض.')
+        return name
 
 
 class ProductForm(forms.ModelForm):
@@ -67,6 +86,17 @@ class ProductForm(forms.ModelForm):
         if not cleaned.get('category') and not (cleaned.get('new_category_name') or '').strip():
             self.add_error('category', 'اختر التصنيف أو اكتب تصنيف جديد')
         return cleaned
+
+    def clean_sku(self):
+        sku = self.cleaned_data['sku'].strip()
+        branch_id = self.instance.branch_id or get_current_branch_id()
+        if not branch_id and not branch_context_is_set():
+            from config.branching import get_default_branch_id
+            branch_id = get_default_branch_id()
+        duplicate = Product.all_objects.filter(branch_id=branch_id, sku=sku).exclude(pk=self.instance.pk)
+        if branch_id and duplicate.exists():
+            raise forms.ValidationError('كود المنتج موجود بالفعل في هذا المعرض.')
+        return sku
 
     def save(self, commit=True):
         product = super().save(commit=False)

@@ -2,13 +2,15 @@ from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
 from config.django_compat import check_constraint
+from config.branching import BranchOwnedModel
 from django.utils import timezone
 
 from customers.models import Customer
 from orders.models import Order
 
 
-class CashAccount(models.Model):
+class CashAccount(BranchOwnedModel):
+    branch_relations = ('assigned_user',)
     TYPE_CASH = 'cash'
     TYPE_BANK = 'bank'
     TYPE_WALLET = 'wallet'
@@ -76,7 +78,8 @@ class CashAccount(models.Model):
         return cls.get_default()
 
 
-class PaymentTransaction(models.Model):
+class PaymentTransaction(BranchOwnedModel):
+    branch_relations = ('cash_account', 'related_order', 'related_customer', 'related_supplier')
     TYPE_CUSTOMER_PAYMENT = 'customer_payment'
     TYPE_SUPPLIER_PAYMENT = 'supplier_payment'
     TYPE_EXPENSE = 'expense'
@@ -153,3 +156,10 @@ class PaymentTransaction(models.Model):
 
     def __str__(self):
         return f'{self.get_transaction_type_display()} - {self.amount}'
+
+    def infer_branch_id(self):
+        if self.cash_account_id:
+            return self.cash_account.branch_id
+        if self.related_order_id:
+            return self.related_order.branch_id
+        return None

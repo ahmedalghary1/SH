@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block title %}&#1576;&#1610;&#1575;&#1606;&#1575;&#1578; &#1575;&#1604;&#1605;&#1593;&#1585;&#1590;{% endblock %}
+{% block content %}
+<div class="page-head"><h1>&#1576;&#1610;&#1575;&#1606;&#1575;&#1578; &#1575;&#1604;&#1605;&#1593;&#1585;&#1590;</h1></div>
+<form method="post" class="card form-card">{% csrf_token %}{{ form.as_p }}
+    <button class="btn btn-primary" type="submit">&#1581;&#1601;&#1592;</button>
+    <a class="btn btn-light" href="{% url 'accounts:branch_list' %}">&#1585;&#1580;&#1608;&#1593;</a>
+</form>
+{% endblock %}

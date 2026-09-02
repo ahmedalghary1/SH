@@ -2,13 +2,15 @@ from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from config.django_compat import check_constraint
+from config.branching import BranchOwnedModel
 
 from customers.models import Customer
 from inventory.models import StockBatch, Warehouse
 from products.models import ProductVariant
 
 
-class Order(models.Model):
+class Order(BranchOwnedModel):
+    branch_relations = ('customer', 'warehouse')
     DOCUMENT_SALE = 'sale'
     DOCUMENT_QUOTE = 'quote'
     DOCUMENT_SAMPLE = 'sample'
@@ -66,7 +68,7 @@ class Order(models.Model):
         (METHOD_CREDIT, 'آجل'),
     ]
 
-    order_number = models.CharField(max_length=50, unique=True, db_index=True)
+    order_number = models.CharField(max_length=50, db_index=True)
     document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPE_CHOICES, default=DOCUMENT_SALE, db_index=True)
     order_type = models.CharField(max_length=10, choices=ORDER_TYPE_CHOICES)
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True)
@@ -106,6 +108,7 @@ class Order(models.Model):
             models.Index(fields=['created_at']),
         ]
         constraints = [
+            models.UniqueConstraint(fields=['branch', 'order_number'], name='orders_order_branch_number_unique'),
             check_constraint(check=models.Q(discount_amount__gte=0), name='orders_order_discount_amount_gte_0'),
             check_constraint(check=models.Q(discount_percentage__gte=0, discount_percentage__lte=100), name='orders_order_discount_percentage_0_100'),
             check_constraint(check=models.Q(subtotal__gte=0), name='orders_order_subtotal_gte_0'),
@@ -115,6 +118,13 @@ class Order(models.Model):
             check_constraint(check=models.Q(paid_amount__gte=0), name='orders_order_paid_amount_gte_0'),
             check_constraint(check=models.Q(remaining_amount__gte=0), name='orders_order_remaining_amount_gte_0'),
         ]
+
+    def infer_branch_id(self):
+        if self.warehouse_id:
+            return self.warehouse.branch_id
+        if self.customer_id:
+            return self.customer.branch_id
+        return None
 
     def __str__(self):
         return self.order_number
@@ -146,7 +156,8 @@ class Order(models.Model):
         return (self.gross_profit / self.total) * 100
 
 
-class OrderItem(models.Model):
+class OrderItem(BranchOwnedModel):
+    branch_relations = ('order', 'variant', 'warehouse', 'stock_batch')
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
     variant = models.ForeignKey(ProductVariant, on_delete=models.SET_NULL, null=True)
     warehouse = models.ForeignKey(Warehouse, on_delete=models.SET_NULL, null=True, blank=True)
@@ -179,6 +190,9 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f'{self.order.order_number} - {self.variant}'
+
+    def infer_branch_id(self):
+        return self.order.branch_id if self.order_id else None
 
     @property
     def item_total(self):

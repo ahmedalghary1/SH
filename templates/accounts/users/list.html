@@ -13,7 +13,7 @@
         {% for user in users %}
             <tr>
                 <td>{{ user.username }}</td>
-                <td>{{ user.get_role_display }}</td>
+                <td>{{ user.get_role_display }}<br><small>{{ user.branch.name|default:'-' }}</small></td>
                 <td>{{ user.phone|default:'-' }}</td>
                 <td><span class="badge {% if user.is_active %}success{% else %}danger{% endif %}">{% if user.is_active %}نشط{% else %}معطل{% endif %}</span></td>
                 <td class="actions">

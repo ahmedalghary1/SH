@@ -101,6 +101,7 @@ def _request_user_and_client():
 def _write_log(sender, instance, action, before=None, after=None):
     user, ip_address, user_agent = _request_user_and_client()
     log_audit(
+        branch=getattr(instance, 'branch_id', None),
         user=user,
         action=action,
         section=_section_for(sender),

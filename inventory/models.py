@@ -2,11 +2,13 @@ from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
 from config.django_compat import check_constraint
+from config.branching import BranchOwnedModel
 
 from products.models import ProductVariant
 
 
-class Warehouse(models.Model):
+class Warehouse(BranchOwnedModel):
+    branch_relations = ('assigned_user',)
     TYPE_MAIN = 'main'
     TYPE_STORE = 'store'
     TYPE_REPRESENTATIVE = 'representative'
@@ -32,7 +34,8 @@ class Warehouse(models.Model):
         return self.name
 
 
-class Stock(models.Model):
+class Stock(BranchOwnedModel):
+    branch_relations = ('warehouse', 'variant')
     warehouse = models.ForeignKey(Warehouse, on_delete=models.CASCADE)
     variant = models.ForeignKey(ProductVariant, on_delete=models.CASCADE)
     quantity = models.IntegerField(default=0, validators=[MinValueValidator(0)])
@@ -45,7 +48,7 @@ class Stock(models.Model):
             models.Index(fields=['quantity']),
         ]
         constraints = [
-            models.UniqueConstraint(fields=['warehouse', 'variant'], name='stock_warehouse_variant_unique'),
+            models.UniqueConstraint(fields=['branch', 'warehouse', 'variant'], name='stock_warehouse_variant_unique'),
             check_constraint(check=models.Q(quantity__gte=0), name='stock_quantity_non_negative'),
             check_constraint(check=models.Q(min_quantity__gte=0), name='stock_min_quantity_non_negative'),
         ]
@@ -53,12 +56,16 @@ class Stock(models.Model):
     def __str__(self):
         return f'{self.warehouse} - {self.variant}: {self.quantity}'
 
+    def infer_branch_id(self):
+        return self.warehouse.branch_id if self.warehouse_id else None
+
     @property
     def is_low(self):
         return self.quantity <= self.min_quantity
 
 
-class StockBatch(models.Model):
+class StockBatch(BranchOwnedModel):
+    branch_relations = ('warehouse', 'variant')
     variant = models.ForeignKey(ProductVariant, on_delete=models.CASCADE, related_name='stock_batches')
     warehouse = models.ForeignKey(Warehouse, on_delete=models.CASCADE, related_name='stock_batches')
     received_quantity = models.PositiveIntegerField(default=0)
@@ -79,8 +86,12 @@ class StockBatch(models.Model):
     def __str__(self):
         return f'{self.variant} - {self.unit_cost} - {self.remaining_quantity}'
 
+    def infer_branch_id(self):
+        return self.warehouse.branch_id if self.warehouse_id else None
 
-class StockMovement(models.Model):
+
+class StockMovement(BranchOwnedModel):
+    branch_relations = ('variant', 'from_warehouse', 'to_warehouse', 'batch')
     TYPE_OPENING_BALANCE = 'opening_balance'
     TYPE_IN = 'in'
     TYPE_OUT = 'out'
@@ -142,5 +153,12 @@ class StockMovement(models.Model):
 
     def __str__(self):
         return f'{self.get_movement_type_display()} - {self.variant} - {self.quantity}'
+
+    def infer_branch_id(self):
+        if self.from_warehouse_id:
+            return self.from_warehouse.branch_id
+        if self.to_warehouse_id:
+            return self.to_warehouse.branch_id
+        return self.variant.branch_id if self.variant_id else None
 
 # Create your models here.

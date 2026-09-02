@@ -6,7 +6,7 @@ from .models import AuditLog
 @admin.register(AuditLog)
 class AuditLogAdmin(admin.ModelAdmin):
     list_display = ['created_at', 'user', 'get_action_display', 'get_section_display', 'model_name', 'object_repr']
-    list_filter = ['action', 'section', 'created_at', 'user']
+    list_filter = ['branch', 'action', 'section', 'created_at', 'user']
     search_fields = ['user__username', 'user__email', 'model_name', 'object_id', 'object_repr', 'notes']
     readonly_fields = ['created_at', 'user', 'action', 'section', 'model_name', 'object_id', 'object_repr', 
                       'changes_before', 'changes_after', 'ip_address', 'user_agent', 'notes']

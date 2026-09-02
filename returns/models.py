@@ -5,9 +5,11 @@ from django.db import models
 from customers.models import Customer
 from orders.models import Order, OrderItem
 from products.models import ProductVariant
+from config.branching import BranchOwnedModel
 
 
-class SalesReturn(models.Model):
+class SalesReturn(BranchOwnedModel):
+    branch_relations = ('order', 'customer')
     TYPE_REFUND = 'refund'
     TYPE_EXCHANGE = 'exchange'
     TYPE_PARTIAL_RETURN = 'partial_return'
@@ -50,8 +52,12 @@ class SalesReturn(models.Model):
     def __str__(self):
         return f'RET-{self.pk or "new"} - {self.order}'
 
+    def infer_branch_id(self):
+        return self.order.branch_id if self.order_id else None
 
-class SalesReturnItem(models.Model):
+
+class SalesReturnItem(BranchOwnedModel):
+    branch_relations = ('sales_return', 'original_order_item', 'product_variant')
     CONDITION_GOOD = 'good'
     CONDITION_DAMAGED = 'damaged'
     CONDITION_NEEDS_REVIEW = 'needs_review'
@@ -73,8 +79,12 @@ class SalesReturnItem(models.Model):
     def __str__(self):
         return f'{self.sales_return_id} - {self.product_variant} - {self.quantity}'
 
+    def infer_branch_id(self):
+        return self.sales_return.branch_id if self.sales_return_id else None
 
-class ExchangeItem(models.Model):
+
+class ExchangeItem(BranchOwnedModel):
+    branch_relations = ('sales_return', 'old_order_item', 'new_product_variant')
     sales_return = models.ForeignKey(SalesReturn, on_delete=models.CASCADE, related_name='exchange_items')
     old_order_item = models.ForeignKey(OrderItem, on_delete=models.PROTECT, related_name='exchange_items')
     new_product_variant = models.ForeignKey(ProductVariant, on_delete=models.PROTECT, related_name='exchange_items')
@@ -86,3 +96,6 @@ class ExchangeItem(models.Model):
 
     def __str__(self):
         return f'{self.sales_return_id} exchange {self.quantity}'
+
+    def infer_branch_id(self):
+        return self.sales_return.branch_id if self.sales_return_id else None

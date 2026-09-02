@@ -4,18 +4,19 @@ from django.contrib.auth.views import LoginView, LogoutView
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
-from django.shortcuts import redirect
+from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, ListView, UpdateView, View
+from django.utils.http import url_has_allowed_host_and_scheme
 
 from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 from config.ratelimit import RateLimitExceeded, rate_limit
 from config.security_logger import log_failed_login
 
-from .forms import ArabicAuthenticationForm, UserCreateForm, UserUpdateForm
-from .models import User
-from .permissions import ManagerRequiredMixin
+from .forms import ArabicAuthenticationForm, BranchForm, UserCreateForm, UserUpdateForm
+from .models import Branch, User
+from .permissions import ManagerRequiredMixin, SuperuserRequiredMixin
 
 
 # Keep the login POST tolerant of stale/missing CSRF cookies caused by old
@@ -70,7 +71,10 @@ class UserListView(ManagerRequiredMixin, ExportListMixin, ListView):
     )
 
     def get_queryset(self):
-        return User.objects.order_by('-created_at')
+        qs = User.objects.order_by('-created_at')
+        if self.request.user.is_superuser:
+            return qs.filter(branch=self.request.active_branch) if self.request.active_branch else qs
+        return qs.filter(branch=self.request.user.branch)
 
 
 class UserCreateView(ManagerRequiredMixin, CreateView):
@@ -78,6 +82,11 @@ class UserCreateView(ManagerRequiredMixin, CreateView):
     form_class = UserCreateForm
     template_name = 'accounts/users/create.html'
     success_url = reverse_lazy('accounts:user_list')
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['actor'] = self.request.user
+        return kwargs
 
     def form_valid(self, form):
         response = super().form_valid(form)
@@ -91,6 +100,15 @@ class UserUpdateView(ManagerRequiredMixin, UpdateView):
     template_name = 'accounts/users/update.html'
     success_url = reverse_lazy('accounts:user_list')
 
+    def get_queryset(self):
+        qs = User.objects.all()
+        return qs if self.request.user.is_superuser else qs.filter(branch=self.request.user.branch)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['actor'] = self.request.user
+        return kwargs
+
     def form_valid(self, form):
         response = super().form_valid(form)
         messages.success(self.request, 'تم تحديث بيانات الموظف')
@@ -99,7 +117,8 @@ class UserUpdateView(ManagerRequiredMixin, UpdateView):
 
 class UserDeactivateView(ManagerRequiredMixin, View):
     def post(self, request, pk):
-        user = User.objects.get(pk=pk)
+        qs = User.objects.all() if request.user.is_superuser else User.objects.filter(branch=request.user.branch)
+        user = get_object_or_404(qs, pk=pk)
         if user == request.user:
             messages.error(request, 'لا يمكنك تعطيل حسابك الحالي')
         else:
@@ -112,6 +131,10 @@ class UserDeactivateView(ManagerRequiredMixin, View):
 class UserDeleteView(ManagerDeleteView):
     model = User
     success_url = reverse_lazy('accounts:user_list')
+
+    def get_queryset(self):
+        qs = User.objects.all()
+        return qs if self.request.user.is_superuser else qs.filter(branch=self.request.user.branch)
     success_message = 'تم حذف الموظف'
 
     def form_valid(self, form):
@@ -119,5 +142,39 @@ class UserDeleteView(ManagerDeleteView):
             messages.error(self.request, 'لا يمكنك حذف حسابك الحالي')
             return redirect(self.success_url)
         return super().form_valid(form)
+
+class BranchListView(SuperuserRequiredMixin, ListView):
+    model = Branch
+    template_name = 'accounts/branches/list.html'
+    context_object_name = 'branches'
+
+
+class BranchCreateView(SuperuserRequiredMixin, CreateView):
+    model = Branch
+    form_class = BranchForm
+    template_name = 'accounts/branches/form.html'
+    success_url = reverse_lazy('accounts:branch_list')
+
+
+class BranchUpdateView(SuperuserRequiredMixin, UpdateView):
+    model = Branch
+    form_class = BranchForm
+    template_name = 'accounts/branches/form.html'
+    success_url = reverse_lazy('accounts:branch_list')
+
+
+class BranchSelectView(SuperuserRequiredMixin, View):
+    def post(self, request):
+        branch_id = request.POST.get('branch')
+        if branch_id:
+            branch = get_object_or_404(Branch, pk=branch_id, is_active=True)
+            request.session['active_branch_id'] = branch.pk
+        else:
+            request.session.pop('active_branch_id', None)
+        next_url = request.POST.get('next') or ''
+        if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+            next_url = '/'
+        return redirect(next_url)
+
 
 # Create your views here.

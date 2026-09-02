@@ -16,6 +16,6 @@ class ExchangeItemInline(admin.TabularInline):
 @admin.register(SalesReturn)
 class SalesReturnAdmin(admin.ModelAdmin):
     list_display = ('id', 'order', 'return_type', 'status', 'refund_amount', 'created_at')
-    list_filter = ('return_type', 'status')
+    list_filter = ('branch', 'return_type', 'status')
     search_fields = ('order__order_number', 'customer__name')
     inlines = [SalesReturnItemInline, ExchangeItemInline]

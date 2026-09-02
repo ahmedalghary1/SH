@@ -1,8 +1,9 @@
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from config.branching import BranchOwnedModel
 
 
-class CompanySettings(models.Model):
+class CompanySettings(BranchOwnedModel):
     THERMAL_WIDTH_58 = '58'
     THERMAL_WIDTH_80 = '80'
     THERMAL_PAPER_WIDTH_CHOICES = (
@@ -50,5 +51,7 @@ class CompanySettings(models.Model):
 
     @classmethod
     def load(cls):
-        settings, _ = cls.objects.get_or_create(pk=1)
+        settings = cls.objects.order_by('pk').first()
+        if settings is None:
+            settings = cls.objects.create()
         return settings

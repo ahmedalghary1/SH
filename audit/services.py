@@ -1,4 +1,5 @@
 from audit.models import AuditLog
+from django.apps import apps
 
 
 def log_audit(
@@ -14,6 +15,7 @@ def log_audit(
     ip_address=None,
     user_agent=None,
     notes=None,
+    branch=None,
 ):
     """
     Log an audit event for sensitive operations.
@@ -31,7 +33,16 @@ def log_audit(
         user_agent: User agent string
         notes: Additional notes about the action
     """
+    branch_id = getattr(branch, 'pk', branch)
+    if not branch_id and model_name and object_id:
+        for model in apps.get_models():
+            if model.__name__ != model_name or not hasattr(model, 'all_objects'):
+                continue
+            branch_id = model.all_objects.filter(pk=object_id).values_list('branch_id', flat=True).first()
+            if branch_id:
+                break
     AuditLog.objects.create(
+        branch_id=branch_id,
         user=user,
         action=action,
         section=section,

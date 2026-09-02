@@ -9,9 +9,11 @@ from finance.models import CashAccount
 from inventory.models import Warehouse
 from orders.models import Order
 from products.models import ProductVariant
+from config.branching import BranchOwnedModel
 
 
-class SalesRepStockAssignment(models.Model):
+class SalesRepStockAssignment(BranchOwnedModel):
+    branch_relations = ('sales_rep', 'product_variant', 'source_warehouse')
     sales_rep = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='stock_assignments')
     product_variant = models.ForeignKey(ProductVariant, on_delete=models.PROTECT, related_name='sales_rep_assignments')
     source_warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name='sales_rep_assignments')
@@ -36,8 +38,12 @@ class SalesRepStockAssignment(models.Model):
     def __str__(self):
         return f'{self.sales_rep} - {self.product_variant} - {self.quantity_remaining}'
 
+    def infer_branch_id(self):
+        return self.source_warehouse.branch_id if self.source_warehouse_id else self.sales_rep.branch_id
 
-class SalesRepCollection(models.Model):
+
+class SalesRepCollection(BranchOwnedModel):
+    branch_relations = ('sales_rep', 'customer', 'order', 'cash_account')
     sales_rep = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='collections')
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='sales_rep_collections')
     order = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True, blank=True, related_name='sales_rep_collections')
@@ -61,6 +67,9 @@ class SalesRepCollection(models.Model):
 
     def __str__(self):
         return f'{self.sales_rep} - {self.amount}'
+
+    def infer_branch_id(self):
+        return self.sales_rep.branch_id if self.sales_rep_id else None
 
     @property
     def remaining_handover_amount(self):

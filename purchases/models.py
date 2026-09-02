@@ -2,12 +2,13 @@ from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
 from config.django_compat import check_constraint
+from config.branching import BranchOwnedModel
 from django.utils import timezone
 
 from products.models import ProductVariant
 
 
-class Supplier(models.Model):
+class Supplier(BranchOwnedModel):
     name = models.CharField(max_length=200, db_index=True)
     phone = models.CharField(max_length=30, blank=True, null=True, db_index=True)
     email = models.EmailField(blank=True, null=True)
@@ -30,7 +31,8 @@ class Supplier(models.Model):
         return self.company_name or self.name
 
 
-class PurchaseOrder(models.Model):
+class PurchaseOrder(BranchOwnedModel):
+    branch_relations = ('supplier',)
     DISCOUNT_FIXED = 'fixed'
     DISCOUNT_PERCENT = 'percent'
     DISCOUNT_TYPE_CHOICES = [(DISCOUNT_FIXED, 'مبلغ ثابت'), (DISCOUNT_PERCENT, 'نسبة مئوية')]
@@ -47,7 +49,7 @@ class PurchaseOrder(models.Model):
         (STATUS_CANCELLED, 'ملغي'),
     ]
 
-    purchase_number = models.CharField(max_length=50, unique=True, db_index=True)
+    purchase_number = models.CharField(max_length=50, db_index=True)
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name='purchase_orders')
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True)
     order_date = models.DateField(default=timezone.localdate, db_index=True)
@@ -70,16 +72,21 @@ class PurchaseOrder(models.Model):
             models.Index(fields=['status', 'created_at']),
             models.Index(fields=['supplier', 'created_at']),
         ]
+        constraints = [models.UniqueConstraint(fields=['branch', 'purchase_number'], name='purchases_order_branch_number_unique')]
 
     def __str__(self):
         return self.purchase_number
+
+    def infer_branch_id(self):
+        return self.supplier.branch_id if self.supplier_id else None
 
     @property
     def is_editable(self):
         return self.status == self.STATUS_DRAFT
 
 
-class PurchaseOrderItem(models.Model):
+class PurchaseOrderItem(BranchOwnedModel):
+    branch_relations = ('purchase_order', 'product_variant')
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='items')
     product_variant = models.ForeignKey(ProductVariant, on_delete=models.PROTECT, related_name='purchase_items')
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
@@ -100,6 +107,9 @@ class PurchaseOrderItem(models.Model):
 
     def __str__(self):
         return f'{self.purchase_order.purchase_number} - {self.product_variant}'
+
+    def infer_branch_id(self):
+        return self.purchase_order.branch_id if self.purchase_order_id else None
 
     @property
     def remaining_quantity(self):

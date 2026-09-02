@@ -1,9 +1,11 @@
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
+from config.branching import BranchOwnedModel
 
 
-class Customer(models.Model):
+class Customer(BranchOwnedModel):
+    branch_relations = ('sales_representative',)
     TYPE_B2C = 'b2c'
     TYPE_B2B = 'b2b'
     TYPE_RETAIL = 'retail'
@@ -52,7 +54,8 @@ class Customer(models.Model):
         return f'{self.name} - {self.phone}' if self.phone else self.name
 
 
-class CustomerInteraction(models.Model):
+class CustomerInteraction(BranchOwnedModel):
+    branch_relations = ('customer',)
     TYPE_CALL = 'call'
     TYPE_WHATSAPP = 'whatsapp'
     TYPE_VISIT = 'visit'
@@ -88,3 +91,6 @@ class CustomerInteraction(models.Model):
 
     def __str__(self):
         return f'{self.customer} - {self.title}'
+
+    def infer_branch_id(self):
+        return self.customer.branch_id if self.customer_id else None

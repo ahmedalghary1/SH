@@ -15,7 +15,7 @@ class SyncApiCorsMiddleware:
                 response = self.get_response(request)
             response['Access-Control-Allow-Origin'] = '*'
             response['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-            response['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+            response['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, X-Branch-ID'
             response['Access-Control-Max-Age'] = '86400'
             return response
         return self.get_response(request)

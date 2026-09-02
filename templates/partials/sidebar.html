@@ -101,6 +101,7 @@
                 <div class="nav-group-panel">
                     <a class="nav-link" href="{% url 'finance:cash' %}"><span class="nav-text">الخزنة</span><span class="nav-arrow">‹</span></a>
                     <a class="nav-link" href="{% url 'accounts:user_list' %}"><span class="nav-text">المستخدمون</span><span class="nav-arrow">‹</span></a>
+                    {% if request.user.is_superuser %}<a class="nav-link" href="{% url 'accounts:branch_list' %}"><span class="nav-text">المعارض</span><span class="nav-arrow">‹</span></a>{% endif %}
                     <a class="nav-link" href="{% url 'settings_app:index' %}"><span class="nav-text">الإعدادات العامة</span><span class="nav-arrow">‹</span></a>
                 </div>
             </div>

@@ -90,6 +90,11 @@ class AdminRequiredMixin(ManagerRequiredMixin):
     pass
 
 
+class SuperuserRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
+    def test_func(self):
+        return bool(self.request.user.is_superuser)
+
+
 class SalesRequiredMixin(RoleRequiredMixin):
     allowed_roles = ('manager', 'sales')
 

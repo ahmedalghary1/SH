@@ -4,6 +4,7 @@ from functools import wraps
 from django.contrib.auth import authenticate, get_user_model
 from django.core import signing
 from django.http import JsonResponse
+from config.branching import reset_current_branch, set_current_branch
 
 
 TOKEN_SALT = 'sync-api-token'
@@ -20,6 +21,8 @@ def user_payload(user):
         'username': user.username,
         'full_name': user.get_full_name() or user.username,
         'role': getattr(user, 'role', ''),
+        'branch_id': user.branch_id,
+        'branch_name': user.branch.name if user.branch_id else '',
         'permissions': {
             'is_manager': bool(getattr(user, 'is_manager', False)),
             'is_sales': bool(getattr(user, 'is_sales', False)),
@@ -49,7 +52,7 @@ def login_view(request):
     if payload is None:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     user = authenticate(request, username=payload.get('username'), password=payload.get('password'))
-    if not user or not user.is_active:
+    if not user or not user.is_active or (not user.is_superuser and (not user.branch_id or not user.branch.is_active)):
         return JsonResponse({'error': 'بيانات الدخول غير صحيحة'}, status=401)
     token = make_token(user, payload.get('device_id') or '')
     return JsonResponse({'token': token, 'user': user_payload(user)})
@@ -74,7 +77,15 @@ def token_required(view_func):
         if not user:
             return JsonResponse({'error': 'Authentication required'}, status=401)
         request.sync_user = user
-        return view_func(request, *args, **kwargs)
+        branch_id = user.branch_id
+        if user.is_superuser:
+            requested_branch = request.headers.get('X-Branch-ID')
+            branch_id = int(requested_branch) if requested_branch and requested_branch.isdigit() else None
+        token = set_current_branch(branch_id)
+        try:
+            return view_func(request, *args, **kwargs)
+        finally:
+            reset_current_branch(token)
     return wrapper
 
 

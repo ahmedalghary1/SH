@@ -7,8 +7,20 @@
     </div>
     <div class="topbar-user">
         <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
-        <span>{{ request.user.get_role_display }}</span>
+        <span>{{ request.user.get_role_display }}{% if active_branch %} - {{ active_branch.name }}{% endif %}</span>
     </div>
+    {% if request.user.is_superuser %}
+    <form method="post" action="{% url 'accounts:branch_select' %}" class="branch-selector">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <select name="branch" onchange="this.form.submit()" aria-label="&#1575;&#1604;&#1605;&#1593;&#1585;&#1590; &#1575;&#1604;&#1581;&#1575;&#1604;&#1610;">
+            <option value="">&#1603;&#1604; &#1575;&#1604;&#1605;&#1593;&#1575;&#1585;&#1590;</option>
+            {% for branch in available_branches %}
+                <option value="{{ branch.pk }}"{% if active_branch.pk == branch.pk %} selected{% endif %}>{{ branch.name }}</option>
+            {% endfor %}
+        </select>
+    </form>
+    {% endif %}
     <div class="topbar-datetime" aria-label="التاريخ والوقت الحالي">
         <span>التاريخ والوقت</span>
         <strong data-live-datetime>--</strong>

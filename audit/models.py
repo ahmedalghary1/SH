@@ -1,9 +1,10 @@
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.db import models
+from config.branching import BranchOwnedModel
 
 
-class AuditLog(models.Model):
+class AuditLog(BranchOwnedModel):
     """Audit log for tracking sensitive operations."""
     
     ACTION_CREATE = 'create'
@@ -103,3 +104,6 @@ class AuditLog(models.Model):
         if self.pk and not self._state.adding:
             raise PermissionDenied('Audit logs cannot be modified')
         super().save(*args, **kwargs)
+
+    def infer_branch_id(self):
+        return self.user.branch_id if self.user_id else None

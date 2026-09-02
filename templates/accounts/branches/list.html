@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}&#1575;&#1604;&#1605;&#1593;&#1575;&#1585;&#1590;{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>&#1575;&#1604;&#1605;&#1593;&#1575;&#1585;&#1590;</h1>
+    <a class="btn btn-accent" href="{% url 'accounts:branch_create' %}">&#1573;&#1590;&#1575;&#1601;&#1577; &#1605;&#1593;&#1585;&#1590;</a>
+</div>
+<div class="table-wrap"><table>
+    <thead><tr><th>&#1575;&#1604;&#1575;&#1587;&#1605;</th><th>&#1575;&#1604;&#1603;&#1608;&#1583;</th><th>&#1575;&#1604;&#1607;&#1575;&#1578;&#1601;</th><th>&#1575;&#1604;&#1581;&#1575;&#1604;&#1577;</th><th></th></tr></thead>
+    <tbody>{% for branch in branches %}<tr>
+        <td>{{ branch.name }}</td><td>{{ branch.code }}</td><td>{{ branch.phone|default:'-' }}</td>
+        <td>{% if branch.is_active %}&#1606;&#1588;&#1591;{% else %}&#1605;&#1608;&#1602;&#1608;&#1601;{% endif %}</td>
+        <td><a class="btn btn-light" href="{% url 'accounts:branch_update' branch.pk %}">&#1578;&#1593;&#1583;&#1610;&#1604;</a></td>
+    </tr>{% empty %}<tr><td colspan="5">&#1604;&#1575; &#1578;&#1608;&#1580;&#1583; &#1605;&#1593;&#1575;&#1585;&#1590;</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

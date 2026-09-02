@@ -1,8 +1,9 @@
 from django.conf import settings
 from django.db import models
+from config.branching import BranchOwnedModel
 
 
-class SyncOperation(models.Model):
+class SyncOperation(BranchOwnedModel):
     STATUS_SUCCESS = 'success'
     STATUS_FAILED = 'failed'
     STATUS_CONFLICT = 'failed_conflict'
@@ -34,3 +35,6 @@ class SyncOperation(models.Model):
 
     def __str__(self):
         return self.idempotency_key
+
+    def infer_branch_id(self):
+        return self.user.branch_id if self.user_id else None

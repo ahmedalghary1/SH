@@ -2,9 +2,10 @@ from django.core.validators import MinValueValidator
 from django.db import models
 
 from config.django_compat import check_constraint
+from config.branching import BranchOwnedModel
 
 
-class Category(models.Model):
+class Category(BranchOwnedModel):
     name = models.CharField(max_length=100, db_index=True)
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL)
     is_active = models.BooleanField(default=True, db_index=True)
@@ -16,28 +17,33 @@ class Category(models.Model):
         return self.name
 
 
-class Color(models.Model):
-    name = models.CharField(max_length=50, unique=True)
+class Color(BranchOwnedModel):
+    name = models.CharField(max_length=50)
     hex_code = models.CharField(max_length=7, blank=True, null=True)
 
     def __str__(self):
         return self.name
 
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['branch', 'name'], name='products_color_branch_name_unique')]
 
-class Size(models.Model):
-    name = models.CharField(max_length=20, unique=True)
+
+class Size(BranchOwnedModel):
+    name = models.CharField(max_length=20)
     sort_order = models.PositiveIntegerField(default=0)
 
     class Meta:
         ordering = ['sort_order', 'name']
+        constraints = [models.UniqueConstraint(fields=['branch', 'name'], name='products_size_branch_name_unique')]
 
     def __str__(self):
         return self.name
 
 
-class Product(models.Model):
+class Product(BranchOwnedModel):
+    branch_relations = ('category',)
     name = models.CharField(max_length=200, db_index=True)
-    sku = models.CharField(max_length=100, unique=True, db_index=True)
+    sku = models.CharField(max_length=100, db_index=True)
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True)
     description = models.TextField(blank=True, null=True)
     material = models.CharField(max_length=100, blank=True, null=True)
@@ -56,17 +62,19 @@ class Product(models.Model):
             models.Index(fields=['name', 'is_active']),
             models.Index(fields=['created_at']),
         ]
+        constraints = [models.UniqueConstraint(fields=['branch', 'sku'], name='products_product_branch_sku_unique')]
 
     def __str__(self):
         return f'{self.name} ({self.sku})'
 
 
-class ProductVariant(models.Model):
+class ProductVariant(BranchOwnedModel):
+    branch_relations = ('product', 'color', 'size')
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variants')
     color = models.ForeignKey(Color, on_delete=models.SET_NULL, null=True)
     size = models.ForeignKey(Size, on_delete=models.SET_NULL, null=True)
     image = models.ImageField(upload_to='product_variants/', blank=True, null=True)
-    variant_sku = models.CharField(max_length=120, unique=True, db_index=True)
+    variant_sku = models.CharField(max_length=120, db_index=True)
     barcode = models.CharField(max_length=120, blank=True, null=True, db_index=True)
     cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     sale_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])
@@ -82,6 +90,7 @@ class ProductVariant(models.Model):
             models.Index(fields=['is_active']),
         ]
         constraints = [
+            models.UniqueConstraint(fields=['branch', 'variant_sku'], name='products_variant_branch_sku_unique'),
             check_constraint(
                 check=models.Q(cost_price__gte=0),
                 name='products_productvariant_cost_price_gte_0'
@@ -91,6 +100,9 @@ class ProductVariant(models.Model):
                 name='products_productvariant_sale_price_gte_0'
             ),
         ]
+
+    def infer_branch_id(self):
+        return self.product.branch_id if self.product_id else None
 
     def __str__(self):
         return f'{self.product.name} - {self.color} - {self.size}'
