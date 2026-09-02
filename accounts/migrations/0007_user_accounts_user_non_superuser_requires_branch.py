@@ -13,6 +13,9 @@ class Migration(migrations.Migration):
     operations = [
         migrations.AddConstraint(
             model_name='user',
-            constraint=models.CheckConstraint(condition=models.Q(('is_superuser', True), ('branch__isnull', False), _connector='OR'), name='accounts_user_non_superuser_requires_branch'),
+            # ``check`` is supported by Django 5.0 (the production version) and
+            # remains backwards-compatible with the newer Django version that
+            # originally generated this migration.
+            constraint=models.CheckConstraint(check=models.Q(('is_superuser', True), ('branch__isnull', False), _connector='OR'), name='accounts_user_non_superuser_requires_branch'),
         ),
     ]
