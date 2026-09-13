@@ -91,6 +91,11 @@ def merge_duplicate_cash_accounts(apps, schema_editor):
 
 class Migration(migrations.Migration):
 
+    # PostgreSQL cannot ALTER this table while the data-merge DELETE/UPDATE
+    # operations still have pending FK trigger events in the same transaction.
+    # Commit the merge first, then add the uniqueness constraints.
+    atomic = False
+
     dependencies = [
         ('finance', '0011_paymenttransaction_affects_customer_balance'),
         ('sales_reps', '0003_alter_salesrepcollection_managers_and_more'),
@@ -100,6 +105,7 @@ class Migration(migrations.Migration):
         migrations.RunPython(
             merge_duplicate_cash_accounts,
             migrations.RunPython.noop,
+            atomic=True,
         ),
         migrations.AddConstraint(
             model_name='cashaccount',
