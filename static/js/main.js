@@ -225,6 +225,9 @@ document.addEventListener('DOMContentLoaded', () => addAutomaticDateTimeToCreate
 document.addEventListener('sh:page-loaded', () => {
     enhanceSharedPageUi();
     addAutomaticDateTimeToCreateForm();
+    enhanceListControls();
+    setupPasswordToggles();
+    setupStockWarehouseFilters();
 });
 
 document.addEventListener("submit", (event) => {

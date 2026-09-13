@@ -134,19 +134,42 @@ class FinanceServiceTests(TestCase):
         response = self.client.post(reverse('finance:expense_create'), {
             'cash_account': self.cash.pk,
             'amount': '150.00',
-            'transaction_date': '2026-06-12',
+            'transaction_date': '2026-06-12T13:40',
             'notes': 'Office rent',
         })
 
         self.assertRedirects(response, reverse('finance:transactions'))
         self.cash.refresh_from_db()
         self.assertEqual(self.cash.balance, Decimal('850.00'))
-        self.assertTrue(PaymentTransaction.objects.filter(
+        expense = PaymentTransaction.objects.get(
             transaction_type=PaymentTransaction.TYPE_EXPENSE,
             direction=PaymentTransaction.DIRECTION_OUT,
             amount=Decimal('150.00'),
             cash_account=self.cash,
-        ).exists())
+        )
+        self.assertEqual(str(expense.transaction_date), '2026-06-12')
+        self.assertEqual(expense.transaction_time.strftime('%H:%M'), '13:40')
+
+    def test_customer_collection_saves_selected_date_and_time(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('finance:collection_create'), {
+            'cash_account': self.cash.pk,
+            'customer': self.customer.pk,
+            'amount': '75.00',
+            'transaction_date': '2026-06-13T09:25',
+            'notes': 'dated receipt',
+        })
+
+        self.assertRedirects(response, reverse('finance:collection_create'))
+        receipt = PaymentTransaction.objects.get(
+            transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+            direction=PaymentTransaction.DIRECTION_IN,
+            amount=Decimal('75.00'),
+            related_customer=self.customer,
+        )
+        self.assertEqual(str(receipt.transaction_date), '2026-06-13')
+        self.assertEqual(receipt.transaction_time.strftime('%H:%M'), '09:25')
 
     def test_collect_order_payment_updates_order_and_cash(self):
         collect_order_payment(order=self.order, amount=Decimal('200.00'), cash_account=self.cash, user=self.user)

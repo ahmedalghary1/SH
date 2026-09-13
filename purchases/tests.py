@@ -182,6 +182,7 @@ class PurchaseServiceTests(TestCase):
 
         response = self.client.post(reverse('purchases:order_create'), {
             'supplier': '',
+            'invoice_datetime': '2026-08-15T10:30',
             'new_supplier_name': 'New Modal Supplier',
             'new_supplier_phone': '01012345678',
             'product_variant': '',
@@ -216,6 +217,11 @@ class PurchaseServiceTests(TestCase):
         self.assertEqual(variant.size.name, 'M')
         self.assertEqual(Stock.objects.get(warehouse=warehouse, variant=variant).quantity, 2)
         self.assertEqual(cash.balance, Decimal('800.00'))
+        purchase_order = PurchaseOrder.objects.get(supplier=supplier)
+        payment = PaymentTransaction.objects.get(related_supplier=supplier)
+        self.assertEqual(timezone.localtime(purchase_order.created_at).strftime('%Y-%m-%d %H:%M'), '2026-08-15 10:30')
+        self.assertEqual(str(payment.transaction_date), '2026-08-15')
+        self.assertEqual(payment.transaction_time.strftime('%H:%M'), '10:30')
         supplier.refresh_from_db()
         self.assertEqual(supplier.current_balance, Decimal('0.00'))
 
