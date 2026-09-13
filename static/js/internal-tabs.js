@@ -56,7 +56,7 @@
     if (!activeUrl) return;
     let entry = cache.get(activeUrl);
     if (!entry) {
-      entry = {holder: document.createElement('div'), dirty: false, metadata: pageMetadata()};
+      entry = {holder: document.createElement('div'), metadata: pageMetadata()};
       cache.set(activeUrl, entry);
     }
     entry.metadata = pageMetadata();
@@ -89,8 +89,6 @@
       close.setAttribute('aria-label', 'إغلاق');
       close.onclick = event => {
         event.stopPropagation();
-        const entry = cache.get(tab.url);
-        if (entry?.dirty && !confirm('يوجد نموذج غير محفوظ. هل تريد إغلاق التبويب؟')) return;
         state.tabs.splice(index, 1);
         cache.delete(tab.url);
         save();
@@ -178,7 +176,6 @@
       content.innerHTML = next.innerHTML;
       const entry = {
         holder: document.createElement('div'),
-        dirty: false,
         metadata: pageMetadata(next),
         scrollY: 0,
       };
@@ -221,28 +218,10 @@
     });
   });
 
-  const markActiveFormDirty = event => {
-    if (!event.target.closest('form') || !activeUrl) return;
-    const entry = cache.get(activeUrl);
-    if (entry) entry.dirty = true;
-  };
-  document.addEventListener('input', markActiveFormDirty);
-  document.addEventListener('change', markActiveFormDirty);
-  document.addEventListener('submit', () => {
-    const entry = activeUrl && cache.get(activeUrl);
-    if (entry) entry.dirty = false;
-  });
   addEventListener('popstate', () => openTab(location.pathname + location.search, false));
-  addEventListener('beforeunload', event => {
-    if ([...cache.values()].some(entry => entry.dirty)) {
-      event.preventDefault();
-      event.returnValue = '';
-    }
-  });
 
   cache.set(currentUrl, {
     holder: document.createElement('div'),
-    dirty: false,
     metadata: pageMetadata(),
     scrollY: window.scrollY,
   });
