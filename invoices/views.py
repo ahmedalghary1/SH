@@ -2,7 +2,8 @@ import csv
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.db.models import F
+from django.db.models import Count, DecimalField, F, Sum, Value
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
@@ -20,6 +21,28 @@ from .forms import InvoiceFilterForm, InvoicePaymentForm
 from .models import Invoice
 from .pdf import build_invoice_report_pdf
 from .services import generate_invoice
+
+
+def _invoice_totals(queryset):
+    money_field = DecimalField(max_digits=16, decimal_places=2)
+    return queryset.aggregate(
+        invoice_count=Count('pk'),
+        total_amount=Coalesce(
+            Sum('order__total'),
+            Value(0),
+            output_field=money_field,
+        ),
+        paid_amount=Coalesce(
+            Sum('order__paid_amount'),
+            Value(0),
+            output_field=money_field,
+        ),
+        remaining_amount=Coalesce(
+            Sum('order__remaining_amount'),
+            Value(0),
+            output_field=money_field,
+        ),
+    )
 
 
 class InvoiceContextMixin:
@@ -86,6 +109,7 @@ class InvoiceListView(SalesRequiredMixin, ListView):
         context['invoice_section'] = 'sales'
         context['period_choices'] = PERIOD_CHOICES
         context['date_filter'] = getattr(self, 'date_filter', {})
+        context['invoice_totals'] = _invoice_totals(self.object_list)
         return context
 
 
@@ -130,12 +154,14 @@ class InvoiceExcelExportView(InvoiceExportMixin, SalesRequiredMixin, View):
         return self.build_response(request)
 
     def build_response(self, request):
+        invoices = self.get_filtered_invoices(request)
+        totals = _invoice_totals(invoices)
         response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
         response['Content-Disposition'] = 'attachment; filename=\"invoices.csv\"'
         response.write('\ufeff')
         writer = csv.writer(response)
         writer.writerow(['رقم الفاتورة', 'رقم الطلب', 'العميل', 'المندوب', 'طريقة الدفع', 'حالة الدفع', 'الإجمالي', 'المدفوع', 'المتبقي', 'التاريخ'])
-        for invoice in self.get_filtered_invoices(request):
+        for invoice in invoices:
             writer.writerow([
                 invoice.invoice_number,
                 invoice.order.order_number,
@@ -148,6 +174,18 @@ class InvoiceExcelExportView(InvoiceExportMixin, SalesRequiredMixin, View):
                 invoice.order.remaining_amount,
                 invoice.issued_at,
             ])
+        writer.writerow([
+            'الإجمالي',
+            f"{totals['invoice_count']} فاتورة",
+            '',
+            '',
+            '',
+            '',
+            totals['total_amount'],
+            totals['paid_amount'],
+            totals['remaining_amount'],
+            '',
+        ])
         return response
 
 
@@ -182,6 +220,11 @@ class InvoiceReportPrintView(InvoiceExportMixin, InvoiceContextMixin, SalesRequi
 
     def post(self, request, *args, **kwargs):
         return self.get(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['invoice_totals'] = _invoice_totals(self.object_list)
+        return context
 
 
 class InvoicePrintView(InvoiceContextMixin, SalesRequiredMixin, DetailView):

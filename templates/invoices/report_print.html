@@ -18,15 +18,26 @@
             <p>تقرير الفواتير</p>
         </div>
     </div>
-    <table>
-        <thead><tr><th>رقم الفاتورة</th><th>رقم الطلب</th><th>العميل</th><th>المندوب</th><th>الدفع</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>التاريخ</th></tr></thead>
-        <tbody>
-        {% for invoice in invoices %}
-            <tr><td>{{ invoice.invoice_number }}</td><td>{{ invoice.order.order_number }}</td><td>{{ invoice.order.customer|default:'عميل فردي' }}</td><td>{{ invoice.order.created_by|default:'-' }}</td><td>{{ invoice.order.get_payment_method_display }}</td><td>{{ invoice.order.total }}</td><td>{{ invoice.order.paid_amount }}</td><td>{{ invoice.order.remaining_amount }}</td><td>{{ invoice.issued_at|arabic_datetime }}</td></tr>
-        {% empty %}
-            <tr><td colspan="9">لا توجد فواتير</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-wrap sticky-table-wrap invoice-report-table">
+        <table>
+            <thead><tr><th>رقم الفاتورة</th><th>رقم الطلب</th><th>العميل</th><th>المندوب</th><th>الدفع</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>التاريخ</th></tr></thead>
+            <tbody>
+            {% for invoice in invoices %}
+                <tr><td>{{ invoice.invoice_number }}</td><td>{{ invoice.order.order_number }}</td><td>{{ invoice.order.customer|default:'عميل فردي' }}</td><td>{{ invoice.order.created_by|default:'-' }}</td><td>{{ invoice.order.get_payment_method_display }}</td><td>{{ invoice.order.total }}</td><td>{{ invoice.order.paid_amount }}</td><td>{{ invoice.order.remaining_amount }}</td><td>{{ invoice.issued_at|arabic_datetime }}</td></tr>
+            {% empty %}
+                <tr><td colspan="9">لا توجد فواتير</td></tr>
+            {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr class="table-total-row">
+                    <th scope="row" colspan="5">الإجمالي ({{ invoice_totals.invoice_count }} فاتورة)</th>
+                    <td>{{ invoice_totals.total_amount }}</td>
+                    <td>{{ invoice_totals.paid_amount }}</td>
+                    <td>{{ invoice_totals.remaining_amount }}</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
 </section>
 {% endblock %}

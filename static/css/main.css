@@ -974,6 +974,26 @@ tbody tr:hover {
     background: #f8fafc;
 }
 
+.sticky-table-wrap {
+    max-height: calc(100dvh - 8rem);
+    overflow: auto;
+}
+
+.sticky-table-wrap thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    box-shadow: 0 2px 0 var(--border-color);
+}
+
+.table-total-row th,
+.table-total-row td {
+    background: #eef2ff;
+    border-top: 2px solid var(--primary-color);
+    border-bottom: 0;
+    font-weight: 700;
+}
+
 .export-actions {
     margin-bottom: clamp(.75rem, 1.5vw, 1rem);
 }
@@ -2450,6 +2470,14 @@ tbody tr:hover {
 
     .table-wrap {
         overflow: visible;
+    }
+
+    .sticky-table-wrap {
+        max-height: none;
+    }
+
+    .sticky-table-wrap thead th {
+        position: static;
     }
 
     table {

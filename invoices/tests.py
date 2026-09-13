@@ -82,6 +82,38 @@ class InvoicePDFExportTests(TestCase):
         self.assertIn('invoice-report.pdf', response['Content-Disposition'])
         self.assertTrue(response.content.startswith(b'%PDF'))
 
+    def test_invoice_list_totals_follow_the_active_filters(self):
+        unpaid_order = Order.objects.create(
+            order_number='ORD-INVOICE-TOTALS-UNPAID',
+            order_type=Order.TYPE_B2C,
+            customer=self.order.customer,
+            warehouse=self.order.warehouse,
+            status=Order.STATUS_COMPLETED,
+            payment_status=Order.PAYMENT_UNPAID,
+            total=Decimal('500.00'),
+            paid_amount=Decimal('100.00'),
+            remaining_amount=Decimal('400.00'),
+            created_by=self.user,
+        )
+        Invoice.objects.create(
+            order=unpaid_order,
+            invoice_number='INV-INVOICE-TOTALS-UNPAID',
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse('invoices:list'),
+            {'payment_status': Order.PAYMENT_PAID},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['invoice_totals']['invoice_count'], 1)
+        self.assertEqual(response.context['invoice_totals']['total_amount'], Decimal('250.00'))
+        self.assertEqual(response.context['invoice_totals']['paid_amount'], Decimal('250.00'))
+        self.assertEqual(response.context['invoice_totals']['remaining_amount'], Decimal('0.00'))
+        self.assertContains(response, 'sticky-table-wrap')
+        self.assertContains(response, 'الإجمالي (1 فاتورة)')
+
     def test_generate_invoice_records_sale_in_default_cash_once(self):
         default_cash = CashAccount.get_default()
 

@@ -22,7 +22,7 @@
         <button class="btn btn-accent" formaction="{% url 'invoices:export_pdf' %}?{{ request.GET.urlencode }}" type="submit">تحميل PDF</button>
         <button class="btn btn-light" formaction="{% url 'invoices:report_print' %}?{{ request.GET.urlencode }}" formtarget="_blank" type="submit">عرض للطباعة</button>
     </div>
-    <div class="table-wrap">
+    <div class="table-wrap sticky-table-wrap invoice-list-table">
         <table>
             <thead><tr><th>اختيار</th><th>رقم الفاتورة</th><th>رقم الطلب</th><th>العميل</th><th>هاتف العميل</th><th>المندوب أو الفرع</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>حالة الدفع</th><th>طريقة الدفع</th><th>تاريخ الشراء</th><th>إجراءات</th></tr></thead>
             <tbody>
@@ -51,6 +51,15 @@
                 <tr><td colspan="13">لا توجد فواتير</td></tr>
             {% endfor %}
             </tbody>
+            <tfoot>
+                <tr class="table-total-row">
+                    <th scope="row" colspan="6">الإجمالي ({{ invoice_totals.invoice_count }} فاتورة)</th>
+                    <td>{{ invoice_totals.total_amount }}</td>
+                    <td>{{ invoice_totals.paid_amount }}</td>
+                    <td>{{ invoice_totals.remaining_amount }}</td>
+                    <td colspan="4"></td>
+                </tr>
+            </tfoot>
         </table>
     </div>
 </form>
