@@ -1,12 +1,15 @@
-<aside class="sidebar">
+<aside class="sidebar" id="app-sidebar" aria-label="القائمة الرئيسية">
     <div class="brand">
         <div class="brand-mark">م</div>
-        <div>
+        <div class="brand-copy">
             <strong>إدارة الملابس</strong>
             <span>مبيعات ومخازن</span>
         </div>
+        <button class="icon-btn sidebar-close" type="button" data-sidebar-close aria-label="إغلاق القائمة">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+        </button>
     </div>
-    <nav class="side-nav" aria-label="القائمة الرئيسية">
+    <nav class="side-nav" aria-label="روابط النظام">
         <a class="nav-link nav-single" href="{% url 'dashboard:index' %}">
             <svg class="ui-icon color-red"><use href="#icon-home"></use></svg>
             <span class="nav-text">الرئيسية</span>

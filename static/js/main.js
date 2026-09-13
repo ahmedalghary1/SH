@@ -166,7 +166,57 @@ function formatExactNumber(value) {
 
 window.SHNumbers = { normalize: normalizeNumberText, format: formatExactNumber };
 
+function enhanceResponsiveTables(root = document) {
+    const tables = root.querySelectorAll?.(".page-content table, table") || [];
+
+    tables.forEach((table) => {
+        if (table.closest(".invoice-box, .receipt-invoice")) return;
+
+        let region = table.closest(
+            ".table-wrap, .cash-table-wrap, .stock-table-wrap, .items-table-wrap, .invoice-items, .responsive-table-region"
+        );
+        if (!region) {
+            region = document.createElement("div");
+            region.className = "table-wrap responsive-table-region auto-table-wrap";
+            table.parentNode.insertBefore(region, table);
+            region.appendChild(table);
+        } else {
+            region.classList.add("responsive-table-region");
+        }
+
+        const bodyRows = table.querySelectorAll("tbody tr").length;
+        region.classList.toggle("long-table-region", bodyRows > 8);
+        if (!region.hasAttribute("tabindex")) region.tabIndex = 0;
+        region.setAttribute("role", "region");
+
+        if (!region.hasAttribute("aria-label")) {
+            const section = table.closest("section, .card, .tab-content, .page-content");
+            const heading = section?.querySelector("h1, h2, h3")?.textContent?.trim();
+            const caption = table.querySelector("caption")?.textContent?.trim();
+            region.setAttribute("aria-label", caption || heading || "جدول البيانات");
+        }
+
+        const updateOverflowState = () => {
+            region.classList.toggle("is-scrollable-x", region.scrollWidth > region.clientWidth + 2);
+            region.classList.toggle("is-at-scroll-end", Math.abs(region.scrollLeft) + region.clientWidth >= region.scrollWidth - 3);
+        };
+        region.addEventListener("scroll", updateOverflowState, { passive: true });
+        window.requestAnimationFrame(updateOverflowState);
+
+        if ("ResizeObserver" in window) {
+            window.SHTableResizeObserver ||= new ResizeObserver((entries) => {
+                entries.forEach((entry) => {
+                    const node = entry.target;
+                    node.classList.toggle("is-scrollable-x", node.scrollWidth > node.clientWidth + 2);
+                });
+            });
+            window.SHTableResizeObserver.observe(region);
+        }
+    });
+}
+
 function enhanceSharedPageUi(root = document) {
+    enhanceResponsiveTables(root);
     root.querySelectorAll('input[type="number"]').forEach(input => {
         // Keep the browser control aligned with the backend/JSON decimal
         // convention regardless of the surrounding Arabic page language.
@@ -189,7 +239,9 @@ function enhanceSharedPageUi(root = document) {
             : rows.length;
         badge.textContent = `إجمالي العدد: ${formatExactNumber(String(tableCount))}`;
         badge.classList.add('number-value');
-        table.parentElement?.insertBefore(badge, table);
+        const region = table.closest('.responsive-table-region');
+        if (region?.parentElement) region.parentElement.insertBefore(badge, region);
+        else table.parentElement?.insertBefore(badge, table);
     });
     root.querySelectorAll('td, .stat-card strong, .summary-value, [data-number]').forEach((node) => {
         if (node.children.length || node.dataset.numberEnhanced) return;
@@ -716,6 +768,25 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 });
 
+function setSidebarState(isOpen, { restoreFocus = false } = {}) {
+    const body = document.body;
+    const toggle = document.querySelector("[data-sidebar-toggle]");
+    const sidebar = document.querySelector(".sidebar");
+    body.classList.toggle("sidebar-open", isOpen);
+    toggle?.setAttribute("aria-expanded", String(isOpen));
+    sidebar?.setAttribute("aria-hidden", String(!isOpen && window.matchMedia("(max-width: 61.25rem)").matches));
+    if (isOpen) sidebar?.querySelector("[data-sidebar-close], a, button")?.focus({ preventScroll: true });
+    else if (restoreFocus) toggle?.focus({ preventScroll: true });
+}
+
+const compactNavigation = window.matchMedia("(max-width: 61.25rem)");
+const syncSidebarForViewport = () => {
+    if (!compactNavigation.matches) setSidebarState(false);
+    else document.querySelector(".sidebar")?.setAttribute("aria-hidden", String(!document.body.classList.contains("sidebar-open")));
+};
+compactNavigation.addEventListener?.("change", syncSidebarForViewport);
+document.addEventListener("DOMContentLoaded", syncSidebarForViewport);
+
 document.addEventListener("click", (event) => {
     const groupToggle = event.target.closest("[data-nav-group-toggle]");
     if (groupToggle) {
@@ -730,18 +801,18 @@ document.addEventListener("click", (event) => {
     }
 
     if (event.target.closest("[data-sidebar-toggle]")) {
-        document.body.classList.toggle("sidebar-open");
+        setSidebarState(!document.body.classList.contains("sidebar-open"));
     }
 
     if (event.target.closest("[data-sidebar-close]") || event.target.closest(".side-nav a")) {
-        document.body.classList.remove("sidebar-open");
+        setSidebarState(false, { restoreFocus: Boolean(event.target.closest("[data-sidebar-close]")) });
     }
 });
 
 document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     closeAllCombos();
-    document.body.classList.remove("sidebar-open");
+    if (document.body.classList.contains("sidebar-open")) setSidebarState(false, { restoreFocus: true });
 });
 
 // Content tabs use delegation so they also work after workspace navigation

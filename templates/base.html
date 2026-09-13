@@ -14,10 +14,11 @@
 <body>
 {% include 'partials/icon_sprite.html' %}
 {% if request.user.is_authenticated %}
-<div class="sidebar-backdrop" data-sidebar-close></div>
+<a class="skip-link" href="#main-content">تخطي إلى المحتوى الرئيسي</a>
+<div class="sidebar-backdrop" data-sidebar-close aria-hidden="true"></div>
 <div class="app-shell">
     {% include 'partials/sidebar.html' %}
-    <main class="main-area">
+    <main class="main-area" id="main-content" tabindex="-1">
         {% include 'partials/navbar.html' %}
         <nav class="workspace-tabs" data-workspace-tabs aria-label="التبويبات المفتوحة"></nav>
         <section class="page-content" data-page-content{% if page_obj %} data-total-records="{{ page_obj.paginator.count }}"{% endif %}>

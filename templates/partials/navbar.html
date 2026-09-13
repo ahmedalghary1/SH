@@ -1,10 +1,5 @@
 <header class="topbar">
-    <button class="icon-btn menu-toggle" type="button" data-sidebar-toggle aria-label="فتح القائمة">☰</button>
-    <div class="topbar-tools" aria-hidden="true">
-        <span></span>
-        <span></span>
-        <span></span>
-    </div>
+    <button class="icon-btn menu-toggle" type="button" data-sidebar-toggle aria-controls="app-sidebar" aria-expanded="false" aria-label="فتح القائمة">☰</button>
     <div class="topbar-user">
         <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
         <span>{{ request.user.get_role_display }}{% if active_branch %} - {{ active_branch.name }}{% endif %}</span>
@@ -25,10 +20,21 @@
         <span>التاريخ والوقت</span>
         <strong data-live-datetime>--</strong>
     </div>
-    <button class="btn btn-light" type="button" data-pwa-install hidden>&#1578;&#1579;&#1576;&#1610;&#1578;</button>
-    <button class="btn btn-light" type="button" data-pwa-sync>&#1605;&#1586;&#1575;&#1605;&#1606;&#1577;</button>
-    <form method="post" action="{% url 'accounts:logout' %}">
-        {% csrf_token %}
-        <button class="btn btn-secondary" type="submit">تسجيل الخروج</button>
-    </form>
+    <div class="topbar-actions">
+        <button class="btn btn-light topbar-action" type="button" data-pwa-install hidden title="تثبيت التطبيق">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-download"></use></svg>
+            <span>تثبيت</span>
+        </button>
+        <button class="btn btn-light topbar-action" type="button" data-pwa-sync title="مزامنة البيانات">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-exchange"></use></svg>
+            <span>مزامنة</span>
+        </button>
+        <form method="post" action="{% url 'accounts:logout' %}">
+            {% csrf_token %}
+            <button class="btn btn-secondary topbar-action" type="submit" title="تسجيل الخروج">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow"></use></svg>
+                <span>خروج</span>
+            </button>
+        </form>
+    </div>
 </header>
