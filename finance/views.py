@@ -3,7 +3,8 @@ from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
 from datetime import datetime
 
-from django.db.models import Q, Sum
+from django.db.models import Count, DecimalField, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.utils import timezone
@@ -25,6 +26,30 @@ from .services import add_expense, build_cash_account_statement, build_customer_
 
 def _validation_error_message(exc):
     return getattr(exc, 'message', None) or '; '.join(getattr(exc, 'messages', [str(exc)]))
+
+
+def _transaction_totals(queryset):
+    money_field = DecimalField(max_digits=16, decimal_places=2)
+    totals = queryset.aggregate(
+        transaction_count=Count('pk'),
+        total_amount=Coalesce(
+            Sum('amount'),
+            Value(0),
+            output_field=money_field,
+        ),
+        total_in=Coalesce(
+            Sum('amount', filter=Q(direction=PaymentTransaction.DIRECTION_IN)),
+            Value(0),
+            output_field=money_field,
+        ),
+        total_out=Coalesce(
+            Sum('amount', filter=Q(direction=PaymentTransaction.DIRECTION_OUT)),
+            Value(0),
+            output_field=money_field,
+        ),
+    )
+    totals['net_amount'] = totals['total_in'] - totals['total_out']
+    return totals
 
 
 class CashDashboardView(ManagerRequiredMixin, TemplateView):
@@ -353,6 +378,7 @@ class TransactionListView(ManagerRequiredMixin, ExportListMixin, ListView):
         )
         context['period_choices'] = PERIOD_CHOICES
         context['date_filter'] = getattr(self, 'date_filter', {})
+        context['transaction_totals'] = _transaction_totals(self.object_list)
         return context
 
 

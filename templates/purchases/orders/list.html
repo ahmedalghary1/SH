@@ -17,7 +17,7 @@
     <button class="btn btn-primary" type="submit">تصفية</button>
     <a class="btn btn-light" href="{% url 'purchases:orders' %}">إعادة ضبط</a>
 </form>
-<div class="table-wrap card">
+<div class="table-wrap card sticky-table-wrap">
     <table>
         <thead><tr><th>الرقم</th><th>المورد</th><th>التاريخ والوقت</th><th>الحالة</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th></th></tr></thead>
         <tbody>
@@ -31,6 +31,15 @@
             <tr><td colspan="8">لا توجد عمليات شراء</td></tr>
         {% endfor %}
         </tbody>
+        <tfoot>
+            <tr class="table-total-row">
+                <th scope="row" colspan="4">الإجمالي ({{ purchase_totals.order_count }} عملية شراء)</th>
+                <td>{{ purchase_totals.total_amount }}</td>
+                <td>{{ purchase_totals.paid_amount }}</td>
+                <td>{{ purchase_totals.remaining_amount }}</td>
+                <td></td>
+            </tr>
+        </tfoot>
     </table>
 </div>
 {% include 'partials/pagination.html' %}

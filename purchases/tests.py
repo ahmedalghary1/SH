@@ -53,6 +53,35 @@ class PurchaseServiceTests(TestCase):
         self.assertEqual(po.remaining_amount, Decimal('1250.00'))
         self.assertEqual(self.supplier.current_balance, Decimal('1250.00'))
 
+    def test_purchase_list_totals_follow_status_filter(self):
+        included_order = self.create_order()
+        included_order.status = PurchaseOrder.STATUS_RECEIVED
+        included_order.paid_amount = Decimal('250.00')
+        included_order.remaining_amount = Decimal('1000.00')
+        included_order.save(update_fields=['status', 'paid_amount', 'remaining_amount'])
+        PurchaseOrder.objects.create(
+            purchase_number='PO-EXCLUDED-DRAFT',
+            supplier=self.supplier,
+            status=PurchaseOrder.STATUS_DRAFT,
+            total_amount=Decimal('700.00'),
+            paid_amount=Decimal('100.00'),
+            remaining_amount=Decimal('600.00'),
+            created_by=self.manager,
+        )
+        self.client.force_login(self.manager)
+
+        response = self.client.get(
+            reverse('purchases:orders'),
+            {'status': PurchaseOrder.STATUS_RECEIVED},
+        )
+
+        self.assertEqual(response.context['purchase_totals']['order_count'], 1)
+        self.assertEqual(response.context['purchase_totals']['total_amount'], Decimal('1250.00'))
+        self.assertEqual(response.context['purchase_totals']['paid_amount'], Decimal('250.00'))
+        self.assertEqual(response.context['purchase_totals']['remaining_amount'], Decimal('1000.00'))
+        self.assertContains(response, 'sticky-table-wrap')
+        self.assertContains(response, 'الإجمالي (1 عملية شراء)')
+
     def test_receive_partial_purchase_increases_stock_and_records_movement(self):
         po = self.create_order()
         item = po.items.get()

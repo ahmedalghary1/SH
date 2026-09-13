@@ -501,6 +501,26 @@ class OrderListViewTests(TestCase):
         self.assertNotContains(response, self.sale_order.order_number)
         self.assertContains(response, 'href="/orders/create/?document=quote"')
 
+    def test_sale_and_quote_totals_are_kept_separate(self):
+        self.sale_order.total = Decimal('350.00')
+        self.sale_order.discount = Decimal('25.00')
+        self.sale_order.save(update_fields=['total', 'discount'])
+        self.quote_order.total = Decimal('900.00')
+        self.quote_order.discount = Decimal('50.00')
+        self.quote_order.save(update_fields=['total', 'discount'])
+        self.client.force_login(self.manager)
+
+        sales_response = self.client.get(reverse('orders:list'), secure=True)
+        quotes_response = self.client.get(reverse('orders:quote_list'), secure=True)
+
+        self.assertEqual(sales_response.context['order_totals']['order_count'], 1)
+        self.assertEqual(sales_response.context['order_totals']['total_amount'], Decimal('350.00'))
+        self.assertEqual(sales_response.context['order_totals']['discount_amount'], Decimal('25.00'))
+        self.assertEqual(quotes_response.context['order_totals']['order_count'], 1)
+        self.assertEqual(quotes_response.context['order_totals']['total_amount'], Decimal('900.00'))
+        self.assertContains(sales_response, 'sticky-table-wrap')
+        self.assertContains(quotes_response, 'الإجمالي (1 عرض سعر)')
+
 
 class OrderDiscountPolicyTests(TestCase):
     def setUp(self):

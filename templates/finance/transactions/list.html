@@ -29,7 +29,7 @@
     <button class="btn btn-primary" type="submit">تصفية</button>
     <a class="btn btn-light" href="{% if invoice_section == 'receipts' %}{% url 'finance:transactions' %}?type=customer_payment{% elif invoice_section == 'expenses' %}{% url 'finance:transactions' %}?type=expense{% else %}{% url 'finance:transactions' %}{% endif %}">إعادة ضبط</a>
 </form>
-<div class="table-wrap card">
+<div class="table-wrap card sticky-table-wrap">
     <table>
         <thead><tr><th>النوع</th><th>الاتجاه</th><th>الحساب</th><th>المبلغ</th><th>الطلب</th><th>العميل</th><th>المورد</th><th>المندوب</th><th>تاريخ الحركة</th><th>وقت التسجيل</th><th>إجراءات</th></tr></thead>
         <tbody>
@@ -55,6 +55,15 @@
             <tr><td colspan="11">لا توجد حركات مالية</td></tr>
         {% endfor %}
         </tbody>
+        <tfoot>
+            <tr class="table-total-row">
+                <th scope="row" colspan="3">الإجمالي ({{ transaction_totals.transaction_count }} حركة)</th>
+                <td>{{ transaction_totals.total_amount }}</td>
+                <td colspan="7">
+                    الداخل: {{ transaction_totals.total_in }} — الخارج: {{ transaction_totals.total_out }} — الصافي: {{ transaction_totals.net_amount }}
+                </td>
+            </tr>
+        </tfoot>
     </table>
 </div>
 {% include 'partials/pagination.html' %}

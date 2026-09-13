@@ -4,7 +4,8 @@ from decimal import Decimal
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.db.models import Count, Q
+from django.db.models import Count, DecimalField, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
@@ -40,6 +41,23 @@ from .services import (
 
 def _is_restricted_sales_user(user):
     return user.role == 'sales' and not user.is_superuser
+
+
+def _order_totals(queryset):
+    money_field = DecimalField(max_digits=16, decimal_places=2)
+    return queryset.aggregate(
+        order_count=Count('pk'),
+        total_amount=Coalesce(
+            Sum('total'),
+            Value(0),
+            output_field=money_field,
+        ),
+        discount_amount=Coalesce(
+            Sum('discount'),
+            Value(0),
+            output_field=money_field,
+        ),
+    )
 
 
 def _available_variants_for_user(user):
@@ -123,6 +141,7 @@ class OrderListView(RoleRequiredMixin, ExportListMixin, ListView):
         context['invoice_section'] = 'quotes' if context['is_quote_list'] else 'sales'
         context['period_choices'] = PERIOD_CHOICES
         context['date_filter'] = getattr(self, 'date_filter', {})
+        context['order_totals'] = _order_totals(self.object_list)
         return context
 
 

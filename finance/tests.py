@@ -57,6 +57,43 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(self.cash.balance, Decimal('850.00'))
         self.assertTrue(PaymentTransaction.objects.filter(transaction_type=PaymentTransaction.TYPE_EXPENSE).exists())
 
+    def test_receipt_and_expense_list_totals_follow_type_filter(self):
+        PaymentTransaction.objects.create(
+            transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+            direction=PaymentTransaction.DIRECTION_IN,
+            amount=Decimal('225.00'),
+            cash_account=self.cash,
+            related_customer=self.customer,
+            created_by=self.user,
+        )
+        PaymentTransaction.objects.create(
+            transaction_type=PaymentTransaction.TYPE_EXPENSE,
+            direction=PaymentTransaction.DIRECTION_OUT,
+            amount=Decimal('80.00'),
+            cash_account=self.cash,
+            created_by=self.user,
+        )
+        self.client.force_login(self.user)
+
+        receipt_response = self.client.get(
+            reverse('finance:transactions'),
+            {'type': PaymentTransaction.TYPE_CUSTOMER_PAYMENT},
+        )
+        expense_response = self.client.get(
+            reverse('finance:transactions'),
+            {'type': PaymentTransaction.TYPE_EXPENSE},
+        )
+
+        self.assertEqual(receipt_response.context['transaction_totals']['transaction_count'], 1)
+        self.assertEqual(receipt_response.context['transaction_totals']['total_amount'], Decimal('225.00'))
+        self.assertEqual(receipt_response.context['transaction_totals']['total_in'], Decimal('225.00'))
+        self.assertEqual(receipt_response.context['transaction_totals']['total_out'], Decimal('0.00'))
+        self.assertEqual(expense_response.context['transaction_totals']['transaction_count'], 1)
+        self.assertEqual(expense_response.context['transaction_totals']['total_amount'], Decimal('80.00'))
+        self.assertEqual(expense_response.context['transaction_totals']['net_amount'], Decimal('-80.00'))
+        self.assertContains(receipt_response, 'sticky-table-wrap')
+        self.assertContains(expense_response, 'الإجمالي (1 حركة)')
+
     def test_expense_rejects_insufficient_balance(self):
         with self.assertRaises(ValidationError):
             add_expense(amount=Decimal('1500.00'), cash_account=self.cash, user=self.user)

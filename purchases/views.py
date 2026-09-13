@@ -4,7 +4,8 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Max, Q, Sum
+from django.db.models import Count, DecimalField, Max, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
@@ -34,6 +35,28 @@ def _decimal_from_post(value, default=Decimal('0')):
         return Decimal(str(value))
     except (InvalidOperation, TypeError):
         raise ValidationError('القيمة الرقمية غير صحيحة')
+
+
+def _purchase_order_totals(queryset):
+    money_field = DecimalField(max_digits=16, decimal_places=2)
+    return queryset.aggregate(
+        order_count=Count('pk'),
+        total_amount=Coalesce(
+            Sum('total_amount'),
+            Value(0),
+            output_field=money_field,
+        ),
+        paid_amount=Coalesce(
+            Sum('paid_amount'),
+            Value(0),
+            output_field=money_field,
+        ),
+        remaining_amount=Coalesce(
+            Sum('remaining_amount'),
+            Value(0),
+            output_field=money_field,
+        ),
+    )
 
 
 def _int_from_post(value, default=12):
@@ -381,6 +404,7 @@ class PurchaseOrderListView(ManagerRequiredMixin, ExportListMixin, ListView):
         context['period_choices'] = PERIOD_CHOICES
         context['date_filter'] = getattr(self, 'date_filter', {})
         context['status_choices'] = PurchaseOrder.STATUS_CHOICES
+        context['purchase_totals'] = _purchase_order_totals(self.object_list)
         return context
 
 
