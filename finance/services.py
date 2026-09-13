@@ -76,6 +76,8 @@ def record_transaction(
     account.refresh_from_db(fields=['balance'])
     transaction_time = None
     if isinstance(transaction_date, datetime):
+        if timezone.is_aware(transaction_date):
+            transaction_date = timezone.localtime(transaction_date)
         transaction_time = transaction_date.timetz().replace(tzinfo=None)
         transaction_date = transaction_date.date()
     tx = PaymentTransaction.objects.create(
@@ -522,7 +524,7 @@ def record_supplier_payment(*, supplier, amount, user, cash_account=None, notes=
 
 
 @transaction.atomic
-def record_order_sale_payment(*, order, user, cash_account=None, notes=''):
+def record_order_sale_payment(*, order, user, cash_account=None, notes='', transaction_date=None):
     from orders.models import Order
 
     order = Order.objects.select_for_update().get(pk=order.pk)
@@ -554,6 +556,7 @@ def record_order_sale_payment(*, order, user, cash_account=None, notes=''):
         related_customer=order.customer,
         notes=notes or f'قيمة بيع تلقائية للطلب {order.order_number}',
         created_by=user,
+        transaction_date=transaction_date or order.created_at,
     )
     order.paid_amount = target_amount
     order.remaining_amount = Decimal('0')

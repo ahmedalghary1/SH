@@ -129,6 +129,13 @@
                 <!-- معلومات العميل والدفع -->
                 <div class="invoice-info">
                     <label>
+                        <span>{% if is_quote_mode %}تاريخ ووقت عرض السعر{% else %}تاريخ ووقت الفاتورة{% endif %}</span>
+                        {{ form.invoice_datetime }}
+                        {% if form.invoice_datetime.errors %}
+                            <small class="field-error">{{ form.invoice_datetime.errors|join:", " }}</small>
+                        {% endif %}
+                    </label>
+                    <label>
                         <span>حالة الفاتورة</span>
                         <select id="invoice-kind">
                             <option value="retail">قطاعي</option>

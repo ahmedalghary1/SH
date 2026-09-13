@@ -19,6 +19,20 @@ def _as_decimal(value):
     return Decimal(str(value or 0))
 
 
+def _normalize_invoice_datetime(value):
+    if value and timezone.is_naive(value):
+        return timezone.make_aware(value, timezone.get_current_timezone())
+    return value
+
+
+def _set_order_created_at(order, invoice_datetime):
+    invoice_datetime = _normalize_invoice_datetime(invoice_datetime)
+    if not invoice_datetime:
+        return
+    Order.objects.filter(pk=order.pk).update(created_at=invoice_datetime)
+    order.created_at = invoice_datetime
+
+
 def generate_order_number():
     today = timezone.localdate().strftime('%Y%m%d')
     count = Order.objects.filter(created_at__date=timezone.localdate()).count() + 1
@@ -166,6 +180,7 @@ def get_order_item_warehouse(item, order=None):
 @transaction.atomic
 def create_order(*, order_data, items, user, confirm=False, auto_collect=True):
     order_data = dict(order_data)
+    invoice_datetime = order_data.pop('invoice_datetime', None)
     document_type = order_data.get('document_type') or Order.DOCUMENT_SALE
     if document_type == Order.DOCUMENT_QUOTE:
         confirm = False
@@ -185,6 +200,7 @@ def create_order(*, order_data, items, user, confirm=False, auto_collect=True):
         created_by=user,
         **order_data,
     )
+    _set_order_created_at(order, invoice_datetime)
     subtotal_after_item_discounts = Decimal('0')
     subtotal_before_item_discounts = Decimal('0')
     item_discount_total = Decimal('0')
@@ -282,6 +298,7 @@ def save_order_draft(*, order=None, order_data, items, user):
         raise ValidationError('يمكن تعديل الفواتير المعلقة فقط')
 
     order_data = dict(order_data)
+    invoice_datetime = order_data.pop('invoice_datetime', None)
     document_type = order_data.get('document_type') or Order.DOCUMENT_SALE
     customer = order_data.get('customer')
     if not order_data.get('warehouse') and items:
@@ -310,6 +327,7 @@ def save_order_draft(*, order=None, order_data, items, user):
         'discount', 'discount_approved_by', 'paid_amount', 'remaining_amount',
         'payment_status', 'status', 'updated_at',
     ])
+    _set_order_created_at(order, invoice_datetime)
 
     order.items.all().delete()
     subtotal_after_item_discounts = Decimal('0')

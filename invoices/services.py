@@ -20,7 +20,10 @@ def generate_invoice(order, user=None):
         raise ValidationError('لا يمكن إصدار فاتورة لطلب مسودة')
     if order.document_type == Order.DOCUMENT_QUOTE:
         raise ValidationError('لا يمكن إصدار فاتورة نهائية من تسعيرة غير مؤكدة')
-    invoice, _ = Invoice.objects.get_or_create(order=order, defaults={'invoice_number': generate_invoice_number()})
+    invoice, created = Invoice.objects.get_or_create(order=order, defaults={'invoice_number': generate_invoice_number()})
+    if created and order.created_at:
+        Invoice.objects.filter(pk=invoice.pk).update(issued_at=order.created_at)
+        invoice.issued_at = order.created_at
     if order.document_type == Order.DOCUMENT_SALE and order.total > 0 and order.payment_method != Order.METHOD_CREDIT:
         record_order_sale_payment(order=order, user=user or order.created_by, notes=f'قيمة فاتورة تلقائية {invoice.invoice_number}')
     return invoice

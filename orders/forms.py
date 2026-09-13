@@ -1,5 +1,6 @@
 from django import forms
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 from customers.services import visible_customers_for_user
 from inventory.models import Warehouse
@@ -8,10 +9,21 @@ from .models import Order
 
 
 class OrderForm(forms.ModelForm):
+    invoice_datetime = forms.DateTimeField(
+        required=False,
+        label='تاريخ ووقت الفاتورة',
+        initial=timezone.now,
+        input_formats=['%Y-%m-%dT%H:%M'],
+        widget=forms.DateTimeInput(
+            format='%Y-%m-%dT%H:%M',
+            attrs={'type': 'datetime-local'},
+        ),
+    )
+
     class Meta:
         model = Order
         fields = (
-            'document_type', 'order_type', 'customer', 'warehouse', 'payment_method',
+            'document_type', 'invoice_datetime', 'order_type', 'customer', 'warehouse', 'payment_method',
             'wallet_from_number', 'wallet_to_number', 'discount_amount', 'discount_percentage',
         )
         labels = {
@@ -35,6 +47,8 @@ class OrderForm(forms.ModelForm):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        if not self.is_bound and self.instance and self.instance.pk:
+            self.initial['invoice_datetime'] = timezone.localtime(self.instance.created_at)
         self.fields['customer'].required = False
         self.fields['customer'].queryset = visible_customers_for_user(user, self.fields['customer'].queryset)
         self.fields['warehouse'].required = False
@@ -80,3 +94,11 @@ class OrderForm(forms.ModelForm):
         if payment_method == Order.METHOD_WALLET and (not wallet_from or not wallet_to):
             raise ValidationError('أرقام المحافظ مطلوبة عند اختيار الدفع بمحفظة')
         return cleaned
+
+    def save(self, commit=True):
+        invoice_datetime = self.cleaned_data.get('invoice_datetime')
+        instance = super().save(commit=commit)
+        if commit and invoice_datetime:
+            Order.objects.filter(pk=instance.pk).update(created_at=invoice_datetime)
+            instance.created_at = invoice_datetime
+        return instance

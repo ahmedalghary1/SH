@@ -1,8 +1,10 @@
 from decimal import Decimal
+from datetime import datetime
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from accounts.models import User
 from customers.models import Customer
@@ -361,6 +363,62 @@ class OrderCreateViewTests(TestCase):
         self.assertEqual(order.status, Order.STATUS_DRAFT)
         self.assertEqual(order.payment_status, Order.PAYMENT_UNPAID)
         self.assertFalse(PaymentTransaction.objects.filter(related_order=order).exists())
+
+    def test_sale_datetime_is_saved_on_order_invoice_and_cash_transaction(self):
+        self.client.force_login(self.sales)
+
+        response = self.client.post(reverse('orders:create'), {
+            'document_type': Order.DOCUMENT_SALE,
+            'invoice_datetime': '2026-08-15T10:30',
+            'order_type': Order.TYPE_B2C,
+            'warehouse': str(self.warehouse.id),
+            'payment_method': Order.METHOD_CASH,
+            'discount_amount': '0',
+            'discount_percentage': '0',
+            'items_json': (
+                f'[{{"variant_id":"{self.variant.id}","warehouse_id":"{self.warehouse.id}",'
+                '"quantity":1,"unit_price":"300.00","discount_amount":0,"discount_percentage":0}}]'
+            ),
+            'action': 'confirm',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        order = Order.objects.get()
+        expected = timezone.make_aware(datetime(2026, 8, 15, 10, 30), timezone.get_current_timezone())
+        transaction = PaymentTransaction.objects.get(related_order=order)
+        self.assertEqual(order.created_at, expected)
+        self.assertEqual(order.invoice.issued_at, expected)
+        self.assertEqual(transaction.transaction_date, expected.date())
+        self.assertEqual(transaction.transaction_time, expected.time())
+
+    def test_quote_datetime_is_editable_and_saved(self):
+        self.client.force_login(self.sales)
+
+        page = self.client.get(reverse('orders:create'), {'document': 'quote'})
+        self.assertContains(page, 'name="invoice_datetime"')
+        self.assertContains(page, 'تاريخ ووقت عرض السعر')
+
+        response = self.client.post(reverse('orders:create'), {
+            'document_type': Order.DOCUMENT_QUOTE,
+            'invoice_datetime': '2026-08-16T14:45',
+            'order_type': Order.TYPE_B2C,
+            'warehouse': str(self.warehouse.id),
+            'payment_method': Order.METHOD_CASH,
+            'discount_amount': '0',
+            'discount_percentage': '0',
+            'items_json': (
+                f'[{{"variant_id":"{self.variant.id}","warehouse_id":"{self.warehouse.id}",'
+                '"quantity":1,"unit_price":"300.00","discount_amount":0,"discount_percentage":0}}]'
+            ),
+            'action': 'save',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        quote = Order.objects.get()
+        expected = timezone.make_aware(datetime(2026, 8, 16, 14, 45), timezone.get_current_timezone())
+        self.assertEqual(quote.document_type, Order.DOCUMENT_QUOTE)
+        self.assertEqual(quote.created_at, expected)
+        self.assertFalse(PaymentTransaction.objects.filter(related_order=quote).exists())
 
     def test_new_invoice_action_suspends_current_invoice(self):
         self.client.force_login(self.sales)
