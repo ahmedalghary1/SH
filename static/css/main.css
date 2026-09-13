@@ -4681,6 +4681,19 @@ tbody tr:hover {
     padding: var(--space-4);
 }
 
+.simple-customers-page .table-wrap {
+    max-height: calc(100vh - 8rem);
+    max-height: calc(100dvh - 8rem);
+    overflow: auto;
+}
+
+.simple-customers-page .table-wrap thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    box-shadow: 0 2px 0 var(--border-color);
+}
+
 .simple-customers-page .customer-link {
     color: var(--primary-color);
     text-decoration: none;
