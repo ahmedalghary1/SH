@@ -180,6 +180,40 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(self.order.remaining_amount, Decimal('200.00'))
         self.assertEqual(self.cash.balance, Decimal('1200.00'))
 
+    def test_credit_invoice_then_account_receipt_keeps_all_balances_in_sync(self):
+        self.customer.opening_balance = Decimal('0.00')
+        self.customer.save(update_fields=['opening_balance'])
+        self.order.paid_amount = Decimal('0.00')
+        self.order.remaining_amount = Decimal('500.00')
+        self.order.payment_status = Order.PAYMENT_UNPAID
+        self.order.save(update_fields=['paid_amount', 'remaining_amount', 'payment_status'])
+
+        before = build_customer_statement(self.customer)
+        self.assertEqual(before['current_balance'], Decimal('500.00'))
+
+        collect_customer_balance_payment(
+            customer=self.customer,
+            amount=Decimal('125.00'),
+            cash_account=self.cash,
+            user=self.user,
+        )
+
+        self.order.refresh_from_db()
+        self.customer.refresh_from_db()
+        self.cash.refresh_from_db()
+        after = build_customer_statement(self.customer)
+
+        self.assertEqual(self.order.paid_amount, Decimal('125.00'))
+        self.assertEqual(self.order.remaining_amount, Decimal('375.00'))
+        self.assertEqual(after['current_balance'], Decimal('375.00'))
+        self.assertEqual(self.customer.opening_balance, Decimal('0.00'))
+        self.assertEqual(self.cash.balance, Decimal('1125.00'))
+        self.assertTrue(PaymentTransaction.objects.filter(
+            related_order=self.order,
+            transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+            amount=Decimal('125.00'),
+        ).exists())
+
     def test_collect_customer_balance_payment_allocates_to_opening_balance_then_orders(self):
         second_order = Order.objects.create(
             order_number='ORD-FIN-002',
@@ -204,7 +238,7 @@ class FinanceServiceTests(TestCase):
         second_order.refresh_from_db()
         self.cash.refresh_from_db()
 
-        self.assertEqual(self.customer.opening_balance, Decimal('0.00'))
+        self.assertEqual(self.customer.opening_balance, Decimal('200.00'))
         self.assertEqual(self.order.paid_amount, Decimal('400.00'))
         self.assertEqual(self.order.remaining_amount, Decimal('100.00'))
         self.assertEqual(second_order.remaining_amount, Decimal('300.00'))
@@ -221,7 +255,8 @@ class FinanceServiceTests(TestCase):
         self.order.refresh_from_db()
         self.cash.refresh_from_db()
 
-        self.assertEqual(self.customer.opening_balance, Decimal('-100.00'))
+        self.assertEqual(self.customer.opening_balance, Decimal('200.00'))
+        self.assertEqual(build_customer_statement(self.customer)['current_balance'], Decimal('-100.00'))
         self.assertEqual(self.order.paid_amount, Decimal('500.00'))
         self.assertEqual(self.order.remaining_amount, Decimal('0.00'))
         self.assertEqual(self.cash.balance, Decimal('1700.00'))
@@ -298,7 +333,8 @@ class FinanceServiceTests(TestCase):
         self.cash.refresh_from_db()
         self.customer.refresh_from_db()
         self.assertEqual(self.cash.balance, Decimal('950.00'))
-        self.assertEqual(self.customer.opening_balance, Decimal('250.00'))
+        self.assertEqual(self.customer.opening_balance, Decimal('200.00'))
+        self.assertEqual(build_customer_statement(self.customer)['current_balance'], Decimal('650.00'))
         self.assertTrue(PaymentTransaction.objects.filter(
             transaction_type=PaymentTransaction.TYPE_REFUND,
             direction=PaymentTransaction.DIRECTION_OUT,
@@ -331,7 +367,8 @@ class FinanceServiceTests(TestCase):
 
         self.assertEqual(self.order.paid_amount, Decimal('500.00'))
         self.assertEqual(self.order.remaining_amount, Decimal('0.00'))
-        self.assertEqual(self.customer.opening_balance, Decimal('100.00'))
+        self.assertEqual(self.customer.opening_balance, Decimal('200.00'))
+        self.assertEqual(build_customer_statement(self.customer)['current_balance'], Decimal('100.00'))
         self.assertEqual(self.cash.balance, Decimal('1500.00'))
         self.assertTrue(PaymentTransaction.objects.filter(
             transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
@@ -439,7 +476,7 @@ class FinanceServiceTests(TestCase):
         self.cash.refresh_from_db()
         self.assertEqual(self.cash.balance, Decimal('1200.00'))
         self.customer.refresh_from_db()
-        self.assertEqual(self.customer.opening_balance, Decimal('0.00'))
+        self.assertEqual(self.customer.opening_balance, Decimal('200.00'))
 
         response = self.client.post(reverse('finance:transaction_delete', kwargs={'pk': tx.pk}))
 

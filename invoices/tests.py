@@ -1,6 +1,7 @@
 from decimal import Decimal
 from datetime import date
 
+from django.db.models import Sum
 from django.test import TestCase
 from django.urls import reverse
 
@@ -81,6 +82,28 @@ class InvoicePDFExportTests(TestCase):
         self.assertEqual(response['Content-Type'], 'application/pdf')
         self.assertIn('invoice-report.pdf', response['Content-Disposition'])
         self.assertTrue(response.content.startswith(b'%PDF'))
+
+    def test_invoice_keeps_customer_product_and_company_snapshot(self):
+        settings = CompanySettings.load()
+        settings.company_name = 'Original Company'
+        settings.save(update_fields=['company_name'])
+        invoice = generate_invoice(self.order, user=self.user)
+        original_customer = invoice.customer_display
+        original_product = invoice.snapshot_items[0]['product_name']
+
+        customer = self.order.customer
+        customer.name = 'Changed Customer'
+        customer.save(update_fields=['name'])
+        product = self.order.items.get().variant.product
+        product.name = 'Changed Product'
+        product.save(update_fields=['name'])
+        settings.company_name = 'Changed Company'
+        settings.save(update_fields=['company_name'])
+
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.customer_display, original_customer)
+        self.assertEqual(invoice.snapshot_items[0]['product_name'], original_product)
+        self.assertEqual(invoice.snapshot['company']['name'], 'Original Company')
 
     def test_invoice_list_totals_follow_the_active_filters(self):
         unpaid_order = Order.objects.create(
@@ -262,7 +285,14 @@ class InvoicePDFExportTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(credit_order.paid_amount, Decimal('500.00'))
         self.assertEqual(credit_order.remaining_amount, Decimal('0.00'))
-        self.assertEqual(credit_order.customer.opening_balance, Decimal('-100.00'))
+        self.assertEqual(credit_order.customer.opening_balance, Decimal('0.00'))
+        self.assertEqual(
+            credit_order.customer.payment_transactions.filter(
+                affects_customer_balance=True,
+                direction=PaymentTransaction.DIRECTION_IN,
+            ).aggregate(total=Sum('amount'))['total'],
+            Decimal('100.00'),
+        )
         self.assertEqual(cash.balance, Decimal('600.00'))
         self.assertTrue(PaymentTransaction.objects.filter(
             related_order=credit_order,

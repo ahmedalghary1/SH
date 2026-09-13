@@ -70,8 +70,10 @@ def consume_sales_rep_assignments(*, sales_rep, product_variant, quantity):
         remaining -= take
         if remaining <= 0:
             break
-    if remaining > 0:
-        raise ValidationError('عهدة المندوب المسجلة أقل من كمية البيع')
+    # Legacy representative warehouses may contain stock transferred before
+    # assignment tracking existed. Do not block those sales; every new issue
+    # now creates both records atomically.
+    return int(quantity) - remaining
 
 
 def restore_sales_rep_assignments(*, sales_rep, product_variant, quantity):
@@ -91,8 +93,7 @@ def restore_sales_rep_assignments(*, sales_rep, product_variant, quantity):
         remaining -= take
         if remaining <= 0:
             break
-    if remaining > 0:
-        raise ValidationError('تعذر عكس عهدة المندوب بالكامل لعدم وجود سجل بيع مطابق')
+    return int(quantity) - remaining
 
 
 @transaction.atomic

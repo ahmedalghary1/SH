@@ -52,10 +52,10 @@
                     <td>{{ order.created_by|default:'-' }}</td>
                     <td>
                         <a class="btn btn-light" href="{% url 'orders:detail' order.pk %}">عرض</a>
-                        {% if request.user.is_manager %}
+                        {% if request.user.is_manager and order.status == 'draft' %}
                             <a class="btn btn-light" href="{% url 'orders:update' order.pk %}">تعديل</a>
                         {% endif %}
-                        {% if request.user.can_hard_delete %}
+                        {% if request.user.can_hard_delete and order.status == 'draft' %}
                             <a class="btn btn-danger" href="{% url 'orders:delete' order.pk %}">حذف</a>
                         {% endif %}
                     </td>

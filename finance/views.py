@@ -732,49 +732,6 @@ class SupplierPaymentView(ManagerRequiredMixin, FormView):
             return self.form_invalid(form)
 
 
-class ShiftCloseView(ManagerRequiredMixin, TemplateView):
-    template_name = 'finance/shift_close.html'
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        today = timezone.localdate()
-        default_account = CashAccount.get_default()
-        
-        # الحصول على معاملات اليوم
-        transactions = PaymentTransaction.objects.filter(
-            cash_account=default_account,
-            transaction_date=today
-        )
-        
-        # حساب الإحصائيات
-        total_sales = transactions.filter(
-            transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
-            direction=PaymentTransaction.DIRECTION_IN
-        ).aggregate(v=Sum('amount'))['v'] or 0
-        
-        total_refunds = transactions.filter(
-            transaction_type=PaymentTransaction.TYPE_REFUND,
-            direction=PaymentTransaction.DIRECTION_OUT
-        ).aggregate(v=Sum('amount'))['v'] or 0
-        
-        total_expenses = transactions.filter(
-            transaction_type=PaymentTransaction.TYPE_EXPENSE,
-            direction=PaymentTransaction.DIRECTION_OUT
-        ).aggregate(v=Sum('amount'))['v'] or 0
-        
-        expected_cash = total_sales - total_refunds - total_expenses
-        
-        context.update({
-            'shift_start': '09:00',  # يمكن تحسينه لاحقاً من تاريخ تسجيل الدخول
-            'now': timezone.now(),
-            'total_sales': total_sales,
-            'total_refunds': total_refunds,
-            'total_expenses': total_expenses,
-            'expected_cash': expected_cash,
-        })
-        return context
-
-
 class CustomerStatementView(ManagerRequiredMixin, TemplateView):
     template_name = 'finance/statements/customer.html'
 

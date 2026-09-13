@@ -1,4 +1,5 @@
 from django.contrib import messages
+from decimal import Decimal
 from django.db.models import (
     Count,
     DateField,
@@ -154,17 +155,21 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
         context['sort'] = self.request.GET.get('sort', '')
         money_field = DecimalField(max_digits=16, decimal_places=2)
         filtered_customer_ids = self.object_list.order_by().values('pk')
-        customer_totals = Customer.objects.filter(
+        customer_totals_queryset = Customer.objects.filter(
             pk__in=Subquery(filtered_customer_ids),
         )
-        customer_totals = annotate_customer_balances(customer_totals).aggregate(
+        customer_totals_queryset = annotate_customer_balances(customer_totals_queryset)
+        customer_totals = customer_totals_queryset.aggregate(
             customer_count=Count('pk'),
             opening_balance=Coalesce(
                 Sum('opening_balance'),
                 Value(0),
                 output_field=money_field,
             ),
-            current_balance=Coalesce(Sum('current_balance'), Value(0), output_field=money_field),
+        )
+        filtered_current_balance = sum(
+            (customer.current_balance for customer in customer_totals_queryset),
+            Decimal('0'),
         )
         order_totals = Order.objects.filter(
             customer_id__in=Subquery(filtered_customer_ids),
@@ -187,7 +192,7 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
         context['customer_totals'] = {
             'customer_count': customer_totals['customer_count'],
             'total_purchases': order_totals['total_purchases'],
-            'current_balance': customer_totals['current_balance'],
+            'current_balance': filtered_current_balance,
         }
         return context
 

@@ -9,7 +9,7 @@ from django.utils import timezone
 from accounts.models import User
 from customers.models import Customer
 from finance.models import CashAccount, PaymentTransaction
-from inventory.models import Stock, StockMovement, Warehouse
+from inventory.models import Stock, StockBatch, StockMovement, Warehouse
 from products.models import Category, Color, Product, ProductVariant, Size
 from settings_app.models import CompanySettings
 
@@ -63,6 +63,44 @@ class OrderStockServiceTests(TestCase):
         self.assertEqual(stock.quantity, 2)
         self.assertEqual(self.order.status, Order.STATUS_CONFIRMED)
         self.assertTrue(StockMovement.objects.filter(movement_type=StockMovement.TYPE_SALE, quantity=3).exists())
+
+    def test_confirm_order_uses_actual_fifo_batch_cost(self):
+        self.stock = Stock.objects.get(warehouse=self.warehouse, variant=self.variant)
+        self.stock.quantity = 2
+        self.stock.save(update_fields=['quantity'])
+        StockBatch.objects.create(
+            variant=self.variant, warehouse=self.warehouse,
+            received_quantity=1, remaining_quantity=1, unit_cost=Decimal('100.00'),
+        )
+        StockBatch.objects.create(
+            variant=self.variant, warehouse=self.warehouse,
+            received_quantity=1, remaining_quantity=1, unit_cost=Decimal('200.00'),
+        )
+        item = self.order.items.get()
+        item.quantity = 2
+        item.total = Decimal('600.00')
+        item.save(update_fields=['quantity', 'total'])
+        self.order.total = Decimal('600.00')
+        self.order.save(update_fields=['total'])
+
+        confirm_order(order=self.order, user=self.user)
+
+        item.refresh_from_db()
+        self.order.refresh_from_db()
+        self.assertEqual(item.cost_total, Decimal('300.00'))
+        self.assertEqual(item.profit_total, Decimal('300.00'))
+        self.assertEqual(self.order.total_cost, Decimal('300.00'))
+
+    def test_posted_order_cannot_be_edited_or_hard_deleted(self):
+        confirm_order(order=self.order, user=self.user)
+        self.client.force_login(self.user)
+
+        update_response = self.client.get(reverse('orders:update', args=[self.order.pk]))
+        delete_response = self.client.post(reverse('orders:delete', args=[self.order.pk]))
+
+        self.assertEqual(update_response.status_code, 404)
+        self.assertEqual(delete_response.status_code, 404)
+        self.assertTrue(Order.objects.filter(pk=self.order.pk).exists())
 
     def test_confirm_order_rejects_unavailable_quantity(self):
         self.order.items.update(quantity=8, total=Decimal('2400.00'))

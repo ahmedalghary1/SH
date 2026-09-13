@@ -35,7 +35,7 @@
                 <td>{{ ret.created_at|date:'Y-m-d H:i' }}</td>
                 <td>
                     <a class="btn btn-light" href="{% url 'returns:detail' ret.pk %}">عرض</a>
-                    {% if request.user.can_hard_delete %}
+                    {% if request.user.can_hard_delete and ret.status == 'draft' or request.user.can_hard_delete and ret.status == 'rejected' %}
                         <a class="btn btn-danger" href="{% url 'returns:delete' ret.pk %}">حذف</a>
                     {% endif %}
                 </td>

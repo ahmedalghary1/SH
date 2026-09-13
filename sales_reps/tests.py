@@ -6,6 +6,7 @@ from django.test import TestCase
 from accounts.models import User
 from customers.models import Customer
 from finance.models import CashAccount, PaymentTransaction
+from finance.services import customer_ledger_delta
 from inventory.models import Stock, StockMovement, Warehouse
 from orders.models import Order
 from products.models import Product, ProductVariant
@@ -167,7 +168,8 @@ class SalesRepServiceTests(TestCase):
         self.assertEqual(collection.amount, Decimal('700.00'))
         self.assertEqual(self.order.paid_amount, Decimal('900.00'))
         self.assertEqual(self.order.remaining_amount, Decimal('0.00'))
-        self.assertEqual(self.customer.opening_balance, Decimal('-100.00'))
+        self.assertEqual(self.customer.opening_balance, Decimal('0.00'))
+        self.assertEqual(customer_ledger_delta(self.customer), Decimal('-100.00'))
         self.assertEqual(rep_cash.balance, Decimal('700.00'))
         self.assertTrue(PaymentTransaction.objects.filter(
             transaction_type=PaymentTransaction.TYPE_SALES_REP_COLLECTION,
