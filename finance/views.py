@@ -75,7 +75,10 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
         if date_to < date_from:
             date_from, date_to = date_to, date_from
 
-        transactions_base = PaymentTransaction.objects.filter(cash_account_id__in=account_ids)
+        transactions_base = PaymentTransaction.objects.filter(
+            cash_account_id__in=account_ids,
+            affects_cash=True,
+        )
         period_transactions = transactions_base.filter(
             transaction_date__gte=date_from,
             transaction_date__lte=date_to,
@@ -178,7 +181,8 @@ class CashShiftView(SalesRequiredMixin, TemplateView):
         transactions = PaymentTransaction.objects.filter(
             cash_account=default_account,
             transaction_date=today,
-            created_by=self.request.user
+            created_by=self.request.user,
+            affects_cash=True,
         ).select_related('created_by').order_by('-created_at')
         
         # حساب الإحصائيات للمستخدم الحالي
@@ -276,7 +280,7 @@ class CashAccountDetailView(ManagerRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        transactions = self.object.transactions.select_related(
+        transactions = self.object.transactions.filter(affects_cash=True).select_related(
             'related_order',
             'related_customer',
             'related_sales_rep',
@@ -343,7 +347,7 @@ class TransactionListView(ManagerRequiredMixin, ExportListMixin, ListView):
     )
 
     def get_queryset(self):
-        qs = PaymentTransaction.objects.select_related(
+        qs = PaymentTransaction.objects.filter(affects_cash=True).select_related(
             'cash_account', 'related_order', 'related_customer', 'related_sales_rep', 'related_supplier', 'created_by'
         )
         transaction_type = self.request.GET.get('type')
@@ -447,6 +451,7 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
             transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
             direction=PaymentTransaction.DIRECTION_IN,
             related_customer__in=visible_customers,
+            affects_cash=True,
         ).select_related(
             'related_customer',
             'related_order',
@@ -636,6 +641,7 @@ class CustomerCollectionUpdateView(RoleRequiredMixin, FormView):
             transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
             direction=PaymentTransaction.DIRECTION_IN,
             related_customer__isnull=False,
+            affects_cash=True,
         )
 
     def get_form_kwargs(self):
@@ -832,6 +838,7 @@ class DailyCollectionsReportView(ManagerRequiredMixin, TemplateView):
         transactions = PaymentTransaction.objects.filter(
             transaction_date=today,
             direction=PaymentTransaction.DIRECTION_IN,
+            affects_cash=True,
         ).select_related('cash_account', 'related_customer', 'related_order')
         context['transactions'] = transactions
         context['total'] = transactions.aggregate(v=Sum('amount'))['v'] or 0

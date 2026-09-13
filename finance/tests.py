@@ -17,6 +17,7 @@ from .services import (
     build_customer_statement,
     collect_order_payment,
     collect_customer_balance_payment,
+    delete_transaction,
     record_customer_payment,
     record_customer_refund_payment,
     record_order_sale_payment,
@@ -167,6 +168,7 @@ class FinanceServiceTests(TestCase):
             direction=PaymentTransaction.DIRECTION_IN,
             amount=Decimal('75.00'),
             related_customer=self.customer,
+            affects_cash=True,
         )
         self.assertEqual(str(receipt.transaction_date), '2026-06-13')
         self.assertEqual(receipt.transaction_time.strftime('%H:%M'), '09:25')
@@ -227,7 +229,7 @@ class FinanceServiceTests(TestCase):
             created_by=self.user,
         )
 
-        collect_customer_balance_payment(
+        transactions = collect_customer_balance_payment(
             customer=self.customer,
             amount=Decimal('500.00'),
             cash_account=self.cash,
@@ -243,6 +245,36 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(self.order.remaining_amount, Decimal('100.00'))
         self.assertEqual(second_order.remaining_amount, Decimal('300.00'))
         self.assertEqual(self.cash.balance, Decimal('1500.00'))
+        receipt = transactions[-1]
+        allocations = PaymentTransaction.objects.filter(
+            reference=receipt.reference,
+            affects_cash=False,
+        )
+        self.assertTrue(receipt.affects_cash)
+        self.assertEqual(receipt.amount, Decimal('500.00'))
+        self.assertEqual(allocations.count(), 2)
+        self.assertEqual(sum(row.amount for row in allocations), Decimal('500.00'))
+
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('finance:cash'))
+        self.assertEqual(list(response.context['transactions']), [receipt])
+
+    def test_deleting_grouped_customer_receipt_reverses_cash_and_allocations(self):
+        transactions = collect_customer_balance_payment(
+            customer=self.customer,
+            amount=Decimal('500.00'),
+            cash_account=self.cash,
+            user=self.user,
+        )
+
+        delete_transaction(payment_transaction=transactions[-1], user=self.user)
+
+        self.cash.refresh_from_db()
+        self.order.refresh_from_db()
+        self.assertEqual(self.cash.balance, Decimal('1000.00'))
+        self.assertEqual(self.order.paid_amount, Decimal('100.00'))
+        self.assertEqual(self.order.remaining_amount, Decimal('400.00'))
+        self.assertFalse(PaymentTransaction.objects.filter(reference=transactions[-1].reference).exists())
 
     def test_collect_customer_balance_payment_stores_overpayment_as_customer_credit(self):
         collect_customer_balance_payment(

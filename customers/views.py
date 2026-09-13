@@ -64,6 +64,7 @@ def _customer_account_annotations(queryset):
     latest_receipt = PaymentTransaction.objects.filter(
         related_customer=OuterRef('pk'),
         direction=PaymentTransaction.DIRECTION_IN,
+        affects_cash=True,
         transaction_type__in=[
             PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
             PaymentTransaction.TYPE_SALES_REP_COLLECTION,
@@ -326,6 +327,7 @@ class SimpleCustomerDetailView(CustomerVisibilityMixin, SalesRequiredMixin, Deta
         payments = PaymentTransaction.objects.filter(
             related_customer=customer,
             direction=PaymentTransaction.DIRECTION_IN,
+            affects_cash=True,
             transaction_type__in=[PaymentTransaction.TYPE_CUSTOMER_PAYMENT, PaymentTransaction.TYPE_SALES_REP_COLLECTION],
         ).select_related('cash_account', 'created_by').order_by('-created_at')
         

@@ -13,6 +13,9 @@ from audit.services import log_audit
 from .models import CashAccount, PaymentTransaction
 
 
+CUSTOMER_RECEIPT_REFERENCE_PREFIX = 'RCP-'
+
+
 def _as_decimal(amount):
     amount = Decimal(str(amount or 0))
     if amount <= 0:
@@ -79,21 +82,23 @@ def record_transaction(
     created_by=None,
     reference='',
     transaction_date=None,
+    affects_cash=True,
     affects_customer_balance=False,
 ):
     amount = _as_decimal(amount)
     account = _locked_account(cash_account)
     old_balance = account.balance
-    if direction == PaymentTransaction.DIRECTION_IN:
-        account.balance = F('balance') + amount
-    elif direction == PaymentTransaction.DIRECTION_OUT:
-        if not account.allow_overdraft and account.balance < amount:
-            raise ValidationError('رصيد الخزنة غير كاف لتنفيذ الحركة')
-        account.balance = F('balance') - amount
-    else:
+    if direction not in {PaymentTransaction.DIRECTION_IN, PaymentTransaction.DIRECTION_OUT}:
         raise ValidationError('اتجاه الحركة المالية غير صحيح')
-    account.save(update_fields=['balance'])
-    account.refresh_from_db(fields=['balance'])
+    if affects_cash:
+        if direction == PaymentTransaction.DIRECTION_IN:
+            account.balance = F('balance') + amount
+        else:
+            if not account.allow_overdraft and account.balance < amount:
+                raise ValidationError('رصيد الخزنة غير كاف لتنفيذ الحركة')
+            account.balance = F('balance') - amount
+        account.save(update_fields=['balance'])
+        account.refresh_from_db(fields=['balance'])
     transaction_time = None
     if isinstance(transaction_date, datetime):
         if timezone.is_aware(transaction_date):
@@ -115,6 +120,7 @@ def record_transaction(
         transaction_time=transaction_time or timezone.localtime().time().replace(tzinfo=None),
         created_by=created_by,
         reference=reference or '',
+        affects_cash=affects_cash,
         affects_customer_balance=affects_customer_balance,
     )
     
@@ -138,7 +144,10 @@ def record_transaction(
 
 
 @transaction.atomic
-def record_customer_payment(*, order, customer, amount, user, cash_account=None, notes='', transaction_date=None):
+def record_customer_payment(
+    *, order, customer, amount, user, cash_account=None, notes='', transaction_date=None,
+    reference='', affects_cash=True, affects_customer_balance=None,
+):
     from customers.models import Customer
 
     amount = _as_decimal(amount)
@@ -153,8 +162,14 @@ def record_customer_payment(*, order, customer, amount, user, cash_account=None,
         related_customer=customer,
         notes=notes,
         created_by=user,
+        reference=reference,
         transaction_date=transaction_date,
-        affects_customer_balance=bool(customer and not order),
+        affects_cash=affects_cash,
+        affects_customer_balance=(
+            bool(customer and not order)
+            if affects_customer_balance is None
+            else affects_customer_balance
+        ),
     )
     return tx
 
@@ -166,21 +181,39 @@ def collect_customer_balance_payment(*, customer, amount, user, cash_account=Non
 
     amount = _as_decimal(amount)
     customer = Customer.objects.select_for_update().get(pk=customer.pk)
+    account = cash_account or CashAccount.get_default()
+    receipt_reference = f'{CUSTOMER_RECEIPT_REFERENCE_PREFIX}{uuid4().hex.upper()}'
     remaining_to_allocate = amount
-    transactions = []
+    allocations = []
+
+    # One receipt must create one cash movement. Its distribution over the
+    # opening balance and invoices is stored as non-cash allocation rows.
+    receipt = record_customer_payment(
+        order=None,
+        customer=customer,
+        amount=amount,
+        user=user,
+        cash_account=account,
+        notes=notes or f'تحصيل من العميل {customer}',
+        transaction_date=transaction_date,
+        reference=receipt_reference,
+        affects_customer_balance=False,
+    )
 
     available_opening_balance = _money(customer.opening_balance) + customer_ledger_delta(customer)
     if available_opening_balance > 0:
         opening_payment = min(remaining_to_allocate, available_opening_balance)
         if opening_payment > 0:
-            transactions.append(record_customer_payment(
+            allocations.append(record_customer_payment(
                 order=None,
                 customer=customer,
                 amount=opening_payment,
                 user=user,
-                cash_account=cash_account,
+                cash_account=account,
                 notes=notes or 'تحصيل من رصيد افتتاحي',
                 transaction_date=transaction_date,
+                reference=receipt_reference,
+                affects_cash=False,
             ))
             remaining_to_allocate -= opening_payment
 
@@ -196,27 +229,31 @@ def collect_customer_balance_payment(*, customer, amount, user, cash_account=Non
         order_payment = min(remaining_to_allocate, Decimal(str(order.remaining_amount or 0)))
         if order_payment <= 0:
             continue
-        transactions.append(collect_order_payment(
+        allocations.append(collect_order_payment(
             order=order,
             amount=order_payment,
             user=user,
-            cash_account=cash_account,
+            cash_account=account,
             notes=notes or f'تحصيل من العميل {customer}',
             transaction_date=transaction_date,
+            reference=receipt_reference,
+            affects_cash=False,
         ))
         remaining_to_allocate -= order_payment
 
     if remaining_to_allocate > 0:
-        transactions.append(record_customer_payment(
+        allocations.append(record_customer_payment(
             order=None,
             customer=customer,
             amount=remaining_to_allocate,
             user=user,
-            cash_account=cash_account,
+            cash_account=account,
             notes=notes or f'رصيد دائن للعميل {customer}',
             transaction_date=transaction_date,
+            reference=receipt_reference,
+            affects_cash=False,
         ))
-    return transactions
+    return [*allocations, receipt]
 
 
 @transaction.atomic
@@ -481,6 +518,7 @@ def build_customer_statement(customer):
 def build_cash_account_statement(account):
     transactions = PaymentTransaction.objects.filter(
         cash_account=account,
+        affects_cash=True,
     ).select_related(
         'related_order',
         'related_customer',
@@ -648,7 +686,10 @@ def record_order_refund(*, order, user, cash_account=None, amount=None, notes=''
 
 
 @transaction.atomic
-def collect_order_payment(*, order, amount, user, cash_account=None, notes='', transaction_date=None):
+def collect_order_payment(
+    *, order, amount, user, cash_account=None, notes='', transaction_date=None,
+    reference='', affects_cash=True,
+):
     from orders.models import Order
     from customers.models import Customer
 
@@ -699,6 +740,8 @@ def collect_order_payment(*, order, amount, user, cash_account=None, notes='', t
             cash_account=cash_account,
             notes=notes,
             transaction_date=transaction_date,
+            reference=reference,
+            affects_cash=affects_cash,
         )
         order.paid_amount = F('paid_amount') + order_payment
         order.save(update_fields=['paid_amount'])
@@ -714,6 +757,8 @@ def collect_order_payment(*, order, amount, user, cash_account=None, notes='', t
                 cash_account=cash_account,
                 notes=notes or f'رصيد دائن زائد من الطلب {order.order_number}',
                 transaction_date=transaction_date,
+                reference=reference,
+                affects_cash=affects_cash,
             )
         else:
             tx = record_customer_payment(
@@ -724,6 +769,8 @@ def collect_order_payment(*, order, amount, user, cash_account=None, notes='', t
                 cash_account=cash_account,
                 notes=notes,
                 transaction_date=transaction_date,
+                reference=reference,
+                affects_cash=affects_cash,
             )
     return tx
 
@@ -773,19 +820,41 @@ def delete_transaction(*, payment_transaction, user=None):
         raise ValidationError('اتجاه الحركة المالية غير صحيح')
     account.save(update_fields=['balance'])
     account.refresh_from_db(fields=['balance'])
+
+    receipt_allocations = []
     if (
         tx.transaction_type == PaymentTransaction.TYPE_CUSTOMER_PAYMENT
         and tx.direction == PaymentTransaction.DIRECTION_IN
-        and tx.related_order_id
+        and (tx.reference or '').startswith(CUSTOMER_RECEIPT_REFERENCE_PREFIX)
     ):
+        receipt_allocations = list(
+            PaymentTransaction.objects.select_for_update().filter(
+                reference=tx.reference,
+                transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+                direction=PaymentTransaction.DIRECTION_IN,
+                affects_cash=False,
+            ).exclude(pk=tx.pk)
+        )
+
+    payment_rows = [tx, *receipt_allocations]
+    for payment_row in payment_rows:
+        if not payment_row.related_order_id:
+            continue
         from orders.models import Order
 
-        order = Order.objects.select_for_update().get(pk=tx.related_order_id)
-        order.paid_amount = max(Decimal(str(order.paid_amount or 0)) - tx.amount, Decimal('0'))
+        order = Order.objects.select_for_update().get(pk=payment_row.related_order_id)
+        order.paid_amount = max(
+            Decimal(str(order.paid_amount or 0)) - payment_row.amount,
+            Decimal('0'),
+        )
         _sync_order_payment_status(order)
     tx_repr = str(tx)
     tx_pk = tx.pk
     tx_amount = tx.amount
+    if receipt_allocations:
+        PaymentTransaction.objects.filter(
+            pk__in=[allocation.pk for allocation in receipt_allocations],
+        ).delete()
     tx.delete()
 
     log_audit(

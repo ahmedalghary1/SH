@@ -91,6 +91,7 @@ def get_customer_summary(customer):
     total_paid = PaymentTransaction.objects.filter(
         related_customer=customer,
         direction=PaymentTransaction.DIRECTION_IN,
+        affects_cash=True,
         transaction_type__in=[PaymentTransaction.TYPE_CUSTOMER_PAYMENT, PaymentTransaction.TYPE_SALES_REP_COLLECTION],
     ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
@@ -98,6 +99,7 @@ def get_customer_summary(customer):
     last_payment = PaymentTransaction.objects.filter(
         related_customer=customer,
         direction=PaymentTransaction.DIRECTION_IN,
+        affects_cash=True,
         transaction_type__in=[
             PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
             PaymentTransaction.TYPE_SALES_REP_COLLECTION,
