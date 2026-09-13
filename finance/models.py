@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.core.validators import MinValueValidator
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from config.django_compat import check_constraint
 from config.branching import BranchOwnedModel
 from django.utils import timezone
@@ -42,16 +42,40 @@ class CashAccount(BranchOwnedModel):
             models.Index(fields=['account_type', 'is_active']),
             models.Index(fields=['created_at']),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['branch', 'name'],
+                name='finance_cashaccount_branch_name_uniq',
+            ),
+            models.UniqueConstraint(
+                fields=['branch', 'assigned_user'],
+                condition=models.Q(
+                    account_type='sales_rep_cash',
+                    assigned_user__isnull=False,
+                ),
+                name='finance_cashaccount_branch_rep_uniq',
+            ),
+        ]
 
     def __str__(self):
         return self.name
 
     @classmethod
     def _get_or_create_single(cls, defaults=None, **lookup):
-        account = cls.objects.filter(**lookup).order_by('pk').first()
-        if account:
-            return account
-        return cls.objects.create(**lookup, **(defaults or {}))
+        try:
+            with transaction.atomic():
+                account, _ = cls.objects.get_or_create(
+                    defaults=defaults or {},
+                    **lookup,
+                )
+                return account
+        except IntegrityError:
+            # A concurrent request may have created the same account between
+            # SELECT and INSERT. The database constraint makes that safe.
+            account = cls.objects.filter(**lookup).order_by('pk').first()
+            if account:
+                return account
+            raise
 
     @classmethod
     def get_default(cls):

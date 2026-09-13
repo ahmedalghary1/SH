@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
 
@@ -67,6 +68,7 @@ class FinanceServiceTests(TestCase):
             related_customer=self.customer,
             created_by=self.user,
         )
+
         PaymentTransaction.objects.create(
             transaction_type=PaymentTransaction.TYPE_EXPENSE,
             direction=PaymentTransaction.DIRECTION_OUT,
@@ -94,6 +96,21 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(expense_response.context['transaction_totals']['net_amount'], Decimal('-80.00'))
         self.assertContains(receipt_response, 'sticky-table-wrap')
         self.assertContains(expense_response, 'الإجمالي (1 حركة)')
+
+    def test_cash_account_name_cannot_be_duplicated_in_same_branch(self):
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                CashAccount.objects.create(name=self.cash.name)
+
+    def test_default_cash_account_is_reused(self):
+        first = CashAccount.get_default()
+        second = CashAccount.get_default()
+
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(
+            CashAccount.objects.filter(name='الخزنة الرئيسية').count(),
+            1,
+        )
 
     def test_expense_rejects_insufficient_balance(self):
         with self.assertRaises(ValidationError):
