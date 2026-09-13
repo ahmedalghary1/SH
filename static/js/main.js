@@ -234,6 +234,17 @@ function isPageNavigationLink(link, event) {
     return url.pathname !== window.location.pathname || url.search !== window.location.search;
 }
 
+function isWorkspaceTabNavigationLink(link) {
+    if (!link || !document.querySelector("[data-workspace-tabs]")) return false;
+    const url = new URL(link.href, window.location.href);
+    if (url.origin !== window.location.origin) return false;
+    if (url.pathname.startsWith("/accounts/") || url.pathname.startsWith("/admin/")) return false;
+    if (url.pathname.includes("/logout")) return false;
+    if (/\.(pdf|xlsx?|csv)$/i.test(url.pathname)) return false;
+    if (url.pathname.includes("/export/") || url.pathname.includes("/print")) return false;
+    return true;
+}
+
 window.SHUnsavedForms = {
     hasDirtyForms: hasDirtyUnsavedForms,
     markSaved: markUnsavedFormSaved,
@@ -355,6 +366,9 @@ document.addEventListener("change", (event) => {
 document.addEventListener("click", (event) => {
     const link = event.target.closest?.("a[href]");
     if (!isPageNavigationLink(link, event) || !hasDirtyUnsavedForms()) return;
+    // Internal workspace navigation stashes the live DOM, including any form
+    // values, so switching tabs must remain immediate and needs no warning.
+    if (isWorkspaceTabNavigationLink(link)) return;
     if (window.confirm(UNSAVED_FORM_MESSAGE)) {
         allowCurrentNavigation();
         return;
