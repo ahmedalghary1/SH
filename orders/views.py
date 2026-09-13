@@ -366,6 +366,11 @@ class OrderUpdateView(RoleRequiredMixin, UpdateView):
     form_class = OrderForm
     template_name = 'orders/update.html'
 
+    def get_queryset(self):
+        # Posted documents are immutable. Corrections must go through the
+        # cancellation/return workflows so stock and cash are reversed too.
+        return Order.objects.filter(status=Order.STATUS_DRAFT)
+
     def get_success_url(self):
         return reverse_lazy('orders:detail', kwargs={'pk': self.object.pk})
 
@@ -409,8 +414,12 @@ class OrderStatusUpdateView(RoleRequiredMixin, View):
     def post(self, request, pk):
         order = get_object_or_404(Order, pk=pk)
         status = request.POST.get('status')
-        allowed = {Order.STATUS_PREPARING, Order.STATUS_READY, Order.STATUS_COMPLETED}
-        if status in allowed:
+        allowed_transitions = {
+            Order.STATUS_CONFIRMED: {Order.STATUS_PREPARING},
+            Order.STATUS_PREPARING: {Order.STATUS_READY},
+            Order.STATUS_READY: {Order.STATUS_COMPLETED},
+        }
+        if status in allowed_transitions.get(order.status, set()):
             order.status = status
             order.save(update_fields=['status'])
             messages.success(request, 'تم تحديث حالة الطلب')
@@ -441,6 +450,9 @@ class OrderDeleteView(ManagerDeleteView):
     model = Order
     success_url = reverse_lazy('orders:list')
     success_message = 'تم حذف الفاتورة'
+
+    def get_queryset(self):
+        return Order.objects.filter(status=Order.STATUS_DRAFT)
 
 
 @require_GET

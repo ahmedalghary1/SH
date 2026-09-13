@@ -134,6 +134,10 @@ class PaymentTransaction(BranchOwnedModel):
     transaction_date = models.DateField(default=timezone.localdate, db_index=True)
     transaction_time = models.TimeField(default=timezone.localtime, db_index=True)
     affects_cash = models.BooleanField(default=True, db_index=True)
+    # New unallocated customer credits/refunds are tracked in the ledger
+    # instead of mutating Customer.opening_balance. Existing rows default to
+    # False so their already-applied legacy balance is not counted twice.
+    affects_customer_balance = models.BooleanField(default=False, db_index=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True, db_index=True)

@@ -252,6 +252,14 @@ def _increase_stock_for_return(*, order, item, user):
         note=f'Sales return for order {order.order_number}',
         created_by=user,
     )
+    if warehouse.warehouse_type == warehouse.TYPE_REPRESENTATIVE and warehouse.assigned_user_id:
+        from sales_reps.services import restore_sales_rep_assignments
+
+        restore_sales_rep_assignments(
+            sales_rep=warehouse.assigned_user,
+            product_variant=item.product_variant,
+            quantity=item.quantity,
+        )
 
 
 def _process_refund(*, sales_return, order, user, cash_account):

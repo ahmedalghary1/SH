@@ -598,6 +598,11 @@ class SalesReturnDeleteView(ManagerDeleteView):
     success_url = reverse_lazy('returns:list')
     success_message = 'تم حذف المرتجع'
 
+    def get_queryset(self):
+        return SalesReturn.objects.filter(
+            status__in=[SalesReturn.STATUS_DRAFT, SalesReturn.STATUS_REJECTED],
+        )
+
 
 class ReturnReasonReportView(ManagerRequiredMixin, TemplateView):
     template_name = 'returns/reports/reasons.html'

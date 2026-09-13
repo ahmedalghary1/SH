@@ -12,6 +12,8 @@ from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from products.models import ProductVariant
+from sales_reps.models import SalesRepStockAssignment
+from sales_reps.services import assign_stock_to_sales_rep, return_stock_from_sales_rep
 
 from .forms import RepresentativeIssueForm, RepresentativeReturnForm, StockAdjustmentForm, StockMovementForm, StockTransferForm, WarehouseForm
 from .models import Stock, StockMovement, Warehouse
@@ -229,20 +231,14 @@ class RepresentativeIssueView(WarehouseRequiredMixin, FormView):
     success_url = reverse_lazy('inventory:movements')
 
     def form_valid(self, form):
-        representative = form.cleaned_data['representative']
-        rep_warehouse, _ = Warehouse.objects.get_or_create(
-            warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
-            assigned_user=representative,
-            defaults={'name': f'عهدة {representative.get_full_name() or representative.username}', 'is_active': True},
-        )
         try:
-            transfer_stock(
-                user=self.request.user,
-                variant=form.cleaned_data['variant'],
-                from_warehouse=form.cleaned_data['from_warehouse'],
-                to_warehouse=rep_warehouse,
+            assign_stock_to_sales_rep(
+                assigned_by=self.request.user,
+                sales_rep=form.cleaned_data['representative'],
+                product_variant=form.cleaned_data['variant'],
+                source_warehouse=form.cleaned_data['from_warehouse'],
                 quantity=form.cleaned_data['quantity'],
-                note=form.cleaned_data.get('note') or 'تسليم كمية للمندوب',
+                notes=form.cleaned_data.get('note') or 'تسليم كمية للمندوب',
             )
             messages.success(self.request, 'تم تسليم الكمية للمندوب')
             return redirect(self.success_url)
@@ -257,22 +253,21 @@ class RepresentativeReturnView(WarehouseRequiredMixin, FormView):
     success_url = reverse_lazy('inventory:movements')
 
     def form_valid(self, form):
-        rep_warehouse = Warehouse.objects.filter(
-            warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
-            assigned_user=form.cleaned_data['representative'],
+        assignment = SalesRepStockAssignment.objects.filter(
+            sales_rep=form.cleaned_data['representative'],
+            product_variant=form.cleaned_data['variant'],
+            source_warehouse=form.cleaned_data['to_warehouse'],
             is_active=True,
         ).first()
-        if not rep_warehouse:
+        if not assignment:
             form.add_error('representative', 'لا توجد عهدة مخزون لهذا المندوب')
             return self.form_invalid(form)
         try:
-            transfer_stock(
+            return_stock_from_sales_rep(
+                assignment=assignment,
                 user=self.request.user,
-                variant=form.cleaned_data['variant'],
-                from_warehouse=rep_warehouse,
-                to_warehouse=form.cleaned_data['to_warehouse'],
                 quantity=form.cleaned_data['quantity'],
-                note=form.cleaned_data.get('note') or 'إرجاع كمية غير مباعة من المندوب',
+                notes=form.cleaned_data.get('note') or 'إرجاع كمية غير مباعة من المندوب',
             )
             messages.success(self.request, 'تم استلام الكمية المرتجعة من المندوب')
             return redirect(self.success_url)

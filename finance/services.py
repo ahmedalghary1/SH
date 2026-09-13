@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import F, Sum
+from django.db.models import Case, DecimalField, F, Q, Sum, Value, When
 from django.utils import timezone
 
 from audit.models import AuditLog
@@ -22,6 +22,25 @@ def _as_decimal(amount):
 
 def _money(amount):
     return Decimal(str(amount or 0))
+
+
+def customer_ledger_delta(customer):
+    """Return customer-level movements not allocated to an order."""
+    return PaymentTransaction.objects.filter(
+        related_customer=customer,
+        affects_customer_balance=True,
+    ).aggregate(
+        value=Sum(Case(
+            When(
+                transaction_type=PaymentTransaction.TYPE_CUSTOMER_ALLOWED_DISCOUNT,
+                then=-F('amount'),
+            ),
+            When(direction=PaymentTransaction.DIRECTION_OUT, then=F('amount')),
+            When(direction=PaymentTransaction.DIRECTION_IN, then=-F('amount')),
+            default=Value(0),
+            output_field=DecimalField(max_digits=16, decimal_places=2),
+        )),
+    )['value'] or Decimal('0')
 
 
 def _locked_account(account):
@@ -60,6 +79,7 @@ def record_transaction(
     created_by=None,
     reference='',
     transaction_date=None,
+    affects_customer_balance=False,
 ):
     amount = _as_decimal(amount)
     account = _locked_account(cash_account)
@@ -95,6 +115,7 @@ def record_transaction(
         transaction_time=transaction_time or timezone.localtime().time().replace(tzinfo=None),
         created_by=created_by,
         reference=reference or '',
+        affects_customer_balance=affects_customer_balance,
     )
     
     # Determine section based on transaction type
@@ -133,10 +154,8 @@ def record_customer_payment(*, order, customer, amount, user, cash_account=None,
         notes=notes,
         created_by=user,
         transaction_date=transaction_date,
+        affects_customer_balance=bool(customer and not order),
     )
-    if not order and customer:
-        customer.opening_balance = F('opening_balance') - amount
-        customer.save(update_fields=['opening_balance'])
     return tx
 
 
@@ -150,8 +169,9 @@ def collect_customer_balance_payment(*, customer, amount, user, cash_account=Non
     remaining_to_allocate = amount
     transactions = []
 
-    if customer.opening_balance and customer.opening_balance > 0:
-        opening_payment = min(remaining_to_allocate, Decimal(str(customer.opening_balance)))
+    available_opening_balance = _money(customer.opening_balance) + customer_ledger_delta(customer)
+    if available_opening_balance > 0:
+        opening_payment = min(remaining_to_allocate, available_opening_balance)
         if opening_payment > 0:
             transactions.append(record_customer_payment(
                 order=None,
@@ -163,7 +183,6 @@ def collect_customer_balance_payment(*, customer, amount, user, cash_account=Non
                 transaction_date=transaction_date,
             ))
             remaining_to_allocate -= opening_payment
-            customer.refresh_from_db(fields=['opening_balance'])
 
     open_orders = Order.objects.select_for_update().filter(
         customer=customer,
@@ -217,9 +236,8 @@ def record_customer_refund_payment(*, customer, amount, user, cash_account=None,
         notes=notes,
         created_by=user,
         transaction_date=transaction_date,
+        affects_customer_balance=bool(customer and not order),
     )
-    if customer and not order:
-        Customer.objects.filter(pk=customer.pk).update(opening_balance=F('opening_balance') + amount)
     return tx
 
 
@@ -236,6 +254,26 @@ def record_customer_allowed_discount(*, customer, amount, user, order=None, cash
         transaction_date=transaction_date or timezone.localdate(),
         created_by=user,
         affects_cash=False,
+        affects_customer_balance=bool(customer and not order),
+    )
+
+
+def record_customer_balance_adjustment(
+    *, customer, amount, direction, user, cash_account=None, notes='', transaction_date=None,
+):
+    """Record a non-cash customer-level debit/credit in the account ledger."""
+    amount = _as_decimal(amount)
+    return PaymentTransaction.objects.create(
+        transaction_type=PaymentTransaction.TYPE_ADJUSTMENT,
+        direction=direction,
+        amount=amount,
+        cash_account=cash_account or CashAccount.get_default(),
+        related_customer=customer,
+        notes=notes,
+        transaction_date=transaction_date or timezone.localdate(),
+        created_by=user,
+        affects_cash=False,
+        affects_customer_balance=True,
     )
 
 
@@ -282,7 +320,10 @@ def build_customer_statement(customer):
             PaymentTransaction.TYPE_SALES_REP_COLLECTION,
             PaymentTransaction.TYPE_REFUND,
             PaymentTransaction.TYPE_CUSTOMER_ALLOWED_DISCOUNT,
+            PaymentTransaction.TYPE_ADJUSTMENT,
         ],
+    ).filter(
+        Q(related_order__isnull=False) | Q(affects_customer_balance=True),
     ).select_related('cash_account', 'related_order', 'created_by').order_by('transaction_date', 'created_at', 'pk')
     returns = SalesReturn.objects.filter(
         customer=customer,
@@ -384,9 +425,20 @@ def build_customer_statement(customer):
                 credit=amount,
                 payment=tx,
             ))
+        elif tx.transaction_type == PaymentTransaction.TYPE_ADJUSTMENT:
+            entries.append(_statement_entry(
+                date_value=tx.transaction_date,
+                sort_at=tx.created_at,
+                sort_order=45,
+                entry_type=tx.get_transaction_type_display(),
+                description=description,
+                debit=amount if tx.direction == PaymentTransaction.DIRECTION_OUT else 0,
+                credit=amount if tx.direction == PaymentTransaction.DIRECTION_IN else 0,
+                payment=tx,
+            ))
 
     orders_balance = orders.aggregate(v=Sum('remaining_amount'))['v'] or Decimal('0')
-    target_balance = _money(customer.opening_balance) + _money(orders_balance)
+    target_balance = _money(customer.opening_balance) + _money(orders_balance) + customer_ledger_delta(customer)
     movement_balance = sum((entry['debit'] - entry['credit'] for entry in entries), Decimal('0'))
     statement_opening_balance = target_balance - movement_balance
     if statement_opening_balance:
@@ -624,7 +676,15 @@ def collect_order_payment(*, order, amount, user, cash_account=None, notes='', t
         order.save(update_fields=['paid_amount'])
         _sync_order_payment_status(order)
         if extra_customer_balance > 0 and order.customer_id:
-            Customer.objects.filter(pk=order.customer_id).update(opening_balance=F('opening_balance') + extra_customer_balance)
+            record_customer_balance_adjustment(
+                customer=order.customer,
+                amount=extra_customer_balance,
+                direction=PaymentTransaction.DIRECTION_OUT,
+                user=user,
+                cash_account=cash_account,
+                notes=notes or f'زيادة مستحقات عميل بعد رد الطلب {order.order_number}',
+                transaction_date=transaction_date,
+            )
         return tx
     amount = _as_decimal(amount)
     order_payment = min(amount, Decimal(str(order.remaining_amount or 0)))
@@ -713,24 +773,6 @@ def delete_transaction(*, payment_transaction, user=None):
         raise ValidationError('اتجاه الحركة المالية غير صحيح')
     account.save(update_fields=['balance'])
     account.refresh_from_db(fields=['balance'])
-    if (
-        tx.transaction_type == PaymentTransaction.TYPE_CUSTOMER_PAYMENT
-        and tx.direction == PaymentTransaction.DIRECTION_IN
-        and tx.related_customer_id
-        and not tx.related_order_id
-    ):
-        from customers.models import Customer
-
-        Customer.objects.filter(pk=tx.related_customer_id).update(opening_balance=F('opening_balance') + tx.amount)
-    if (
-        tx.transaction_type == PaymentTransaction.TYPE_REFUND
-        and tx.direction == PaymentTransaction.DIRECTION_OUT
-        and tx.related_customer_id
-        and not tx.related_order_id
-    ):
-        from customers.models import Customer
-
-        Customer.objects.filter(pk=tx.related_customer_id).update(opening_balance=F('opening_balance') - tx.amount)
     if (
         tx.transaction_type == PaymentTransaction.TYPE_CUSTOMER_PAYMENT
         and tx.direction == PaymentTransaction.DIRECTION_IN
@@ -862,6 +904,7 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, o
             notes=notes,
             created_by=user,
             transaction_date=transaction_date,
+            affects_customer_balance=bool(customer and not order),
         )
         if order:
             from customers.models import Customer
@@ -873,11 +916,15 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, o
             order.save(update_fields=['paid_amount'])
             _sync_order_payment_status(order)
             if extra_customer_balance > 0 and order.customer_id:
-                Customer.objects.filter(pk=order.customer_id).update(opening_balance=F('opening_balance') + extra_customer_balance)
-        elif customer:
-            from customers.models import Customer
-
-            Customer.objects.filter(pk=customer.pk).update(opening_balance=F('opening_balance') + refund_amount)
+                record_customer_balance_adjustment(
+                    customer=order.customer,
+                    amount=extra_customer_balance,
+                    direction=PaymentTransaction.DIRECTION_OUT,
+                    user=user,
+                    cash_account=cash_account,
+                    notes=notes,
+                    transaction_date=transaction_date,
+                )
         return tx
     return record_transaction(
         transaction_type=PaymentTransaction.TYPE_SALES_REP_COLLECTION,
@@ -890,4 +937,5 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, o
         notes=notes,
         created_by=user,
         transaction_date=transaction_date,
+        affects_customer_balance=bool(customer and not order),
     )

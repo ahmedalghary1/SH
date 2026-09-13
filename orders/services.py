@@ -2,13 +2,14 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
 from accounts.models import User
 from audit.models import AuditLog
 from audit.services import log_audit
 from customers.models import Customer
-from inventory.models import Stock, StockMovement
+from inventory.models import Stock, StockMovement, Warehouse
 from inventory.services import return_stock, sale_stock
 from settings_app.models import CompanySettings
 
@@ -415,7 +416,7 @@ def confirm_order(*, order, user):
     movement_type = StockMovement.TYPE_SAMPLE if order.document_type == Order.DOCUMENT_SAMPLE else StockMovement.TYPE_SALE
     for item in order.items.select_related('variant', 'warehouse', 'stock_batch'):
         warehouse = get_order_item_warehouse(item, order=order)
-        sale_stock(
+        movement = sale_stock(
             variant=item.variant,
             warehouse=warehouse,
             quantity=item.quantity,
@@ -424,6 +425,23 @@ def confirm_order(*, order, user):
             movement_type=movement_type,
             note=f'صرف من الطلب {order.order_number}',
         )
+        actual_cost_total = Decimal(str(movement.consumed_cost_total)).quantize(Decimal('0.01'))
+        item.unit_cost = (actual_cost_total / item.quantity).quantize(Decimal('0.01'))
+        item.cost_total = actual_cost_total
+        item.profit_total = item.total - actual_cost_total
+        item.save(update_fields=['unit_cost', 'cost_total', 'profit_total'])
+        if warehouse.warehouse_type == Warehouse.TYPE_REPRESENTATIVE and warehouse.assigned_user_id:
+            from sales_reps.services import consume_sales_rep_assignments
+
+            consume_sales_rep_assignments(
+                sales_rep=warehouse.assigned_user,
+                product_variant=item.variant,
+                quantity=item.quantity,
+            )
+    cost_total = order.items.aggregate(value=Sum('cost_total'))['value'] or Decimal('0')
+    order.total_cost = cost_total
+    order.gross_profit = order.total - cost_total
+    order.save(update_fields=['total_cost', 'gross_profit'])
     if (
         order.document_type == Order.DOCUMENT_SALE
         and order.total > 0
@@ -492,6 +510,14 @@ def cancel_order(*, order, user):
             unit_cost=item.unit_cost,
             note=f'إلغاء الطلب {order.order_number}',
         )
+        if warehouse.warehouse_type == Warehouse.TYPE_REPRESENTATIVE and warehouse.assigned_user_id:
+            from sales_reps.services import restore_sales_rep_assignments
+
+            restore_sales_rep_assignments(
+                sales_rep=warehouse.assigned_user,
+                product_variant=item.variant,
+                quantity=item.quantity,
+            )
     if order.document_type == Order.DOCUMENT_SALE and order.total > 0:
         from finance.services import record_order_refund
 
@@ -515,32 +541,35 @@ def cancel_order(*, order, user):
 
 @transaction.atomic
 def return_order(*, order, user):
-    order = Order.objects.select_for_update().get(pk=order.pk)
-    old_status = order.status
-    if order.status not in {Order.STATUS_CONFIRMED, Order.STATUS_PREPARING, Order.STATUS_READY, Order.STATUS_COMPLETED}:
-        raise ValidationError('لا يمكن عمل مرتجع لهذا الطلب')
-    for item in order.items.select_related('variant', 'warehouse'):
-        warehouse = get_order_item_warehouse(item, order=order)
-        return_stock(
-            variant=item.variant,
-            warehouse=warehouse,
-            quantity=item.quantity,
-            user=user,
-            unit_cost=item.unit_cost,
-            note=f'مرتجع الطلب {order.order_number}',
-        )
-    order.status = Order.STATUS_RETURNED
-    order.save(update_fields=['status'])
-    
-    log_audit(
-        user=user,
-        action=AuditLog.ACTION_RETURN,
-        section=AuditLog.SECTION_ORDERS,
-        model_name='Order',
-        object_id=order.pk,
-        object_repr=str(order),
-        changes_before={'status': old_status},
-        changes_after={'status': order.status},
-        notes=f'مرتجع الطلب {order.order_number}',
+    # Keep the legacy endpoint safe by routing it through the canonical return
+    # workflow, which adjusts stock, debt and cash together.
+    from returns.models import SalesReturn
+    from returns.services import (
+        add_return_item,
+        approve_sales_return,
+        calculate_available_return_quantity,
+        complete_sales_return,
+        create_sales_return,
     )
+
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    sales_return = create_sales_return(
+        order=order,
+        return_type=SalesReturn.TYPE_REFUND,
+        reason=f'Full return for {order.order_number}',
+        user=user,
+    )
+    for item in order.items.select_related('variant'):
+        quantity = calculate_available_return_quantity(item)
+        if quantity > 0:
+            add_return_item(
+                sales_return=sales_return,
+                original_order_item=item,
+                quantity=quantity,
+                condition='good',
+                return_to_stock=True,
+            )
+    approve_sales_return(sales_return=sales_return, user=user)
+    complete_sales_return(sales_return=sales_return, user=user)
+    order.refresh_from_db()
     return order

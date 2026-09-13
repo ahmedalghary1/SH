@@ -151,8 +151,14 @@ class SalesRepStockAssignmentDeleteView(ManagerDeleteView):
     success_url = reverse_lazy('sales_reps:assignments')
     success_message = 'تم حذف عهدة المندوب'
 
+    def get_queryset(self):
+        return SalesRepStockAssignment.objects.none()
+
 
 class SalesRepCollectionDeleteView(ManagerDeleteView):
     model = SalesRepCollection
     success_url = reverse_lazy('sales_reps:dashboard')
     success_message = 'تم حذف تحصيل المندوب'
+
+    def get_queryset(self):
+        return SalesRepCollection.objects.none()

@@ -360,10 +360,13 @@ def process_customer(operation, user):
         'customer_type': customer_data.get('customer_type') or Customer.TYPE_RETAIL,
         'address': customer_data.get('address') or '',
         'credit_limit': Decimal(str(customer_data.get('credit_limit') or 0)),
-        'opening_balance': Decimal(str(customer_data.get('opening_balance') or 0)),
     }
     if customer is None:
-        customer = Customer.objects.create(created_by=user, **fields)
+        customer = Customer.objects.create(
+            created_by=user,
+            opening_balance=Decimal(str(customer_data.get('opening_balance') or 0)),
+            **fields,
+        )
     else:
         for field, value in fields.items():
             setattr(customer, field, value)
@@ -383,8 +386,7 @@ def process_order(operation, user):
             return response_success(operation['local_uuid'], None, 'Order', resolution='server_deleted')
         if _server_is_newer(existing_order, local_timestamp):
             return response_success(operation['local_uuid'], existing_order.pk, 'Order', resolution='server_newer_ignored')
-        existing_order.status = Order.STATUS_CANCELLED
-        existing_order.save(update_fields=['status', 'updated_at'])
+        cancel_order(order=existing_order, user=user)
         return response_success(operation['local_uuid'], existing_order.pk, 'Order', resolution='local_deleted')
 
     if existing_order is not None and operation.get('operation_type') != 'create':

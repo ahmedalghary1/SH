@@ -33,19 +33,20 @@ def _create_batch(*, variant, warehouse, quantity, unit_cost=0, source='', note=
 
 
 def _consume_batches(*, variant, warehouse, quantity, batch=None):
+    consumptions = []
     if batch:
         batch = StockBatch.objects.select_for_update().get(pk=batch.pk)
         if batch.variant_id != variant.id or batch.warehouse_id != warehouse.id:
             raise ValidationError('دفعة المخزون لا تخص هذا المنتج أو المخزن')
         if batch.remaining_quantity < quantity:
             raise ValidationError('الكمية غير متاحة في دفعة السعر المختارة')
+        unit_cost = batch.unit_cost
         batch.remaining_quantity = F('remaining_quantity') - quantity
         batch.save(update_fields=['remaining_quantity'])
         batch.refresh_from_db(fields=['remaining_quantity'])
-        return batch
+        return [(batch, quantity, unit_cost)]
 
     remaining = quantity
-    first_consumed = None
     batches = StockBatch.objects.select_for_update().filter(
         variant=variant,
         warehouse=warehouse,
@@ -53,14 +54,36 @@ def _consume_batches(*, variant, warehouse, quantity, batch=None):
     ).order_by('received_at', 'pk')
     for stock_batch in batches:
         take = min(remaining, stock_batch.remaining_quantity)
+        unit_cost = stock_batch.unit_cost
         stock_batch.remaining_quantity = F('remaining_quantity') - take
         stock_batch.save(update_fields=['remaining_quantity'])
         stock_batch.refresh_from_db(fields=['remaining_quantity'])
-        first_consumed = first_consumed or stock_batch
+        consumptions.append((stock_batch, take, unit_cost))
         remaining -= take
         if remaining <= 0:
             break
-    return first_consumed
+    if remaining > 0:
+        # Legacy stock rows may predate batch tracking. Preserve the sale while
+        # making the reconciliation explicit instead of silently losing cost.
+        legacy_batch = StockBatch.objects.create(
+            variant=variant,
+            warehouse=warehouse,
+            received_quantity=remaining,
+            remaining_quantity=0,
+            unit_cost=getattr(variant, 'cost_price', 0) or 0,
+            source='legacy_reconciliation',
+            note='Automatic reconciliation for stock created before batch tracking',
+        )
+        consumptions.append((legacy_batch, remaining, legacy_batch.unit_cost))
+    return consumptions
+
+
+def _first_consumed_batch(consumptions):
+    return consumptions[0][0] if consumptions else None
+
+
+def _consumed_cost_total(consumptions):
+    return sum((unit_cost * quantity for _, quantity, unit_cost in consumptions), 0)
 
 
 @transaction.atomic
@@ -117,12 +140,12 @@ def stock_out(*, variant, warehouse, quantity, user, note='', batch=None):
     stock.quantity = F('quantity') - quantity
     stock.save(update_fields=['quantity'])
     stock.refresh_from_db(fields=['quantity'])
-    consumed_batch = _consume_batches(variant=variant, warehouse=warehouse, quantity=quantity, batch=batch)
+    consumptions = _consume_batches(variant=variant, warehouse=warehouse, quantity=quantity, batch=batch)
     movement = StockMovement.objects.create(
         movement_type=StockMovement.TYPE_OUT,
         variant=variant,
         from_warehouse=warehouse,
-        batch=consumed_batch,
+        batch=_first_consumed_batch(consumptions),
         quantity=quantity,
         note=note,
         created_by=user,
@@ -144,7 +167,7 @@ def stock_out(*, variant, warehouse, quantity, user, note='', batch=None):
 
 
 @transaction.atomic
-def transfer_stock(*, variant, from_warehouse, to_warehouse, quantity, user, note=''):
+def transfer_stock(*, variant, from_warehouse, to_warehouse, quantity, user, note='', movement_type=StockMovement.TYPE_TRANSFER):
     if from_warehouse == to_warehouse:
         raise ValidationError('لا يمكن التحويل إلى نفس المخزن')
     if quantity <= 0:
@@ -161,24 +184,24 @@ def transfer_stock(*, variant, from_warehouse, to_warehouse, quantity, user, not
     target.save(update_fields=['quantity'])
     source.refresh_from_db(fields=['quantity'])
     target.refresh_from_db(fields=['quantity'])
-    source_batch = _consume_batches(variant=variant, warehouse=from_warehouse, quantity=quantity)
-    target_batch = None
-    if source_batch:
-        target_batch = _create_batch(
+    consumptions = _consume_batches(variant=variant, warehouse=from_warehouse, quantity=quantity)
+    target_batches = []
+    for source_batch, consumed_quantity, unit_cost in consumptions:
+        target_batches.append(_create_batch(
             variant=variant,
             warehouse=to_warehouse,
-            quantity=quantity,
-            unit_cost=source_batch.unit_cost,
+            quantity=consumed_quantity,
+            unit_cost=unit_cost,
             source='transfer',
             note=note,
             user=user,
-        )
+        ))
     movement = StockMovement.objects.create(
-        movement_type=StockMovement.TYPE_TRANSFER,
+        movement_type=movement_type,
         variant=variant,
         from_warehouse=from_warehouse,
         to_warehouse=to_warehouse,
-        batch=target_batch or source_batch,
+        batch=target_batches[0] if target_batches else _first_consumed_batch(consumptions),
         quantity=quantity,
         note=note,
         created_by=user,
@@ -226,7 +249,9 @@ def adjust_stock(*, variant, warehouse, new_quantity, user, note=''):
             user=user,
         )
     elif diff < 0:
-        batch = _consume_batches(variant=variant, warehouse=warehouse, quantity=abs(diff))
+        batch = _first_consumed_batch(
+            _consume_batches(variant=variant, warehouse=warehouse, quantity=abs(diff)),
+        )
     movement = StockMovement.objects.create(
         movement_type=StockMovement.TYPE_ADJUSTMENT,
         variant=variant,
@@ -262,12 +287,12 @@ def sale_stock(*, variant, warehouse, quantity, user, note='', batch=None, movem
     stock.quantity = F('quantity') - quantity
     stock.save(update_fields=['quantity'])
     stock.refresh_from_db(fields=['quantity'])
-    consumed_batch = _consume_batches(variant=variant, warehouse=warehouse, quantity=quantity, batch=batch)
+    consumptions = _consume_batches(variant=variant, warehouse=warehouse, quantity=quantity, batch=batch)
     movement = StockMovement.objects.create(
         movement_type=movement_type,
         variant=variant,
         from_warehouse=warehouse,
-        batch=consumed_batch,
+        batch=_first_consumed_batch(consumptions),
         quantity=quantity,
         note=note,
         created_by=user,
@@ -285,6 +310,8 @@ def sale_stock(*, variant, warehouse, quantity, user, note='', batch=None, movem
         notes=f'بيع مخزون: {variant} من {warehouse} - الكمية: {quantity}',
     )
     
+    movement.consumed_cost_total = _consumed_cost_total(consumptions)
+    movement.batch_consumptions = consumptions
     return movement
 
 

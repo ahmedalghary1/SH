@@ -7,8 +7,9 @@ from django.utils import timezone
 
 from accounts.models import User
 from finance.models import CashAccount, PaymentTransaction
-from finance.services import record_transaction
-from inventory.models import Stock, StockMovement
+from finance.services import record_customer_balance_adjustment, record_transaction
+from inventory.models import Stock, StockMovement, Warehouse
+from inventory.services import sale_stock, transfer_stock
 from orders.models import Order
 
 from .models import SalesRepCollection, SalesRepStockAssignment
@@ -29,17 +30,87 @@ def get_or_create_sales_rep_cash_account(sales_rep):
     return account
 
 
+def get_or_create_sales_rep_warehouse(sales_rep):
+    _validate_sales_rep(sales_rep)
+    warehouse = Warehouse.objects.filter(
+        warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
+        assigned_user=sales_rep,
+    ).order_by('pk').first()
+    if warehouse:
+        if not warehouse.is_active:
+            warehouse.is_active = True
+            warehouse.save(update_fields=['is_active'])
+        return warehouse
+    return Warehouse.objects.create(
+        name=f'عهدة {sales_rep.get_full_name() or sales_rep.username}',
+        warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
+        assigned_user=sales_rep,
+        is_active=True,
+    )
+
+
+def consume_sales_rep_assignments(*, sales_rep, product_variant, quantity):
+    """Keep the custody summary aligned with a sale from the rep warehouse."""
+    remaining = int(quantity)
+    assignments = SalesRepStockAssignment.objects.select_for_update().filter(
+        sales_rep=sales_rep,
+        product_variant=product_variant,
+        is_active=True,
+        quantity_remaining__gt=0,
+    ).order_by('assigned_at', 'pk')
+    for assignment in assignments:
+        take = min(remaining, assignment.quantity_remaining)
+        assignment.quantity_remaining = F('quantity_remaining') - take
+        assignment.quantity_sold = F('quantity_sold') + take
+        assignment.save(update_fields=['quantity_remaining', 'quantity_sold', 'updated_at'])
+        assignment.refresh_from_db(fields=['quantity_remaining'])
+        if assignment.quantity_remaining == 0:
+            assignment.is_active = False
+            assignment.save(update_fields=['is_active', 'updated_at'])
+        remaining -= take
+        if remaining <= 0:
+            break
+    if remaining > 0:
+        raise ValidationError('عهدة المندوب المسجلة أقل من كمية البيع')
+
+
+def restore_sales_rep_assignments(*, sales_rep, product_variant, quantity):
+    """Reverse custody consumption when a posted rep sale is cancelled/returned."""
+    remaining = int(quantity)
+    assignments = SalesRepStockAssignment.objects.select_for_update().filter(
+        sales_rep=sales_rep,
+        product_variant=product_variant,
+        quantity_sold__gt=0,
+    ).order_by('-assigned_at', '-pk')
+    for assignment in assignments:
+        take = min(remaining, assignment.quantity_sold)
+        assignment.quantity_sold = F('quantity_sold') - take
+        assignment.quantity_remaining = F('quantity_remaining') + take
+        assignment.is_active = True
+        assignment.save(update_fields=['quantity_sold', 'quantity_remaining', 'is_active', 'updated_at'])
+        remaining -= take
+        if remaining <= 0:
+            break
+    if remaining > 0:
+        raise ValidationError('تعذر عكس عهدة المندوب بالكامل لعدم وجود سجل بيع مطابق')
+
+
 @transaction.atomic
 def assign_stock_to_sales_rep(*, sales_rep, product_variant, source_warehouse, quantity, assigned_by, notes=''):
     _validate_sales_rep(sales_rep)
     quantity = int(quantity)
     if quantity <= 0:
         raise ValidationError('كمية التسليم يجب أن تكون أكبر من صفر')
-    stock = Stock.objects.select_for_update().filter(warehouse=source_warehouse, variant=product_variant).first()
-    if not stock or stock.quantity < quantity:
-        raise ValidationError('الكمية غير متاحة في المخزن')
-    stock.quantity = F('quantity') - quantity
-    stock.save(update_fields=['quantity'])
+    rep_warehouse = get_or_create_sales_rep_warehouse(sales_rep)
+    transfer_stock(
+        variant=product_variant,
+        from_warehouse=source_warehouse,
+        to_warehouse=rep_warehouse,
+        quantity=quantity,
+        user=assigned_by,
+        note=notes or f'Sales rep assignment to {sales_rep}',
+        movement_type=StockMovement.TYPE_SALES_REP_ASSIGNMENT,
+    )
 
     assignment = SalesRepStockAssignment.objects.select_for_update().filter(
         sales_rep=sales_rep,
@@ -62,14 +133,6 @@ def assign_stock_to_sales_rep(*, sales_rep, product_variant, source_warehouse, q
     assignment.save(update_fields=['quantity_assigned', 'quantity_remaining', 'assigned_by', 'notes', 'updated_at'])
     assignment.refresh_from_db(fields=['quantity_assigned', 'quantity_remaining'])
 
-    StockMovement.objects.create(
-        movement_type=StockMovement.TYPE_SALES_REP_ASSIGNMENT,
-        variant=product_variant,
-        from_warehouse=source_warehouse,
-        quantity=quantity,
-        note=notes or f'Sales rep assignment to {sales_rep}',
-        created_by=assigned_by,
-    )
     return assignment
 
 
@@ -81,27 +144,22 @@ def return_stock_from_sales_rep(*, assignment, quantity, user, notes=''):
     assignment = SalesRepStockAssignment.objects.select_for_update().select_related('source_warehouse', 'product_variant').get(pk=assignment.pk)
     if quantity > assignment.quantity_remaining:
         raise ValidationError('كمية الرجوع أكبر من المتبقي مع المندوب')
-    stock, _ = Stock.objects.select_for_update().get_or_create(
-        warehouse=assignment.source_warehouse,
+    rep_warehouse = get_or_create_sales_rep_warehouse(assignment.sales_rep)
+    transfer_stock(
         variant=assignment.product_variant,
-        defaults={'quantity': 0},
+        from_warehouse=rep_warehouse,
+        to_warehouse=assignment.source_warehouse,
+        quantity=quantity,
+        user=user,
+        note=notes or f'Sales rep return from {assignment.sales_rep}',
+        movement_type=StockMovement.TYPE_SALES_REP_RETURN,
     )
-    stock.quantity = F('quantity') + quantity
-    stock.save(update_fields=['quantity'])
     assignment.quantity_remaining = F('quantity_remaining') - quantity
     assignment.quantity_returned = F('quantity_returned') + quantity
     if assignment.quantity_remaining == 0:
         assignment.is_active = False
     assignment.save(update_fields=['quantity_remaining', 'quantity_returned', 'is_active', 'updated_at'])
     assignment.refresh_from_db(fields=['quantity_remaining', 'quantity_returned'])
-    StockMovement.objects.create(
-        movement_type=StockMovement.TYPE_SALES_REP_RETURN,
-        variant=assignment.product_variant,
-        to_warehouse=assignment.source_warehouse,
-        quantity=quantity,
-        note=notes or f'Sales rep return from {assignment.sales_rep}',
-        created_by=user,
-    )
     return assignment
 
 
@@ -113,19 +171,21 @@ def record_sales_rep_sale(*, assignment, quantity, user, order=None, notes=''):
     assignment = SalesRepStockAssignment.objects.select_for_update().select_related('product_variant').get(pk=assignment.pk)
     if quantity > assignment.quantity_remaining:
         raise ValidationError('كمية البيع أكبر من عهدة المندوب')
-    assignment.quantity_remaining = F('quantity_remaining') - quantity
-    assignment.quantity_sold = F('quantity_sold') + quantity
-    if assignment.quantity_remaining == 0:
-        assignment.is_active = False
-    assignment.save(update_fields=['quantity_remaining', 'quantity_sold', 'is_active', 'updated_at'])
-    assignment.refresh_from_db(fields=['quantity_remaining', 'quantity_sold'])
-    StockMovement.objects.create(
-        movement_type=StockMovement.TYPE_SALES_REP_SALE,
-        variant=assignment.product_variant,
+    if order is None:
+        sale_stock(
+            variant=assignment.product_variant,
+            warehouse=get_or_create_sales_rep_warehouse(assignment.sales_rep),
+            quantity=quantity,
+            user=user,
+            movement_type=StockMovement.TYPE_SALES_REP_SALE,
+            note=notes or f'Sales rep sale {assignment.sales_rep}',
+        )
+    consume_sales_rep_assignments(
+        sales_rep=assignment.sales_rep,
+        product_variant=assignment.product_variant,
         quantity=quantity,
-        note=notes or f'Sales rep sale {assignment.sales_rep}',
-        created_by=user,
     )
+    assignment.refresh_from_db(fields=['quantity_remaining', 'quantity_sold', 'is_active'])
     return assignment
 
 
@@ -162,6 +222,7 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, c
             related_sales_rep=sales_rep,
             notes=notes or f'Sales rep refund {sales_rep}',
             created_by=user,
+            affects_customer_balance=bool(customer and not order),
         )
         if order:
             current_paid = Decimal(str(order.paid_amount or 0))
@@ -178,13 +239,14 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, c
                 order.payment_status = Order.PAYMENT_PARTIAL
             order.save(update_fields=['remaining_amount', 'payment_status'])
             if extra_customer_balance > 0 and order.customer_id:
-                from customers.models import Customer
-
-                Customer.objects.filter(pk=order.customer_id).update(opening_balance=F('opening_balance') + extra_customer_balance)
-        elif customer:
-            from customers.models import Customer
-
-            Customer.objects.filter(pk=customer.pk).update(opening_balance=F('opening_balance') + refund_amount)
+                record_customer_balance_adjustment(
+                    customer=order.customer,
+                    amount=extra_customer_balance,
+                    direction=PaymentTransaction.DIRECTION_OUT,
+                    user=user,
+                    cash_account=cash_account,
+                    notes=notes or f'Sales rep excess refund for {order.order_number}',
+                )
         return collection
 
     if order:
@@ -228,11 +290,8 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, c
             related_sales_rep=sales_rep,
             notes=notes or f'Sales rep customer credit {sales_rep}',
             created_by=user,
+            affects_customer_balance=bool(customer),
         )
-        if customer:
-            from customers.models import Customer
-
-            Customer.objects.filter(pk=customer.pk).update(opening_balance=F('opening_balance') - extra_credit)
     return collection
 
 

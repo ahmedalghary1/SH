@@ -3,9 +3,9 @@
     <header class="receipt-head">
         <img class="receipt-logo" src="{% static 'images/sh-family-Logo.png' %}" alt="{{ company_settings.company_name }}">
         <div class="receipt-brand">
-            <h1>{{ company_settings.company_name|default:'شركة الملابس' }}</h1>
+            <h1>{{ invoice.snapshot.company.name|default:company_settings.company_name|default:'شركة الملابس' }}</h1>
             <p class="receipt-tagline">Fashion for You</p>
-            {% if company_settings.phone %}<p>{{ company_settings.phone }}</p>{% endif %}
+            {% if invoice.snapshot.company.phone %}<p>{{ invoice.snapshot.company.phone }}</p>{% elif company_settings.phone %}<p>{{ company_settings.phone }}</p>{% endif %}
         </div>
     </header>
 
@@ -18,7 +18,7 @@
         <div><dt>التاريخ</dt><dd>{{ invoice.issued_at|arabic_date }}</dd></div>
         <div><dt>الوقت</dt><dd>{{ invoice.issued_at|date:'H:i' }}</dd></div>
         <div><dt>الكاشير</dt><dd>{{ invoice.order.created_by|default:'-' }}</dd></div>
-        <div><dt>العميل</dt><dd>{{ invoice.order.customer|default:'عميل نقدي' }}</dd></div>
+        <div><dt>العميل</dt><dd>{{ invoice.customer_display }}</dd></div>
     </dl>
 
     <div class="receipt-dash"></div>
@@ -33,12 +33,12 @@
             </tr>
         </thead>
         <tbody>
-            {% for item in invoice.order.items.all %}
+            {% for item in invoice.snapshot_items %}
                 <tr>
                     <td>
-                        <strong>{{ item.variant.product.name }}</strong>
-                        <span>كود المنتج: {{ item.variant.product.sku }}</span>
-                        <span>{{ item.variant.color|default:'-' }} / {{ item.variant.size|default:'-' }}</span>
+                        <strong>{{ item.product_name }}</strong>
+                        <span>كود المنتج: {{ item.sku }}</span>
+                        <span>{{ item.color|default:'-' }} / {{ item.size|default:'-' }}</span>
                         {% if item.discount %}<span>خصم {{ item.discount }}</span>{% endif %}
                     </td>
                     <td>{{ item.quantity }}</td>
@@ -70,9 +70,9 @@
         <div class="receipt-dash"></div>
         <p class="receipt-thanks">شكرًا لتسوقكم معنا</p>
         <p>الاستبدال أو الاسترجاع خلال 7 أيام مع الحفاظ على الفاتورة</p>
-        {% if company_settings.address %}<p>{{ company_settings.address }}</p>{% endif %}
-        {% if company_settings.phone %}<p>هاتف / واتساب: {{ company_settings.phone }}</p>{% endif %}
-        {% if company_settings.tax_number %}<p>الرقم الضريبي: {{ company_settings.tax_number }}</p>{% endif %}
+        {% if invoice.snapshot.company.address %}<p>{{ invoice.snapshot.company.address }}</p>{% elif company_settings.address %}<p>{{ company_settings.address }}</p>{% endif %}
+        {% if invoice.snapshot.company.phone %}<p>هاتف / واتساب: {{ invoice.snapshot.company.phone }}</p>{% elif company_settings.phone %}<p>هاتف / واتساب: {{ company_settings.phone }}</p>{% endif %}
+        {% if invoice.snapshot.company.tax_number %}<p>الرقم الضريبي: {{ invoice.snapshot.company.tax_number }}</p>{% elif company_settings.tax_number %}<p>الرقم الضريبي: {{ company_settings.tax_number }}</p>{% endif %}
         <div class="receipt-dash"></div>
     </footer>
 </section>

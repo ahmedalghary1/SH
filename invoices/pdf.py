@@ -94,7 +94,7 @@ def build_invoice_report_pdf(*, invoices, company_settings):
             _p(order.get_payment_status_display(), cell_style),
             _p(order.get_payment_method_display(), cell_style),
             _p(order.created_by or '-', cell_style),
-            _p(order.customer or 'عميل فردي', cell_style),
+            _p(invoice.customer_display, cell_style),
             _p(order.order_number, cell_style),
             _p(invoice.invoice_number, cell_style),
         ])

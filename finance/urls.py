@@ -7,7 +7,6 @@ app_name = 'finance'
 urlpatterns = [
     path('cash/', views.CashDashboardView.as_view(), name='cash'),
     path('shift/', views.CashShiftView.as_view(), name='cash_shift'),
-    path('shift-close/', views.ShiftCloseView.as_view(), name='shift_close'),
     path('accounts/', views.CashAccountListView.as_view(), name='accounts'),
     path('accounts/create/', views.CashAccountCreateView.as_view(), name='account_create'),
     path('accounts/<int:pk>/', views.CashAccountDetailView.as_view(), name='account_detail'),

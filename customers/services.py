@@ -1,7 +1,8 @@
 from datetime import timedelta
 from decimal import Decimal
 
-from django.db.models import Q, Sum
+from django.db.models import Case, DecimalField, F, OuterRef, Q, Subquery, Sum, Value, When
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from finance.models import PaymentTransaction
@@ -9,6 +10,45 @@ from orders.models import Order
 from returns.models import SalesReturn
 
 from .models import Customer, CustomerInteraction
+
+
+ACTIVE_ORDER_STATUSES = [
+    Order.STATUS_CONFIRMED,
+    Order.STATUS_PREPARING,
+    Order.STATUS_READY,
+    Order.STATUS_COMPLETED,
+    Order.STATUS_PARTIALLY_RETURNED,
+]
+
+
+def annotate_customer_balances(queryset):
+    """Annotate the authoritative balance without mutating opening balance."""
+    money = DecimalField(max_digits=16, decimal_places=2)
+    order_balances = Order.objects.filter(
+        customer=OuterRef('pk'),
+        status__in=ACTIVE_ORDER_STATUSES,
+    ).values('customer').annotate(value=Sum('remaining_amount')).values('value')
+    ledger_balances = PaymentTransaction.objects.filter(
+        related_customer=OuterRef('pk'),
+        affects_customer_balance=True,
+    ).values('related_customer').annotate(
+        value=Sum(Case(
+            When(
+                transaction_type=PaymentTransaction.TYPE_CUSTOMER_ALLOWED_DISCOUNT,
+                then=-F('amount'),
+            ),
+            When(direction=PaymentTransaction.DIRECTION_OUT, then=F('amount')),
+            When(direction=PaymentTransaction.DIRECTION_IN, then=-F('amount')),
+            default=Value(0),
+            output_field=money,
+        )),
+    ).values('value')
+    return queryset.annotate(
+        open_order_balance=Coalesce(Subquery(order_balances, output_field=money), Value(0), output_field=money),
+        customer_ledger_delta=Coalesce(Subquery(ledger_balances, output_field=money), Value(0), output_field=money),
+    ).annotate(
+        current_balance=F('opening_balance') + F('open_order_balance') + F('customer_ledger_delta'),
+    )
 
 
 def visible_customers_for_user(user, queryset=None):
@@ -36,7 +76,17 @@ def get_customer_summary(customer):
     )
     total_purchases = order_agg['total_purchases'] or Decimal('0')
     orders_remaining = order_agg['total_remaining'] or Decimal('0')
-    total_remaining = customer.opening_balance + orders_remaining
+    ledger_delta = PaymentTransaction.objects.filter(
+        related_customer=customer,
+        affects_customer_balance=True,
+    ).aggregate(value=Sum(Case(
+        When(transaction_type=PaymentTransaction.TYPE_CUSTOMER_ALLOWED_DISCOUNT, then=-F('amount')),
+        When(direction=PaymentTransaction.DIRECTION_OUT, then=F('amount')),
+        When(direction=PaymentTransaction.DIRECTION_IN, then=-F('amount')),
+        default=Value(0),
+        output_field=DecimalField(max_digits=16, decimal_places=2),
+    )))['value'] or Decimal('0')
+    total_remaining = customer.opening_balance + orders_remaining + ledger_delta
 
     total_paid = PaymentTransaction.objects.filter(
         related_customer=customer,
@@ -89,16 +139,7 @@ def get_inactive_customers(days=90, user=None):
 
 
 def get_customers_with_debt(user=None):
-    qs = Customer.objects.filter(
-        Q(opening_balance__gt=0) |
-        Q(order__remaining_amount__gt=0, order__status__in=[
-            Order.STATUS_CONFIRMED,
-            Order.STATUS_PREPARING,
-            Order.STATUS_READY,
-            Order.STATUS_COMPLETED,
-            Order.STATUS_PARTIALLY_RETURNED,
-        ])
-    )
+    qs = annotate_customer_balances(Customer.objects.all()).filter(current_balance__gt=0)
     qs = visible_customers_for_user(user, qs)
     return qs.distinct().order_by('name')
 

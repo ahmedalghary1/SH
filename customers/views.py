@@ -41,6 +41,7 @@ from .services import (
     get_inactive_customers,
     get_open_complaints,
     get_top_customers,
+    annotate_customer_balances,
     visible_customers_for_user,
 )
 
@@ -100,12 +101,12 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
     def get_queryset(self):
         qs = Customer.objects.select_related('created_by', 'sales_representative').filter(is_active=True)
         qs = visible_customers_for_user(self.request.user, qs).annotate(
-            total_purchases=Sum('order__total', filter=Q(order__status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED])),
-            current_balance=F('opening_balance') + Coalesce(
-                Sum('order__remaining_amount', filter=Q(order__status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED])),
-                Value(0), output_field=DecimalField(max_digits=14, decimal_places=2),
-            ),
+            total_purchases=Sum('order__total', filter=Q(order__status__in=[
+                Order.STATUS_CONFIRMED, Order.STATUS_PREPARING, Order.STATUS_READY,
+                Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED,
+            ])),
         )
+        qs = annotate_customer_balances(qs)
         qs = _customer_account_annotations(qs)
         
         q = self.request.GET.get('q')
@@ -131,14 +132,9 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
             status__in=debt_order_statuses,
         )
         if debt == 'yes':
-            qs = qs.annotate(has_debt=Exists(debt_orders)).filter(
-                Q(opening_balance__gt=0) | Q(has_debt=True),
-            )
+            qs = qs.filter(current_balance__gt=0)
         elif debt == 'no':
-            qs = qs.annotate(has_debt=Exists(debt_orders)).filter(
-                opening_balance__lte=0,
-                has_debt=False,
-            )
+            qs = qs.filter(current_balance__lte=0)
         if payment_method in {Order.METHOD_CASH, Order.METHOD_CREDIT}:
             matching_orders = Order.objects.filter(
                 customer=OuterRef('pk'),
@@ -160,17 +156,22 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
         filtered_customer_ids = self.object_list.order_by().values('pk')
         customer_totals = Customer.objects.filter(
             pk__in=Subquery(filtered_customer_ids),
-        ).aggregate(
+        )
+        customer_totals = annotate_customer_balances(customer_totals).aggregate(
             customer_count=Count('pk'),
             opening_balance=Coalesce(
                 Sum('opening_balance'),
                 Value(0),
                 output_field=money_field,
             ),
+            current_balance=Coalesce(Sum('current_balance'), Value(0), output_field=money_field),
         )
         order_totals = Order.objects.filter(
             customer_id__in=Subquery(filtered_customer_ids),
-            status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED],
+            status__in=[
+                Order.STATUS_CONFIRMED, Order.STATUS_PREPARING, Order.STATUS_READY,
+                Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED,
+            ],
         ).aggregate(
             total_purchases=Coalesce(
                 Sum('total'),
@@ -186,7 +187,7 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
         context['customer_totals'] = {
             'customer_count': customer_totals['customer_count'],
             'total_purchases': order_totals['total_purchases'],
-            'current_balance': customer_totals['opening_balance'] + order_totals['remaining_balance'],
+            'current_balance': customer_totals['current_balance'],
         }
         return context
 
@@ -216,12 +217,7 @@ class CustomerListView(SalesRequiredMixin, ExportListMixin, ListView):
 
     def get_queryset(self):
         qs = Customer.objects.select_related('created_by', 'sales_representative').filter(is_active=True)
-        qs = visible_customers_for_user(self.request.user, qs).annotate(
-            current_balance=F('opening_balance') + Coalesce(
-                Sum('order__remaining_amount', filter=Q(order__status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED])),
-                Value(0), output_field=DecimalField(max_digits=14, decimal_places=2),
-            )
-        )
+        qs = annotate_customer_balances(visible_customers_for_user(self.request.user, qs))
         qs = _customer_account_annotations(qs)
         q = self.request.GET.get('q')
         customer_type = self.request.GET.get('type')

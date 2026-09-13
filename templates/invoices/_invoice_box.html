@@ -4,9 +4,9 @@
         <div class="screen-invoice-brand">
             <img class="invoice-logo" src="{% static 'images/sh-family-Logo.png' %}" alt="{{ company_settings.company_name }}">
             <div>
-                <h1>{{ company_settings.company_name|default:'شركة الملابس' }}</h1>
-                <p>{{ company_settings.phone|default:'بيانات التواصل' }}{% if company_settings.email %} - {{ company_settings.email }}{% endif %}</p>
-                {% if company_settings.address %}<p>{{ company_settings.address }}</p>{% endif %}
+            <h1>{{ invoice.snapshot.company.name|default:company_settings.company_name|default:'شركة الملابس' }}</h1>
+            <p>{{ invoice.snapshot.company.phone|default:company_settings.phone|default:'بيانات التواصل' }}{% if invoice.snapshot.company.email %} - {{ invoice.snapshot.company.email }}{% elif company_settings.email %} - {{ company_settings.email }}{% endif %}</p>
+            {% if invoice.snapshot.company.address %}<p>{{ invoice.snapshot.company.address }}</p>{% elif company_settings.address %}<p>{{ company_settings.address }}</p>{% endif %}
             </div>
         </div>
         <div class="screen-invoice-number">
@@ -18,7 +18,7 @@
 
     <div class="screen-invoice-meta">
         <div><span>رقم الفاتورة</span><strong>{{ invoice.invoice_number }}</strong></div>
-        <div><span>العميل</span><strong>{{ invoice.order.customer|default:'عميل نقدي' }}</strong></div>
+        <div><span>العميل</span><strong>{{ invoice.customer_display }}</strong></div>
         <div><span>طريقة الدفع</span><strong>{{ invoice.order.get_payment_method_display }}</strong></div>
         <div><span>حالة الدفع</span><strong>{{ invoice.order.get_payment_status_display }}</strong></div>
         <div><span>المدفوع</span><strong>{{ invoice.order.paid_amount }}</strong></div>
@@ -28,7 +28,7 @@
             <div><span>محفظة العميل</span><strong>{{ invoice.order.wallet_from_number|default:'-' }}</strong></div>
             <div><span>محفظة الشركة</span><strong>{{ invoice.order.wallet_to_number|default:'-' }}</strong></div>
         {% endif %}
-        {% if company_settings.tax_number %}<div><span>الرقم الضريبي</span><strong>{{ company_settings.tax_number }}</strong></div>{% endif %}
+        {% if invoice.snapshot.company.tax_number %}<div><span>الرقم الضريبي</span><strong>{{ invoice.snapshot.company.tax_number }}</strong></div>{% elif company_settings.tax_number %}<div><span>الرقم الضريبي</span><strong>{{ company_settings.tax_number }}</strong></div>{% endif %}
     </div>
 
     <div class="screen-invoice-table">
@@ -46,12 +46,12 @@
                 </tr>
             </thead>
             <tbody>
-                {% for item in invoice.order.items.all %}
+                {% for item in invoice.snapshot_items %}
                     <tr>
-                        <td>{{ item.variant.product.name }}</td>
-                        <td>{{ item.variant.color|default:'-' }}</td>
-                        <td>{{ item.variant.size|default:'-' }}</td>
-                        <td>{{ item.warehouse_or_sales_rep|default:'-' }}</td>
+                        <td>{{ item.product_name }}</td>
+                        <td>{{ item.color|default:'-' }}</td>
+                        <td>{{ item.size|default:'-' }}</td>
+                        <td>{{ item.warehouse|default:'-' }}</td>
                         <td>{{ item.quantity }}</td>
                         <td>{{ item.unit_price }}</td>
                         <td>{{ item.discount }}</td>
@@ -63,7 +63,7 @@
     </div>
 
     <footer class="screen-invoice-footer">
-        {% if company_settings.invoice_notes %}<p class="invoice-notes">{{ company_settings.invoice_notes }}</p>{% endif %}
+        {% if invoice.snapshot.company.invoice_notes %}<p class="invoice-notes">{{ invoice.snapshot.company.invoice_notes }}</p>{% elif company_settings.invoice_notes %}<p class="invoice-notes">{{ company_settings.invoice_notes }}</p>{% endif %}
 
         <div class="invoice-totals">
             <p><span>الإجمالي قبل الخصم</span><strong>{{ invoice.order.subtotal }}</strong></p>

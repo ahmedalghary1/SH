@@ -31,8 +31,8 @@
                     <td><input type="checkbox" name="invoice_ids" value="{{ invoice.pk }}"></td>
                     <td>{{ invoice.invoice_number }}</td>
                     <td>{{ invoice.order.order_number }}</td>
-                    <td>{{ invoice.order.customer|default:'عميل فردي' }}</td>
-                    <td>{{ invoice.order.customer.phone|default:'-' }}</td>
+                    <td>{{ invoice.customer_display }}</td>
+                    <td>{{ invoice.snapshot.customer_phone|default:invoice.order.customer.phone|default:'-' }}</td>
                     <td>{{ invoice.order.created_by|default:'-' }}</td>
                     <td>{{ invoice.order.total }}</td>
                     <td>{{ invoice.order.paid_amount }}</td>

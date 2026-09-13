@@ -777,6 +777,9 @@ class PurchaseOrderDeleteView(ManagerDeleteView):
     success_url = reverse_lazy('purchases:orders')
     success_message = 'تم حذف أمر الشراء'
 
+    def get_queryset(self):
+        return PurchaseOrder.objects.filter(status=PurchaseOrder.STATUS_DRAFT)
+
 
 class PurchaseReportView(ManagerRequiredMixin, TemplateView):
     template_name = 'purchases/reports/purchases.html'
