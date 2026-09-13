@@ -105,6 +105,19 @@
                     <tr><td colspan="{% if request.user.is_manager %}12{% else %}11{% endif %}">لا توجد عملاء</td></tr>
                     {% endfor %}
                 </tbody>
+                <tfoot>
+                    <tr class="customers-total-row">
+                        <th scope="row">الإجمالي</th>
+                        <td class="customer-count">{{ customer_totals.customer_count }} عميل</td>
+                        <td aria-hidden="true">-</td>
+                        {% if request.user.is_manager %}<td aria-hidden="true">-</td>{% endif %}
+                        <td class="purchases">{{ customer_totals.total_purchases }}</td>
+                        <td class="balance {% if customer_totals.current_balance > 0 %}positive{% elif customer_totals.current_balance < 0 %}negative{% endif %}">
+                            {{ customer_totals.current_balance }}
+                        </td>
+                        <td colspan="6"></td>
+                    </tr>
+                </tfoot>
             </table>
         </div>
     </div>

@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.db.models import (
+    Count,
     DateField,
     DateTimeField,
     DecimalField,
@@ -124,10 +125,20 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
             qs = qs.filter(arabic_search_q(('name', 'phone', 'company_name', 'address'), q))
         if customer_type in valid_types:
             qs = qs.filter(customer_type=customer_type)
+        debt_orders = Order.objects.filter(
+            customer=OuterRef('pk'),
+            remaining_amount__gt=0,
+            status__in=debt_order_statuses,
+        )
         if debt == 'yes':
-            qs = qs.filter(Q(opening_balance__gt=0) | Q(order__remaining_amount__gt=0, order__status__in=debt_order_statuses))
+            qs = qs.annotate(has_debt=Exists(debt_orders)).filter(
+                Q(opening_balance__gt=0) | Q(has_debt=True),
+            )
         elif debt == 'no':
-            qs = qs.exclude(Q(opening_balance__gt=0) | Q(order__remaining_amount__gt=0, order__status__in=debt_order_statuses))
+            qs = qs.annotate(has_debt=Exists(debt_orders)).filter(
+                opening_balance__lte=0,
+                has_debt=False,
+            )
         if payment_method in {Order.METHOD_CASH, Order.METHOD_CREDIT}:
             matching_orders = Order.objects.filter(
                 customer=OuterRef('pk'),
@@ -145,6 +156,38 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['sort'] = self.request.GET.get('sort', '')
+        money_field = DecimalField(max_digits=16, decimal_places=2)
+        filtered_customer_ids = self.object_list.order_by().values('pk')
+        customer_totals = Customer.objects.filter(
+            pk__in=Subquery(filtered_customer_ids),
+        ).aggregate(
+            customer_count=Count('pk'),
+            opening_balance=Coalesce(
+                Sum('opening_balance'),
+                Value(0),
+                output_field=money_field,
+            ),
+        )
+        order_totals = Order.objects.filter(
+            customer_id__in=Subquery(filtered_customer_ids),
+            status__in=[Order.STATUS_COMPLETED, Order.STATUS_PARTIALLY_RETURNED],
+        ).aggregate(
+            total_purchases=Coalesce(
+                Sum('total'),
+                Value(0),
+                output_field=money_field,
+            ),
+            remaining_balance=Coalesce(
+                Sum('remaining_amount'),
+                Value(0),
+                output_field=money_field,
+            ),
+        )
+        context['customer_totals'] = {
+            'customer_count': customer_totals['customer_count'],
+            'total_purchases': order_totals['total_purchases'],
+            'current_balance': customer_totals['opening_balance'] + order_totals['remaining_balance'],
+        }
         return context
 
 

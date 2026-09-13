@@ -119,3 +119,36 @@ class CustomerFeatureTests(TestCase):
         self.assertNotContains(cash_response, credit_customer.name)
         self.assertContains(credit_response, credit_customer.name)
         self.assertNotContains(credit_response, self.customer.name)
+
+    def test_customer_list_totals_follow_the_active_filters(self):
+        wholesale_customer = Customer.objects.create(
+            name='عميل جملة للإجماليات',
+            customer_type=Customer.TYPE_WHOLESALE,
+            opening_balance=Decimal('50.00'),
+            created_by=self.manager,
+        )
+        Order.objects.create(
+            order_number='ORD-CUSTOMER-TOTALS',
+            document_type=Order.DOCUMENT_SALE,
+            order_type=Order.TYPE_B2B,
+            customer=wholesale_customer,
+            status=Order.STATUS_COMPLETED,
+            total=Decimal('300.50'),
+            remaining_amount=Decimal('75.00'),
+            created_by=self.manager,
+        )
+
+        response = self.client.get(
+            reverse('customers:simple_list'),
+            {'type': Customer.TYPE_WHOLESALE},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        listed_customer = list(response.context['customers'])[0]
+        self.assertEqual(listed_customer.total_purchases, Decimal('300.50'))
+        self.assertEqual(listed_customer.current_balance, Decimal('125.00'))
+        self.assertEqual(response.context['customer_totals']['customer_count'], 1)
+        self.assertEqual(response.context['customer_totals']['total_purchases'], Decimal('300.50'))
+        self.assertEqual(response.context['customer_totals']['current_balance'], Decimal('125.00'))
+        self.assertContains(response, 'الإجمالي')
+        self.assertContains(response, '1 عميل')
