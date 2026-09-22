@@ -376,6 +376,19 @@ class OrderCreateViewTests(TestCase):
         )
         Stock.objects.create(warehouse=self.warehouse, variant=self.variant, quantity=5, min_quantity=1)
 
+    def test_new_invoice_defaults_to_wholesale_as_first_kind(self):
+        self.client.force_login(self.sales)
+
+        response = self.client.get(reverse('orders:create'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['form']['order_type'].value(), Order.TYPE_B2B)
+        content = response.content.decode()
+        self.assertLess(
+            content.index('<option value="wholesale">'),
+            content.index('<option value="retail">'),
+        )
+
     def test_create_order_view_accepts_items_json_from_invoice_page(self):
         self.client.force_login(self.sales)
 

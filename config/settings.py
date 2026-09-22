@@ -222,7 +222,16 @@ USE_TZ = True
 # On cPanel/Passenger, uploaded media stays outside the project code so
 # deployments and git pulls do not remove user files. Static files can be
 # served by Apache from STATIC_ROOT or by WhiteNoise from the Django app.
-DEFAULT_PUBLIC_ROOT = BASE_DIR / 'public' if DEBUG else Path('/home/elwsamst/public_html')
+# The cPanel path only exists on the Linux production host.  Using it as the
+# default on Windows makes health checks repeatedly probe ``C:\home\...`` and
+# can leave the process busy retrying temporary-file creation.  Desktop/local
+# Windows installations keep their generated assets inside the project unless
+# PUBLIC_ROOT is explicitly configured.
+DEFAULT_PUBLIC_ROOT = (
+    BASE_DIR / 'public'
+    if DEBUG or os.name == 'nt'
+    else Path('/home/elwsamst/public_html')
+)
 PUBLIC_ROOT = env_path(
     'PUBLIC_ROOT',
     DEFAULT_PUBLIC_ROOT,
@@ -336,6 +345,7 @@ if not DEBUG:
     LOGGING['handlers']['django_file'] = {
         'class': 'logging.handlers.RotatingFileHandler',
         'filename': LOG_DIR / 'django.log',
+        'encoding': 'utf-8',
         'maxBytes': 1024 * 1024 * 10,
         'backupCount': 10,
         'formatter': 'verbose',
@@ -344,6 +354,7 @@ if not DEBUG:
     LOGGING['handlers']['error_file'] = {
         'class': 'logging.handlers.RotatingFileHandler',
         'filename': LOG_DIR / 'errors.log',
+        'encoding': 'utf-8',
         'maxBytes': 1024 * 1024 * 10,
         'backupCount': 10,
         'formatter': 'verbose',
@@ -353,6 +364,7 @@ if not DEBUG:
     LOGGING['handlers']['business_file'] = {
         'class': 'logging.handlers.RotatingFileHandler',
         'filename': LOG_DIR / 'business.log',
+        'encoding': 'utf-8',
         'maxBytes': 1024 * 1024 * 10,
         'backupCount': 10,
         'formatter': 'simple',
@@ -361,6 +373,7 @@ if not DEBUG:
     LOGGING['handlers']['security_file'] = {
         'class': 'logging.handlers.RotatingFileHandler',
         'filename': LOG_DIR / 'security.log',
+        'encoding': 'utf-8',
         'maxBytes': 1024 * 1024 * 5,
         'backupCount': 30,  # Keep more security log rotations
         'formatter': 'verbose',

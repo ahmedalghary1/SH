@@ -168,6 +168,14 @@ class LogSanitizerTests(TestCase):
 
 class HealthCheckTests(TestCase):
 
+    def test_windows_default_media_root_stays_inside_project(self):
+        if os.name != 'nt':
+            self.skipTest('Windows-specific default path regression test')
+
+        from django.conf import settings
+
+        self.assertTrue(Path(settings.MEDIA_ROOT).is_relative_to(settings.BASE_DIR))
+
     def test_health_check_returns_200_when_db_ok(self):
         response = self.client.get('/health/')
         self.assertEqual(response.status_code, 200)

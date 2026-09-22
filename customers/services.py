@@ -132,6 +132,41 @@ def get_customer_summary(customer):
     }
 
 
+# Keep the original public CRM helpers available for reports, integrations,
+# and older callers.  The summary function remains the single source of truth
+# for the balance rules introduced by the finance refactor.
+def get_customer_total_purchases(customer):
+    return get_customer_summary(customer)['total_purchases']
+
+
+def get_customer_total_paid(customer):
+    return get_customer_summary(customer)['total_paid']
+
+
+def get_customer_total_remaining(customer):
+    return get_customer_summary(customer)['total_remaining']
+
+
+def get_customer_last_order(customer):
+    return get_customer_summary(customer)['last_order']
+
+
+def get_customer_last_interaction(customer):
+    return get_customer_summary(customer)['last_interaction']
+
+
+def get_customer_next_follow_up(customer):
+    return get_customer_summary(customer)['next_follow_up']
+
+
+def get_customer_return_rate(customer):
+    return get_customer_summary(customer)['return_rate']
+
+
+def get_customer_complaints_count(customer):
+    return get_customer_summary(customer)['complaints_count']
+
+
 def get_inactive_customers(days=90, user=None):
     cutoff = timezone.now() - timedelta(days=days)
     active_customer_ids = Order.objects.filter(created_at__gte=cutoff).exclude(status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED]).values('customer_id')
