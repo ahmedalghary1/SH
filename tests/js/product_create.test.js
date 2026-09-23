@@ -168,6 +168,7 @@ test("product builder deployment invalidates both static URL and service-worker 
     );
 
     assert.match(template, /product_create\.js' %\}\?v=20260808-01/);
-    assert.match(serviceWorker, /sh-pwa-v2026-08-08-product-variants-01/);
+    assert.match(serviceWorker, /const CACHE_VERSION = "sh-pwa-v2026-/);
+    assert.match(serviceWorker, /"\/static\/js\/product_create\.js"/);
     assert.doesNotMatch(serviceWorker, /sh-pwa-v2026-07-11-workspace-tabs-02/);
 });

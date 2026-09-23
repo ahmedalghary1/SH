@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 from datetime import datetime
 
@@ -414,6 +415,85 @@ class OrderCreateViewTests(TestCase):
         self.assertEqual(order.status, Order.STATUS_DRAFT)
         self.assertEqual(order.payment_status, Order.PAYMENT_UNPAID)
         self.assertFalse(PaymentTransaction.objects.filter(related_order=order).exists())
+
+    def test_large_invoice_with_many_lines_is_saved_completely(self):
+        self.client.force_login(self.sales)
+        Stock.objects.filter(warehouse=self.warehouse, variant=self.variant).update(quantity=200)
+        item = {
+            'variant_id': str(self.variant.id),
+            'warehouse_id': str(self.warehouse.id),
+            'quantity': 1,
+            'unit_price': '300.00',
+            'discount_amount': 0,
+            'discount_percentage': 0,
+        }
+
+        response = self.client.post(reverse('orders:create'), {
+            'document_type': Order.DOCUMENT_SALE,
+            'order_type': Order.TYPE_B2C,
+            'warehouse': str(self.warehouse.id),
+            'payment_method': Order.METHOD_CASH,
+            'discount_amount': '0',
+            'discount_percentage': '0',
+            'items_json': json.dumps([item] * 120),
+            'action': 'confirm',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        order = Order.objects.get()
+        self.assertEqual(order.items.count(), 120)
+        self.assertEqual(order.status, Order.STATUS_CONFIRMED)
+        self.assertEqual(order.subtotal, Decimal('36000.00'))
+        self.assertEqual(order.total, Decimal('36000.00'))
+        self.assertTrue(hasattr(order, 'invoice'))
+        self.assertEqual(
+            Stock.objects.get(warehouse=self.warehouse, variant=self.variant).quantity,
+            80,
+        )
+
+    def test_repeated_lines_cannot_exceed_total_available_stock(self):
+        self.client.force_login(self.sales)
+        item = {
+            'variant_id': str(self.variant.id),
+            'warehouse_id': str(self.warehouse.id),
+            'quantity': 2,
+            'unit_price': '300.00',
+            'discount_amount': 0,
+            'discount_percentage': 0,
+        }
+
+        response = self.client.post(reverse('orders:create'), {
+            'document_type': Order.DOCUMENT_SALE,
+            'order_type': Order.TYPE_B2C,
+            'warehouse': str(self.warehouse.id),
+            'payment_method': Order.METHOD_CASH,
+            'discount_amount': '0',
+            'discount_percentage': '0',
+            'items_json': json.dumps([item, item, item]),
+            'action': 'confirm',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'الكمية الإجمالية المطلوبة غير متاحة')
+        self.assertFalse(Order.objects.exists())
+
+    def test_invalid_items_payload_returns_form_error_instead_of_server_error(self):
+        self.client.force_login(self.sales)
+
+        response = self.client.post(reverse('orders:create'), {
+            'document_type': Order.DOCUMENT_SALE,
+            'order_type': Order.TYPE_B2C,
+            'warehouse': str(self.warehouse.id),
+            'payment_method': Order.METHOD_CASH,
+            'discount_amount': '0',
+            'discount_percentage': '0',
+            'items_json': '{"variant_id": 1}',
+            'action': 'confirm',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'بيانات أصناف الفاتورة يجب أن تكون قائمة صحيحة')
+        self.assertFalse(Order.objects.exists())
 
     def test_sale_datetime_is_saved_on_order_invoice_and_cash_transaction(self):
         self.client.force_login(self.sales)

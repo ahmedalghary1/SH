@@ -133,7 +133,7 @@ class ProductImportView(ManagerRequiredMixin, View):
 
 
 class ProductDetailView(RoleRequiredMixin, DetailView):
-    allowed_roles = ('manager', 'warehouse')
+    allowed_roles = ('manager', 'sales', 'warehouse')
     model = Product
     template_name = 'products/detail.html'
     context_object_name = 'product'
@@ -492,8 +492,11 @@ class ProductUpdateView(ManagerRequiredMixin, View):
         variant_ids = request.POST.getlist('variant_id')
         for variant_id in variant_ids:
             variant = ProductVariant.objects.select_for_update().get(pk=variant_id, product=product)
-            raw_retail_price = request.POST.get(f'variant_{variant_id}_retail_price', '').strip()
+            legacy_price = request.POST.get(f'variant_{variant_id}_sale_price', '').strip()
+            raw_retail_price = request.POST.get(f'variant_{variant_id}_retail_price', '').strip() or legacy_price
             raw_wholesale_price = request.POST.get(f'variant_{variant_id}_wholesale_price', '').strip()
+            if not raw_wholesale_price and legacy_price:
+                raw_wholesale_price = str(variant.wholesale_price or legacy_price)
             if raw_retail_price == '' or raw_wholesale_price == '':
                 raise ValidationError('أدخل سعر القطاعي والجملة لكل لون/مقاس')
             try:

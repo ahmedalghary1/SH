@@ -366,7 +366,7 @@ class InvoicePDFExportTests(TestCase):
         response = self.client.get(reverse('invoices:print', kwargs={'pk': self.invoice.pk}), secure=True)
 
         self.assertContains(response, 'const printMode = "electron"')
-        self.assertContains(response, 'const printerName = "POS-80"')
+        self.assertContains(response, 'const printerName = "POS\\u002D80"')
         self.assertContains(response, 'const printableWidth = 72')
         self.assertContains(response, 'const receiptWidth = 66')
         self.assertContains(response, 'pageHeight')

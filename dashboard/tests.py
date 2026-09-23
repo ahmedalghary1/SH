@@ -35,4 +35,4 @@ class DashboardViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'مصروفات اليوم')
-        self.assertContains(response, '125.00')
+        self.assertEqual(response.context['today_expenses'], Decimal('125.00'))

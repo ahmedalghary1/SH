@@ -67,7 +67,7 @@ class StockDeleteView(ManagerDeleteView):
 
 
 class StockListView(RoleRequiredMixin, ExportListMixin, ListView):
-    allowed_roles = ('manager', 'warehouse')
+    allowed_roles = ('manager', 'sales', 'warehouse')
     model = Stock
     template_name = 'inventory/stock/list.html'
     context_object_name = 'stocks'

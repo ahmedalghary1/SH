@@ -80,6 +80,10 @@ class ProductForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['category'].required = False
+        self.fields['pieces_per_dozen'].required = False
+
+    def clean_pieces_per_dozen(self):
+        return self.cleaned_data.get('pieces_per_dozen') or self.instance.pieces_per_dozen or 12
 
     def clean(self):
         cleaned = super().clean()

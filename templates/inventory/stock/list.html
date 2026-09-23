@@ -34,6 +34,7 @@
                     <th>المنتج</th>
                     <th>اللون/المقاس</th>
                     <th>المخزن</th>
+                    {% if can_view_costs %}<th>سعر الشراء</th>{% endif %}
                     <th>الكمية</th>
                     <th>الحد الأدنى</th>
                     <th>الحالة</th>
@@ -51,6 +52,7 @@
                             <span class="muted">{{ stock.variant.variant_sku }}</span>
                         </td>
                         <td>{{ stock.warehouse.name }}</td>
+                        {% if can_view_costs %}<td>{{ stock.variant.cost_price }}</td>{% endif %}
                         <td class="quantity-cell">{{ stock.quantity }}</td>
                         <td>{{ stock.min_quantity }}</td>
                         <td>
@@ -62,7 +64,7 @@
                         </td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="6">لا توجد كميات مطابقة للفلاتر الحالية</td></tr>
+                    <tr><td colspan="{% if can_view_costs %}7{% else %}6{% endif %}">لا توجد كميات مطابقة للفلاتر الحالية</td></tr>
                 {% endfor %}
             </tbody>
         </table>

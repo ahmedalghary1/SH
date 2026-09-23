@@ -1,6 +1,7 @@
 import json
 import re
-from decimal import Decimal
+from collections import defaultdict
+from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
@@ -90,11 +91,14 @@ def _available_products_for_user(user):
 
 def _loads_items_payload(raw_items):
     try:
-        return json.loads(raw_items)
+        payload = json.loads(raw_items)
     except json.JSONDecodeError:
         fixed = re.sub(r'("warehouse_id"\s*:\s*")([^"]+),("quantity"\s*:)', r'\1\2",\3', raw_items)
         fixed = re.sub(r'}\s*}\s*\]$', '}]', fixed)
-        return json.loads(fixed)
+        payload = json.loads(fixed)
+    if not isinstance(payload, list):
+        raise ValidationError('بيانات أصناف الفاتورة يجب أن تكون قائمة صحيحة')
+    return payload
 
 
 class OrderListView(RoleRequiredMixin, ExportListMixin, ListView):
@@ -271,37 +275,94 @@ class OrderCreateView(SalesRequiredMixin, FormView):
     def build_posted_items(self):
         raw_items = self.request.POST.get('items_json', '[]')
         posted_items = _loads_items_payload(raw_items)
+        if not posted_items:
+            raise ValidationError('أضف منتجًا واحدًا على الأقل إلى الفاتورة')
+
+        try:
+            variant_ids = {int(posted['variant_id']) for posted in posted_items}
+            warehouse_ids = {int(posted['warehouse_id']) for posted in posted_items}
+        except (KeyError, TypeError, ValueError):
+            raise ValidationError('بيانات المنتج أو المخزن في الفاتورة غير صحيحة')
+
+        variants = {
+            variant.pk: variant
+            for variant in _available_variants_for_user(self.request.user)
+            .filter(pk__in=variant_ids)
+            .select_related('product')
+        }
+        warehouses_qs = Warehouse.objects.filter(pk__in=warehouse_ids, is_active=True)
+        if _is_restricted_sales_user(self.request.user):
+            warehouses_qs = warehouses_qs.filter(
+                assigned_user=self.request.user,
+                warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
+            )
+        warehouses = {warehouse.pk: warehouse for warehouse in warehouses_qs}
+        if len(variants) != len(variant_ids) or len(warehouses) != len(warehouse_ids):
+            raise ValidationError('أحد المنتجات أو المخازن غير متاح لهذا المستخدم')
+
+        batch_ids = set()
+        for posted in posted_items:
+            batch_id = posted.get('stock_batch_id')
+            if batch_id not in (None, ''):
+                try:
+                    batch_ids.add(int(batch_id))
+                except (TypeError, ValueError):
+                    raise ValidationError('دفعة المخزون المحددة غير صحيحة')
+        batches = {batch.pk: batch for batch in StockBatch.objects.filter(pk__in=batch_ids)}
+        if len(batches) != len(batch_ids):
+            raise ValidationError('إحدى دفعات المخزون المحددة غير متاحة')
+
+        stock_quantities = {
+            (stock.warehouse_id, stock.variant_id): stock.quantity
+            for stock in Stock.objects.filter(
+                warehouse_id__in=warehouse_ids,
+                variant_id__in=variant_ids,
+            ).only('warehouse_id', 'variant_id', 'quantity')
+        }
+        requested_stock = defaultdict(int)
+        requested_batches = defaultdict(int)
         items = []
         for posted in posted_items:
-            variant = _available_variants_for_user(self.request.user).select_related('product').get(pk=posted['variant_id'])
-            warehouse = self.get_item_warehouse(posted['warehouse_id'])
-            quantity = int(posted['quantity'])
+            try:
+                variant = variants[int(posted['variant_id'])]
+                warehouse = warehouses[int(posted['warehouse_id'])]
+                quantity = int(posted['quantity'])
+                unit_price = Decimal(str(posted.get('unit_price', 0)))
+                discount_amount = Decimal(str(posted.get('discount_amount', posted.get('discount', 0))))
+                discount_percentage = Decimal(str(posted.get('discount_percentage', 0)))
+            except (InvalidOperation, KeyError, TypeError, ValueError):
+                raise ValidationError('بيانات أحد أصناف الفاتورة غير صحيحة')
+            if quantity <= 0:
+                raise ValidationError('كمية كل صنف يجب أن تكون أكبر من صفر')
+            if not all(value.is_finite() for value in (unit_price, discount_amount, discount_percentage)):
+                raise ValidationError('السعر أو الخصم يحتوي على قيمة غير صحيحة')
+
+            stock_key = (warehouse.pk, variant.pk)
+            requested_stock[stock_key] += quantity
             stock_batch = None
             batch_id = posted.get('stock_batch_id')
-            if batch_id:
-                stock_batch = StockBatch.objects.get(
-                    pk=batch_id,
-                    variant=variant,
-                    warehouse=warehouse,
-                    remaining_quantity__gte=quantity,
-                )
-            if _is_restricted_sales_user(self.request.user):
-                available_stock = Stock.objects.filter(
-                    warehouse=warehouse,
-                    variant=variant,
-                    quantity__gte=quantity,
-                ).exists()
-                if not available_stock:
-                    raise ValidationError('الكمية غير متاحة في عهدة المندوب')
+            if batch_id not in (None, ''):
+                stock_batch = batches[int(batch_id)]
+                if stock_batch.variant_id != variant.pk or stock_batch.warehouse_id != warehouse.pk:
+                    raise ValidationError('دفعة المخزون لا تخص المنتج أو المخزن المحدد')
+                requested_batches[stock_batch.pk] += quantity
             items.append({
                 'variant': variant,
                 'warehouse': warehouse,
                 'stock_batch': stock_batch,
                 'quantity': quantity,
-                'unit_price': Decimal(str(posted.get('unit_price', 0))),
-                'discount_amount': Decimal(str(posted.get('discount_amount', posted.get('discount', 0)))),
-                'discount_percentage': Decimal(str(posted.get('discount_percentage', 0))),
+                'unit_price': unit_price,
+                'discount_amount': discount_amount,
+                'discount_percentage': discount_percentage,
             })
+
+        if _is_restricted_sales_user(self.request.user):
+            for stock_key, quantity in requested_stock.items():
+                if stock_quantities.get(stock_key, 0) < quantity:
+                    raise ValidationError('الكمية الإجمالية المطلوبة غير متاحة في عهدة المندوب')
+        for batch_id, quantity in requested_batches.items():
+            if batches[batch_id].remaining_quantity < quantity:
+                raise ValidationError('الكمية الإجمالية غير متاحة في دفعة السعر المحددة')
         return items
 
     def form_valid(self, form):
@@ -335,7 +396,7 @@ class OrderCreateView(SalesRequiredMixin, FormView):
                 return redirect('invoices:detail', pk=invoice.pk)
             messages.success(self.request, 'تم حفظ الطلب')
             return redirect('orders:detail', pk=order.pk)
-        except (ValidationError, ProductVariant.DoesNotExist, StockBatch.DoesNotExist, Warehouse.DoesNotExist, KeyError, ValueError, json.JSONDecodeError) as exc:
+        except (InvalidOperation, ValidationError, ProductVariant.DoesNotExist, StockBatch.DoesNotExist, Warehouse.DoesNotExist, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             form.add_error(None, getattr(exc, 'message', 'بيانات الطلب غير صحيحة'))
             return self.form_invalid(form)
 

@@ -81,7 +81,7 @@ class ProductImportViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(Product.objects.filter(sku='OK-1').exists())
         self.assertFalse(Product.objects.filter(sku='BAD-1').exists())
-        self.assertContains(response, 'تم استيراد <strong>1</strong> منتج', html=True)
+        self.assertContains(response, 'تم استيراد <strong>1</strong> منتج، وتم تخطي <strong>1</strong> صف.', html=True)
         self.assertContains(response, 'الصف 3')
 
     def test_import_normalizes_arabic_digits_in_sku_season_and_prices(self):

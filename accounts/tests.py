@@ -91,7 +91,7 @@ class LoginCsrfCookieTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
 
-    def test_login_post_without_csrf_is_not_rejected(self):
+    def test_login_post_without_csrf_is_rejected(self):
         client = Client(enforce_csrf_checks=True)
         response = client.post(
             reverse('accounts:login'),
@@ -104,4 +104,4 @@ class LoginCsrfCookieTests(TestCase):
             secure=True,
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 403)

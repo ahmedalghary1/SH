@@ -1,3 +1,4 @@
+from collections import defaultdict
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -9,7 +10,7 @@ from accounts.models import User
 from audit.models import AuditLog
 from audit.services import log_audit
 from customers.models import Customer
-from inventory.models import Stock, StockMovement, Warehouse
+from inventory.models import Stock, StockBatch, StockMovement, Warehouse
 from inventory.services import return_stock, sale_stock
 from settings_app.models import CompanySettings
 
@@ -127,7 +128,8 @@ def calculate_order_totals(order):
     subtotal = Decimal('0')
     item_discounts = Decimal('0')
     total_cost = Decimal('0')
-    for item in order.items.all():
+    items = list(order.items.all())
+    for item in items:
         base_price = item.original_unit_price or item.unit_price
         line_before_discount = base_price * item.quantity
         line_discount = calculate_discount_amount(
@@ -141,10 +143,15 @@ def calculate_order_totals(order):
         item.total = max(line_before_discount - line_discount, Decimal('0'))
         item.cost_total = item.unit_cost * item.quantity
         item.profit_total = item.total - item.cost_total
-        item.save(update_fields=['unit_price', 'discount', 'final_unit_price', 'total', 'cost_total', 'profit_total'])
         subtotal += line_before_discount
         item_discounts += line_discount
         total_cost += item.cost_total
+    if items:
+        OrderItem.objects.bulk_update(
+            items,
+            ['unit_price', 'discount', 'final_unit_price', 'total', 'cost_total', 'profit_total'],
+            batch_size=200,
+        )
     order_discount = calculate_discount_amount(
         base_amount=max(subtotal - item_discounts, Decimal('0')),
         discount_amount=order.discount_amount or order.discount,
@@ -178,6 +185,58 @@ def get_order_item_warehouse(item, order=None):
     return warehouse
 
 
+def _build_order_items(*, order, items, user, customer, document_type):
+    """Price and insert invoice lines in batches so large invoices stay fast."""
+    rows = []
+    subtotal_after_item_discounts = Decimal('0')
+    subtotal_before_item_discounts = Decimal('0')
+    item_discount_total = Decimal('0')
+    is_sample = document_type == Order.DOCUMENT_SAMPLE
+    for item in items:
+        variant = item['variant']
+        warehouse = item.get('warehouse') or order.warehouse
+        stock_batch = item.get('stock_batch')
+        if not warehouse:
+            raise ValidationError('يجب تحديد مخزن لكل صنف في الفاتورة')
+        quantity = int(item['quantity'])
+        pricing = prepare_order_item_pricing(
+            variant=variant,
+            quantity=quantity,
+            user=user,
+            customer=customer,
+            order_type=order.order_type,
+            unit_price=0 if is_sample else item.get('unit_price'),
+            discount_amount=0 if is_sample else item.get('discount_amount', item.get('discount', 0)),
+            discount_percentage=0 if is_sample else item.get('discount_percentage', 0),
+            unit_cost=getattr(stock_batch, 'unit_cost', None),
+            allow_free=is_sample,
+        )
+        subtotal_before_item_discounts += pricing['original_unit_price'] * quantity
+        item_discount_total += pricing['line_discount']
+        subtotal_after_item_discounts += pricing['total']
+        rows.append(OrderItem(
+            branch_id=order.branch_id,
+            order=order,
+            variant=variant,
+            warehouse=warehouse,
+            stock_batch=stock_batch,
+            quantity=quantity,
+            unit_price=pricing['final_unit_price'],
+            original_unit_price=pricing['original_unit_price'],
+            discount_amount=pricing['discount_amount'],
+            discount_percentage=pricing['discount_percentage'],
+            final_unit_price=pricing['final_unit_price'],
+            unit_cost=pricing['unit_cost'],
+            discount=pricing['line_discount'],
+            total=pricing['total'],
+            cost_total=pricing['cost_total'],
+            profit_total=pricing['profit_total'],
+        ))
+    if rows:
+        OrderItem.objects.bulk_create(rows, batch_size=200)
+    return subtotal_before_item_discounts, subtotal_after_item_discounts, item_discount_total
+
+
 @transaction.atomic
 def create_order(*, order_data, items, user, confirm=False, auto_collect=True):
     order_data = dict(order_data)
@@ -202,50 +261,14 @@ def create_order(*, order_data, items, user, confirm=False, auto_collect=True):
         **order_data,
     )
     _set_order_created_at(order, invoice_datetime)
-    subtotal_after_item_discounts = Decimal('0')
-    subtotal_before_item_discounts = Decimal('0')
-    item_discount_total = Decimal('0')
     max_discount, _ = get_discount_limits(user, customer=customer)
-    for item in items:
-        variant = item['variant']
-        warehouse = item.get('warehouse') or order.warehouse
-        stock_batch = item.get('stock_batch')
-        if not warehouse:
-            raise ValidationError('يجب تحديد مخزن لكل صنف في الفاتورة')
-        quantity = int(item['quantity'])
-        is_sample = document_type == Order.DOCUMENT_SAMPLE
-        pricing = prepare_order_item_pricing(
-            variant=variant,
-            quantity=quantity,
-            user=user,
-            customer=customer,
-            order_type=order.order_type,
-            unit_price=0 if is_sample else item.get('unit_price'),
-            discount_amount=0 if is_sample else item.get('discount_amount', item.get('discount', 0)),
-            discount_percentage=0 if is_sample else item.get('discount_percentage', 0),
-            unit_cost=getattr(stock_batch, 'unit_cost', None),
-            allow_free=is_sample,
-        )
-        subtotal_before_item_discounts += pricing['original_unit_price'] * quantity
-        item_discount_total += pricing['line_discount']
-        subtotal_after_item_discounts += pricing['total']
-        OrderItem.objects.create(
-            order=order,
-            variant=variant,
-            warehouse=warehouse,
-            stock_batch=stock_batch,
-            quantity=quantity,
-            unit_price=pricing['final_unit_price'],
-            original_unit_price=pricing['original_unit_price'],
-            discount_amount=pricing['discount_amount'],
-            discount_percentage=pricing['discount_percentage'],
-            final_unit_price=pricing['final_unit_price'],
-            unit_cost=pricing['unit_cost'],
-            discount=pricing['line_discount'],
-            total=pricing['total'],
-            cost_total=pricing['cost_total'],
-            profit_total=pricing['profit_total'],
-        )
+    subtotal_before_item_discounts, subtotal_after_item_discounts, item_discount_total = _build_order_items(
+        order=order,
+        items=items,
+        user=user,
+        customer=customer,
+        document_type=document_type,
+    )
     _validate_discount_percentage(
         discount_amount=order_discount_amount,
         discount_percentage=order_discount_percentage,
@@ -331,50 +354,14 @@ def save_order_draft(*, order=None, order_data, items, user):
     _set_order_created_at(order, invoice_datetime)
 
     order.items.all().delete()
-    subtotal_after_item_discounts = Decimal('0')
-    subtotal_before_item_discounts = Decimal('0')
-    item_discount_total = Decimal('0')
     max_discount, _ = get_discount_limits(user, customer=customer)
-    for item in items:
-        variant = item['variant']
-        warehouse = item.get('warehouse') or order.warehouse
-        stock_batch = item.get('stock_batch')
-        if not warehouse:
-            raise ValidationError('يجب تحديد مخزن لكل صنف في الفاتورة')
-        quantity = int(item['quantity'])
-        is_sample = document_type == Order.DOCUMENT_SAMPLE
-        pricing = prepare_order_item_pricing(
-            variant=variant,
-            quantity=quantity,
-            user=user,
-            customer=customer,
-            order_type=order.order_type,
-            unit_price=0 if is_sample else item.get('unit_price'),
-            discount_amount=0 if is_sample else item.get('discount_amount', item.get('discount', 0)),
-            discount_percentage=0 if is_sample else item.get('discount_percentage', 0),
-            unit_cost=getattr(stock_batch, 'unit_cost', None),
-            allow_free=is_sample,
-        )
-        subtotal_before_item_discounts += pricing['original_unit_price'] * quantity
-        item_discount_total += pricing['line_discount']
-        subtotal_after_item_discounts += pricing['total']
-        OrderItem.objects.create(
-            order=order,
-            variant=variant,
-            warehouse=warehouse,
-            stock_batch=stock_batch,
-            quantity=quantity,
-            unit_price=pricing['final_unit_price'],
-            original_unit_price=pricing['original_unit_price'],
-            discount_amount=pricing['discount_amount'],
-            discount_percentage=pricing['discount_percentage'],
-            final_unit_price=pricing['final_unit_price'],
-            unit_cost=pricing['unit_cost'],
-            discount=pricing['line_discount'],
-            total=pricing['total'],
-            cost_total=pricing['cost_total'],
-            profit_total=pricing['profit_total'],
-        )
+    subtotal_before_item_discounts, subtotal_after_item_discounts, item_discount_total = _build_order_items(
+        order=order,
+        items=items,
+        user=user,
+        customer=customer,
+        document_type=document_type,
+    )
 
     _validate_discount_percentage(
         discount_amount=order_discount_amount,
@@ -404,17 +391,42 @@ def confirm_order(*, order, user):
         raise ValidationError('هذه فاتورة مسعرة فقط ولا تخصم من المخزون')
     if order.status != Order.STATUS_DRAFT:
         raise ValidationError('يمكن تأكيد الطلبات المسودة فقط')
-    if not order.items.exists():
+    order_items = list(
+        order.items.select_related('variant', 'warehouse', 'stock_batch')
+        .order_by('warehouse_id', 'variant_id', 'pk')
+    )
+    if not order_items:
         raise ValidationError('لا يمكن تأكيد طلب بدون منتجات')
-    for item in order.items.select_related('variant', 'warehouse', 'stock_batch'):
+    required_stock = defaultdict(int)
+    required_batches = defaultdict(int)
+    for item in order_items:
         warehouse = get_order_item_warehouse(item, order=order)
-        stock = Stock.objects.select_for_update().filter(warehouse=warehouse, variant=item.variant).first()
-        if not stock or stock.quantity < item.quantity:
-            raise ValidationError(f'الكمية غير متاحة: {item.variant}')
-        if item.stock_batch and item.stock_batch.remaining_quantity < item.quantity:
-            raise ValidationError(f'الكمية غير متاحة في دفعة السعر: {item.variant}')
+        required_stock[(warehouse.pk, item.variant_id)] += item.quantity
+        if item.stock_batch_id:
+            required_batches[item.stock_batch_id] += item.quantity
+    locked_stock = {
+        (stock.warehouse_id, stock.variant_id): stock
+        for stock in Stock.objects.select_for_update().filter(
+            warehouse_id__in={key[0] for key in required_stock},
+            variant_id__in={key[1] for key in required_stock},
+        ).order_by('warehouse_id', 'variant_id')
+    }
+    for stock_key, quantity in required_stock.items():
+        stock = locked_stock.get(stock_key)
+        if not stock or stock.quantity < quantity:
+            raise ValidationError('الكمية الإجمالية المطلوبة لأحد الأصناف غير متاحة')
+    if required_batches:
+        locked_batches = {
+            batch.pk: batch
+            for batch in StockBatch.objects.select_for_update()
+            .filter(pk__in=required_batches)
+            .order_by('pk')
+        }
+        for batch_id, quantity in required_batches.items():
+            if batch_id not in locked_batches or locked_batches[batch_id].remaining_quantity < quantity:
+                raise ValidationError('الكمية الإجمالية المطلوبة غير متاحة في إحدى دفعات السعر')
     movement_type = StockMovement.TYPE_SAMPLE if order.document_type == Order.DOCUMENT_SAMPLE else StockMovement.TYPE_SALE
-    for item in order.items.select_related('variant', 'warehouse', 'stock_batch'):
+    for item in order_items:
         warehouse = get_order_item_warehouse(item, order=order)
         movement = sale_stock(
             variant=item.variant,
@@ -429,7 +441,6 @@ def confirm_order(*, order, user):
         item.unit_cost = (actual_cost_total / item.quantity).quantize(Decimal('0.01'))
         item.cost_total = actual_cost_total
         item.profit_total = item.total - actual_cost_total
-        item.save(update_fields=['unit_cost', 'cost_total', 'profit_total'])
         if warehouse.warehouse_type == Warehouse.TYPE_REPRESENTATIVE and warehouse.assigned_user_id:
             from sales_reps.services import consume_sales_rep_assignments
 
@@ -438,6 +449,11 @@ def confirm_order(*, order, user):
                 product_variant=item.variant,
                 quantity=item.quantity,
             )
+    OrderItem.objects.bulk_update(
+        order_items,
+        ['unit_cost', 'cost_total', 'profit_total'],
+        batch_size=200,
+    )
     cost_total = order.items.aggregate(value=Sum('cost_total'))['value'] or Decimal('0')
     order.total_cost = cost_total
     order.gross_profit = order.total - cost_total

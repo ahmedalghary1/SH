@@ -36,6 +36,7 @@
                         <td>{{ variant.size|default:'-' }}</td>
                         <td class="price-cell">
                             <input type="hidden" name="variant_id" value="{{ variant.pk }}">
+                            <input type="hidden" name="variant_{{ variant.pk }}_sale_price" value="{{ variant.sale_price|unlocalize }}">
                             <input type="number" min="0" step="0.01" name="variant_{{ variant.pk }}_retail_price" value="{{ variant.retail_price|default:variant.sale_price|unlocalize }}">
                         </td>
                         <td class="price-cell">
