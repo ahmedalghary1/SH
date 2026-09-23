@@ -7169,3 +7169,250 @@ textarea:focus {
         position: static;
     }
 }
+
+/* Precision responsive hardening for every screen and input mode. */
+@media screen {
+    .page-content > *,
+    .card > *,
+    .form-grid > *,
+    .filters > *,
+    .detail-grid > *,
+    .summary-grid > *,
+    .stats-grid > *,
+    .cash-summary-grid > *,
+    .dashboard-grid > *,
+    .cashier-grid > *,
+    .invoice-info > *,
+    .variant-selection > *,
+    .quantity-section > * {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    fieldset,
+    figure,
+    pre,
+    .chart-card,
+    .tabs-container,
+    .tab-content {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    pre,
+    code {
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+    }
+
+    input[type="file"],
+    input[type="date"],
+    input[type="time"],
+    input[type="datetime-local"] {
+        max-width: 100%;
+    }
+
+    .btn,
+    .icon-btn,
+    .button-row > form,
+    .actions > form,
+    .form-actions > form {
+        max-width: 100%;
+    }
+
+    .btn {
+        overflow-wrap: anywhere;
+    }
+
+    .stat-card strong,
+    .summary-value,
+    .detail-grid strong,
+    .product-info,
+    .card p,
+    .card li {
+        overflow-wrap: anywhere;
+    }
+
+    canvas,
+    .chart-container,
+    .chart-wrapper {
+        max-width: 100%;
+    }
+
+    .page-content {
+        padding-inline-start: max(var(--page-gutter), env(safe-area-inset-right));
+        padding-inline-end: max(var(--page-gutter), env(safe-area-inset-left));
+        padding-bottom: max(var(--page-gutter), env(safe-area-inset-bottom));
+    }
+
+    .topbar {
+        padding-inline-start: max(var(--page-gutter), env(safe-area-inset-right));
+        padding-inline-end: max(var(--page-gutter), env(safe-area-inset-left));
+    }
+
+    .sidebar {
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+}
+
+@media screen and (max-width: 61.25rem) {
+    .topbar {
+        grid-template-areas: "menu user actions";
+    }
+
+    .topbar.has-branch-selector {
+        grid-template-areas:
+            "menu user actions"
+            "branch branch branch";
+    }
+
+    .topbar:not(.has-branch-selector) .topbar-user {
+        align-self: center;
+    }
+
+    .button-row > form,
+    .actions > form,
+    .form-actions > form,
+    .page-head form {
+        min-width: 0;
+    }
+}
+
+@media screen and (max-width: 48rem) {
+    .cashier-layout,
+    .simple-dashboard,
+    .simple-products-page,
+    .simple-stock-page,
+    .simple-cash-page,
+    .simple-customers-page,
+    .simple-customer-detail-page,
+    .simple-suppliers-page,
+    .simple-supplier-detail-page {
+        width: 100%;
+        margin-inline: 0;
+    }
+
+    .cashier-layout {
+        padding: 0;
+    }
+
+    .page-head .actions > *,
+    .page-head .button-row > *,
+    .button-row > *,
+    .actions > *,
+    .form-actions > *,
+    .inline-form > * {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .button-row > form,
+    .actions > form,
+    .form-actions > form,
+    .page-head form,
+    .button-row > form .btn,
+    .actions > form .btn,
+    .form-actions > form .btn,
+    .page-head form .btn {
+        width: 100%;
+    }
+
+    .pagination {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: .35rem;
+        max-width: 100%;
+    }
+
+    .pagination > * {
+        min-width: 2.5rem;
+    }
+
+    .invoice-items {
+        max-height: min(58dvh, 28rem);
+        overflow: auto;
+        overscroll-behavior: contain;
+    }
+
+    .invoice-summary .summary-row:has(#discount-type) {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .5rem;
+    }
+
+    .invoice-summary .summary-row:has(#discount-type) > span {
+        grid-column: 1 / -1;
+    }
+
+    .invoice-summary .summary-row:has(#discount-type) select,
+    .invoice-summary .summary-row:has(#discount-type) input {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .modal-box,
+    .modal-box form,
+    .modal-box .form-grid {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .login-page {
+        min-height: 100dvh;
+        align-items: center;
+    }
+
+    .login-card {
+        max-height: calc(100dvh - 2rem);
+        overflow-y: auto;
+    }
+
+    .workspace-tabs,
+    .tabs,
+    .draft-tabs,
+    .invoice-navigation {
+        scrollbar-width: thin;
+        overscroll-behavior-inline: contain;
+        -webkit-overflow-scrolling: touch;
+    }
+}
+
+@media screen and (max-width: 32rem) {
+    .invoice-summary .summary-row:has(#discount-type) {
+        grid-template-columns: 1fr;
+    }
+
+    .invoice-summary .summary-row:has(#discount-type) > span {
+        grid-column: auto;
+    }
+
+    .invoice-summary .summary-row.total {
+        font-size: 1.05rem;
+    }
+
+    .workspace-tab,
+    .tab-btn {
+        font-size: .78rem;
+    }
+}
+
+@media screen and (max-height: 32rem) and (max-width: 61.25rem) {
+    .sidebar .brand {
+        min-height: 3.25rem;
+        padding-block: .4rem;
+    }
+
+    .side-nav {
+        padding-top: .45rem;
+    }
+
+    .nav-group-toggle,
+    .side-nav a {
+        min-height: 2.4rem;
+    }
+
+    .modal-box {
+        max-height: 94dvh;
+    }
+}

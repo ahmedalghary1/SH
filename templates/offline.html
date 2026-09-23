@@ -3,20 +3,22 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Offline - SH</title>
     <meta name="theme-color" content="#123c69">
     <link rel="stylesheet" href="{% static 'css/main.css' %}">
     <style>
         body {
             min-height: 100vh;
+            min-height: 100dvh;
             display: grid;
             place-items: center;
             background: #f7f9fc;
             margin: 0;
+            padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
         }
         .offline-panel {
-            width: min(520px, calc(100vw - 32px));
+            width: min(520px, 100%);
             background: #fff;
             border: 1px solid #d8e0ea;
             border-radius: 8px;
@@ -36,6 +38,10 @@
             gap: 10px;
             margin-top: 22px;
             flex-wrap: wrap;
+        }
+        @media (max-width: 30rem) {
+            .offline-panel { padding: 20px 16px; }
+            .offline-actions { display: grid; grid-template-columns: 1fr; }
         }
     </style>
 </head>

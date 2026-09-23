@@ -1,4 +1,4 @@
-<header class="topbar">
+<header class="topbar{% if request.user.is_superuser %} has-branch-selector{% endif %}">
     <button class="icon-btn menu-toggle" type="button" data-sidebar-toggle aria-controls="app-sidebar" aria-expanded="false" aria-label="فتح القائمة">☰</button>
     <div class="topbar-user">
         <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>

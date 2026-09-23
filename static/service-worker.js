@@ -1,6 +1,6 @@
 // Bump this whenever a cached shell asset changes so installed clients receive
 // the latest dashboard shortcuts and shell assets immediately.
-const CACHE_VERSION = "sh-pwa-v2026-09-23-invoice-edit-01";
+const CACHE_VERSION = "sh-pwa-v2026-09-23-responsive-01";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const OFFLINE_URL = "/offline/";
