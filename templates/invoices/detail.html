@@ -5,6 +5,7 @@
 <div class="page-head">
     <h1>فاتورة {{ invoice.invoice_number }}</h1>
     <div class="actions">
+        {% if request.user.is_manager and invoice.order.status != 'cancelled' and invoice.order.status != 'returned' and invoice.order.status != 'partially_returned' %}<a class="btn btn-primary" href="{% url 'orders:update' invoice.order.pk %}">تعديل الفاتورة</a>{% endif %}
         <a class="btn btn-accent" href="{% url 'invoices:print' invoice.pk %}" target="_blank">طباعة</a>
     </div>
 </div>

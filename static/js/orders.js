@@ -30,6 +30,7 @@
     const newInvoiceLink = document.querySelector("[data-new-invoice-link]");
     const newInvoiceSubmit = document.getElementById("new-invoice-submit");
     const initialItemsElement = document.getElementById("initial-order-items");
+    const editingOrderId = document.getElementById("editing-order-id")?.value || "";
     const items = initialItemsElement ? JSON.parse(initialItemsElement.textContent || "[]") : [];
     if (warehouse && items.length && !warehouse.value) {
         warehouse.value = items[0].warehouse_id || "";
@@ -154,13 +155,6 @@
         return quantity;
     }
 
-    function quantityLabel(item) {
-        if (item.quantity_unit === "dozen") {
-            return `${item.input_quantity} دستة (${item.quantity} قطعة)`;
-        }
-        return `${item.quantity} قطعة`;
-    }
-
     function toggleWalletFields() {
         const isWallet = paymentMethod?.value === "wallet_transfer" && !isSample() && documentType?.value !== "quote";
         walletFields.forEach((field) => {
@@ -238,8 +232,8 @@
             row.innerHTML = `
                 <td>${item.product_name}</td>
                 <td>${item.color || "-"} / ${item.size || "-"}</td>
-                <td>${quantityLabel(item)}</td>
-                <td>${money(item.unit_price)}</td>
+                <td><input class="invoice-line-input" type="number" min="1" step="1" value="${Number(item.quantity)}" data-line-quantity="${index}" aria-label="تعديل الكمية"></td>
+                <td><input class="invoice-line-input" type="number" min="0" step="0.01" value="${money(item.unit_price)}" data-line-price="${index}" aria-label="تعديل السعر"></td>
                 <td>${money(total)}</td>
                 <td><button type="button" class="btn btn-danger" data-remove="${index}">✕</button></td>
             `;
@@ -442,7 +436,8 @@
         resetProductMeta();
         if (!variantId) return;
 
-        const stock = await fetchJson(`/orders/ajax/variants/${variantId}/stock/`);
+        const editingQuery = editingOrderId ? `?editing_order=${encodeURIComponent(editingOrderId)}` : "";
+        const stock = await fetchJson(`/orders/ajax/variants/${variantId}/stock/${editingQuery}`);
         const warehouses = stock.data.warehouses || [];
         itemWarehouse.innerHTML = warehouses.length
             ? '<option value="">اختر المخزن</option>'
@@ -533,6 +528,48 @@
         items.splice(Number(remove.dataset.remove), 1);
         warehouse.value = items[0]?.warehouse_id || "";
         renderItems();
+    });
+
+    body.addEventListener("change", (event) => {
+        const quantityInput = event.target.closest("[data-line-quantity]");
+        if (quantityInput) {
+            const index = Number(quantityInput.dataset.lineQuantity);
+            const item = items[index];
+            const nextQuantity = Math.trunc(Number(quantityInput.value));
+            const otherQuantity = items.reduce((sum, candidate, candidateIndex) => {
+                if (
+                    candidateIndex !== index
+                    && candidate.variant_id === item.variant_id
+                    && candidate.warehouse_id === item.warehouse_id
+                ) {
+                    return sum + Number(candidate.quantity || 0);
+                }
+                return sum;
+            }, 0);
+            if (!Number.isFinite(nextQuantity) || nextQuantity <= 0 || nextQuantity + otherQuantity > Number(item.available_quantity || 0)) {
+                window.alert("الكمية غير متاحة");
+                quantityInput.value = item.quantity;
+                return;
+            }
+            item.quantity = nextQuantity;
+            item.input_quantity = nextQuantity;
+            item.quantity_unit = "piece";
+            renderItems();
+            return;
+        }
+
+        const linePriceInput = event.target.closest("[data-line-price]");
+        if (linePriceInput) {
+            const index = Number(linePriceInput.dataset.linePrice);
+            const nextPrice = Number(linePriceInput.value);
+            if (!Number.isFinite(nextPrice) || nextPrice < 0) {
+                window.alert("السعر غير صحيح");
+                linePriceInput.value = money(items[index].unit_price);
+                return;
+            }
+            items[index].unit_price = nextPrice;
+            renderItems();
+        }
     });
 
     newInvoiceLink?.addEventListener("click", (event) => {

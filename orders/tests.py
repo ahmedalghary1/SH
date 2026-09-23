@@ -15,7 +15,9 @@ from products.models import Category, Color, Product, ProductVariant, Size
 from settings_app.models import CompanySettings
 
 from .models import Order, OrderItem
-from .services import cancel_order, confirm_order, create_order, get_price_for_customer
+from invoices.services import generate_invoice
+
+from .services import cancel_order, confirm_order, create_order, get_price_for_customer, revise_order
 
 
 class OrderStockServiceTests(TestCase):
@@ -92,16 +94,163 @@ class OrderStockServiceTests(TestCase):
         self.assertEqual(item.profit_total, Decimal('300.00'))
         self.assertEqual(self.order.total_cost, Decimal('300.00'))
 
-    def test_posted_order_cannot_be_edited_or_hard_deleted(self):
+    def test_posted_order_can_be_opened_for_edit_but_not_hard_deleted(self):
         confirm_order(order=self.order, user=self.user)
         self.client.force_login(self.user)
 
         update_response = self.client.get(reverse('orders:update', args=[self.order.pk]))
         delete_response = self.client.post(reverse('orders:delete', args=[self.order.pk]))
 
-        self.assertEqual(update_response.status_code, 404)
+        self.assertEqual(update_response.status_code, 200)
+        self.assertContains(update_response, 'editing-order-id')
         self.assertEqual(delete_response.status_code, 404)
         self.assertTrue(Order.objects.filter(pk=self.order.pk).exists())
+
+    def test_manager_can_submit_posted_invoice_item_changes(self):
+        confirm_order(order=self.order, user=self.user)
+        self.order.refresh_from_db()
+        invoice = generate_invoice(self.order, user=self.user)
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('orders:update', args=[self.order.pk]), {
+            'document_type': Order.DOCUMENT_SALE,
+            'order_type': Order.TYPE_B2C,
+            'customer': self.customer.pk,
+            'warehouse': self.warehouse.pk,
+            'payment_method': Order.METHOD_CASH,
+            'discount_amount': '0',
+            'discount_percentage': '0',
+            'items_json': json.dumps([{
+                'variant_id': self.variant.pk,
+                'warehouse_id': self.warehouse.pk,
+                'quantity': 2,
+                'unit_price': '300.00',
+                'discount_amount': '0',
+                'discount_percentage': '0',
+            }]),
+            'action': 'update',
+        })
+
+        self.order.refresh_from_db()
+        self.assertRedirects(response, reverse('invoices:detail', args=[invoice.pk]))
+        self.assertEqual(self.order.items.get().quantity, 2)
+        self.assertEqual(self.order.total, Decimal('600.00'))
+        self.assertEqual(Stock.objects.get(warehouse=self.warehouse, variant=self.variant).quantity, 3)
+
+    def test_revise_posted_invoice_adds_removes_and_changes_quantities_atomically(self):
+        cash = CashAccount.get_default()
+        second_color = Color.objects.create(name='أبيض')
+        second_variant = ProductVariant.objects.create(
+            product=self.variant.product,
+            color=second_color,
+            size=self.variant.size,
+            variant_sku='BC-001-WHT-M',
+            cost_price=Decimal('100.00'),
+        )
+        Stock.objects.create(warehouse=self.warehouse, variant=second_variant, quantity=5, min_quantity=1)
+        order = create_order(
+            order_data={
+                'document_type': Order.DOCUMENT_SALE,
+                'order_type': Order.TYPE_B2C,
+                'customer': self.customer,
+                'warehouse': self.warehouse,
+                'payment_method': Order.METHOD_CASH,
+            },
+            items=[{
+                'variant': self.variant,
+                'warehouse': self.warehouse,
+                'quantity': 2,
+                'unit_price': Decimal('300.00'),
+            }],
+            user=self.user,
+            confirm=True,
+        )
+        invoice = generate_invoice(order, user=self.user)
+
+        order = revise_order(
+            order=order,
+            order_data={
+                'document_type': Order.DOCUMENT_SALE,
+                'order_type': Order.TYPE_B2C,
+                'customer': self.customer,
+                'warehouse': self.warehouse,
+                'payment_method': Order.METHOD_CASH,
+            },
+            items=[
+                {'variant': self.variant, 'warehouse': self.warehouse, 'quantity': 1, 'unit_price': Decimal('300.00')},
+                {'variant': second_variant, 'warehouse': self.warehouse, 'quantity': 2, 'unit_price': Decimal('300.00')},
+            ],
+            user=self.user,
+        )
+        cash.refresh_from_db()
+        self.assertEqual(order.total, Decimal('900.00'))
+        self.assertEqual(order.paid_amount, Decimal('900.00'))
+        self.assertEqual(cash.balance, Decimal('900.00'))
+        self.assertEqual(Stock.objects.get(warehouse=self.warehouse, variant=self.variant).quantity, 4)
+        self.assertEqual(Stock.objects.get(warehouse=self.warehouse, variant=second_variant).quantity, 3)
+
+        order = revise_order(
+            order=order,
+            order_data={
+                'document_type': Order.DOCUMENT_SALE,
+                'order_type': Order.TYPE_B2C,
+                'customer': self.customer,
+                'warehouse': self.warehouse,
+                'payment_method': Order.METHOD_CASH,
+            },
+            items=[{'variant': second_variant, 'warehouse': self.warehouse, 'quantity': 1, 'unit_price': Decimal('300.00')}],
+            user=self.user,
+        )
+        cash.refresh_from_db()
+        invoice.refresh_from_db()
+        self.assertEqual(order.total, Decimal('300.00'))
+        self.assertEqual(order.paid_amount, Decimal('300.00'))
+        self.assertEqual(cash.balance, Decimal('300.00'))
+        self.assertEqual(Stock.objects.get(warehouse=self.warehouse, variant=self.variant).quantity, 5)
+        self.assertEqual(Stock.objects.get(warehouse=self.warehouse, variant=second_variant).quantity, 4)
+        self.assertEqual(invoice.snapshot['items'][0]['variant_sku'], second_variant.variant_sku)
+        self.assertTrue(PaymentTransaction.objects.filter(
+            related_order=order,
+            direction=PaymentTransaction.DIRECTION_OUT,
+            amount=Decimal('600.00'),
+        ).exists())
+
+    def test_failed_invoice_revision_rolls_back_items_stock_and_payment(self):
+        cash = CashAccount.get_default()
+        order = create_order(
+            order_data={
+                'document_type': Order.DOCUMENT_SALE,
+                'order_type': Order.TYPE_B2C,
+                'customer': self.customer,
+                'warehouse': self.warehouse,
+                'payment_method': Order.METHOD_CASH,
+            },
+            items=[{'variant': self.variant, 'warehouse': self.warehouse, 'quantity': 2, 'unit_price': Decimal('300.00')}],
+            user=self.user,
+            confirm=True,
+        )
+
+        with self.assertRaises(ValidationError):
+            revise_order(
+                order=order,
+                order_data={
+                    'document_type': Order.DOCUMENT_SALE,
+                    'order_type': Order.TYPE_B2C,
+                    'customer': self.customer,
+                    'warehouse': self.warehouse,
+                    'payment_method': Order.METHOD_CASH,
+                },
+                items=[{'variant': self.variant, 'warehouse': self.warehouse, 'quantity': 10, 'unit_price': Decimal('300.00')}],
+                user=self.user,
+            )
+
+        order.refresh_from_db()
+        cash.refresh_from_db()
+        self.assertEqual(order.status, Order.STATUS_CONFIRMED)
+        self.assertEqual(order.items.get().quantity, 2)
+        self.assertEqual(order.paid_amount, Decimal('600.00'))
+        self.assertEqual(cash.balance, Decimal('600.00'))
+        self.assertEqual(Stock.objects.get(warehouse=self.warehouse, variant=self.variant).quantity, 3)
 
     def test_confirm_order_rejects_unavailable_quantity(self):
         self.order.items.update(quantity=8, total=Decimal('2400.00'))

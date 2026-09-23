@@ -385,7 +385,7 @@ def save_order_draft(*, order=None, order_data, items, user):
 
 
 @transaction.atomic
-def confirm_order(*, order, user):
+def confirm_order(*, order, user, auto_collect=True):
     order = Order.objects.select_for_update().get(pk=order.pk)
     if order.document_type == Order.DOCUMENT_QUOTE:
         raise ValidationError('هذه فاتورة مسعرة فقط ولا تخصم من المخزون')
@@ -459,6 +459,8 @@ def confirm_order(*, order, user):
     order.gross_profit = order.total - cost_total
     order.save(update_fields=['total_cost', 'gross_profit'])
     if (
+        auto_collect
+        and
         order.document_type == Order.DOCUMENT_SALE
         and order.total > 0
         and order.paid_amount <= 0
@@ -588,4 +590,128 @@ def return_order(*, order, user):
     approve_sales_return(sales_return=sales_return, user=user)
     complete_sales_return(sales_return=sales_return, user=user)
     order.refresh_from_db()
+    return order
+
+
+@transaction.atomic
+def revise_order(*, order, order_data, items, user):
+    """Replace a posted invoice while reversing and reapplying all side effects."""
+    from finance.models import PaymentTransaction
+    from finance.services import collect_order_payment
+    from invoices.services import build_invoice_snapshot
+
+    order = Order.objects.select_for_update().select_related('customer').get(pk=order.pk)
+    editable_statuses = {
+        Order.STATUS_CONFIRMED,
+        Order.STATUS_PREPARING,
+        Order.STATUS_READY,
+        Order.STATUS_COMPLETED,
+    }
+    if order.document_type != Order.DOCUMENT_SALE or order.status not in editable_statuses:
+        raise ValidationError('يمكن تعديل فواتير البيع المعتمدة والنشطة فقط')
+    if order.sales_returns.exists():
+        raise ValidationError('لا يمكن تعديل فاتورة مرتبطة بمرتجع؛ ألغِ المرتجع أولًا أو أنشئ مستند تصحيح جديدًا')
+
+    previous_status = order.status
+    previous_total = Decimal(str(order.total or 0))
+    previous_paid = Decimal(str(order.paid_amount or 0))
+    previous_items = list(order.items.select_related('variant', 'warehouse'))
+    if any(item.variant_id is None for item in previous_items):
+        raise ValidationError('لا يمكن تعديل الفاتورة لأن أحد أصنافها الأصلية لم يعد موجودًا')
+    payment_account = (
+        PaymentTransaction.objects.filter(related_order=order, affects_cash=True)
+        .select_related('cash_account')
+        .order_by('-created_at', '-pk')
+        .values_list('cash_account_id', flat=True)
+        .first()
+    )
+
+    for item in previous_items:
+        warehouse = get_order_item_warehouse(item, order=order)
+        return_stock(
+            variant=item.variant,
+            warehouse=warehouse,
+            quantity=item.quantity,
+            user=user,
+            unit_cost=item.unit_cost,
+            note=f'عكس مخزون لتعديل الفاتورة {order.order_number}',
+        )
+        if warehouse.warehouse_type == Warehouse.TYPE_REPRESENTATIVE and warehouse.assigned_user_id:
+            from sales_reps.services import restore_sales_rep_assignments
+
+            restore_sales_rep_assignments(
+                sales_rep=warehouse.assigned_user,
+                product_variant=item.variant,
+                quantity=item.quantity,
+            )
+
+    order.status = Order.STATUS_DRAFT
+    order.paid_amount = Decimal('0')
+    order.remaining_amount = Decimal('0')
+    order.payment_status = Order.PAYMENT_UNPAID
+    order.save(update_fields=['status', 'paid_amount', 'remaining_amount', 'payment_status'])
+    order = save_order_draft(
+        order=order,
+        order_data=order_data,
+        items=items,
+        user=user,
+    )
+
+    order.paid_amount = previous_paid
+    order.remaining_amount = max(order.total - order.paid_amount, Decimal('0'))
+    if order.paid_amount <= 0:
+        order.payment_status = Order.PAYMENT_UNPAID
+    elif order.remaining_amount <= 0:
+        order.payment_status = Order.PAYMENT_PAID
+    else:
+        order.payment_status = Order.PAYMENT_PARTIAL
+    order.save(update_fields=['paid_amount', 'remaining_amount', 'payment_status'])
+    order = confirm_order(order=order, user=user, auto_collect=False)
+
+    target_paid = order.total if order.payment_method != Order.METHOD_CREDIT else min(previous_paid, order.total)
+    payment_delta = target_paid - previous_paid
+    cash_account = None
+    if payment_account:
+        from finance.models import CashAccount
+
+        cash_account = CashAccount.objects.filter(pk=payment_account).first()
+    if payment_delta:
+        collect_order_payment(
+            order=order,
+            amount=payment_delta,
+            user=user,
+            cash_account=cash_account,
+            transaction_date=order.created_at,
+            notes=f'تسوية تلقائية بعد تعديل الفاتورة {order.order_number}',
+        )
+        order.refresh_from_db()
+
+    if previous_status != Order.STATUS_CONFIRMED:
+        order.status = previous_status
+        order.save(update_fields=['status'])
+
+    if hasattr(order, 'invoice'):
+        order.invoice.snapshot = build_invoice_snapshot(order)
+        order.invoice.issued_at = order.created_at
+        order.invoice.save(update_fields=['snapshot', 'issued_at'])
+
+    log_audit(
+        user=user,
+        action=AuditLog.ACTION_UPDATE,
+        section=AuditLog.SECTION_ORDERS,
+        model_name='Order',
+        object_id=order.pk,
+        object_repr=str(order),
+        changes_before={
+            'total': str(previous_total),
+            'paid_amount': str(previous_paid),
+            'items_count': len(previous_items),
+        },
+        changes_after={
+            'total': str(order.total),
+            'paid_amount': str(order.paid_amount),
+            'items_count': len(items),
+        },
+        notes=f'تعديل الفاتورة {order.order_number}',
+    )
     return order

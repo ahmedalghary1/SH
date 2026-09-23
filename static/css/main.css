@@ -2944,6 +2944,15 @@ tbody tr:hover {
     font-size: 0.875rem;
 }
 
+.invoice-items .invoice-line-input {
+    width: 7rem;
+    max-width: 100%;
+    padding: var(--space-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: white;
+}
+
 .invoice-items .empty-row td {
     text-align: center;
     color: var(--muted-text);

@@ -11,10 +11,10 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.views.decorators.http import require_GET, require_POST
-from django.views.generic import DetailView, FormView, ListView, UpdateView, View
+from django.views.generic import DetailView, FormView, ListView, View
 
 from accounts.models import User
-from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, SalesRequiredMixin, can_view_costs, sales_required
+from accounts.permissions import RoleRequiredMixin, SalesRequiredMixin, can_view_costs, sales_required
 from config.delete_views import ManagerDeleteView
 from config.date_ranges import PERIOD_CHOICES, filter_by_date_period
 from config.exports import ExportListMixin
@@ -35,6 +35,7 @@ from .services import (
     create_order,
     get_price_for_customer,
     prepare_order_item_pricing,
+    revise_order,
     return_order,
     save_order_draft,
 )
@@ -421,19 +422,84 @@ class OrderDetailView(RoleRequiredMixin, DetailView):
         return context
 
 
-class OrderUpdateView(RoleRequiredMixin, UpdateView):
+class OrderUpdateView(OrderCreateView):
     allowed_roles = ('manager',)
-    model = Order
-    form_class = OrderForm
-    template_name = 'orders/update.html'
 
-    def get_queryset(self):
-        # Posted documents are immutable. Corrections must go through the
-        # cancellation/return workflows so stock and cash are reversed too.
-        return Order.objects.filter(status=Order.STATUS_DRAFT)
+    def get_current_draft(self):
+        if hasattr(self, '_current_draft'):
+            return self._current_draft
+        self._current_draft = get_object_or_404(
+            Order.objects.select_related('customer', 'warehouse', 'created_by').prefetch_related(
+                'items__variant__product',
+                'items__variant__color',
+                'items__variant__size',
+                'items__warehouse',
+            ),
+            pk=self.kwargs['pk'],
+            document_type=Order.DOCUMENT_SALE,
+            status__in={
+                Order.STATUS_DRAFT,
+                Order.STATUS_CONFIRMED,
+                Order.STATUS_PREPARING,
+                Order.STATUS_READY,
+                Order.STATUS_COMPLETED,
+            },
+        )
+        return self._current_draft
 
-    def get_success_url(self):
-        return reverse_lazy('orders:detail', kwargs={'pk': self.object.pk})
+    def serialize_order_items(self, order):
+        data = super().serialize_order_items(order)
+        if not order or order.status == Order.STATUS_DRAFT:
+            return data
+        reserved = {
+            (row['variant_id'], row['warehouse_id'] or order.warehouse_id): row['quantity']
+            for row in order.items.values('variant_id', 'warehouse_id').annotate(quantity=Sum('quantity'))
+        }
+        for item in data:
+            key = (int(item['variant_id']), int(item['warehouse_id']))
+            item['available_quantity'] += reserved.get(key, 0)
+            # The original batch may already be exhausted. The revision restores
+            # stock first, then FIFO safely selects the replacement batches.
+            item['stock_batch_id'] = ''
+        return data
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['is_edit_mode'] = True
+        context['editing_order'] = self.get_current_draft()
+        return context
+
+    def form_valid(self, form):
+        try:
+            items = self.build_posted_items()
+            order = self.get_current_draft()
+            order_data = dict(form.cleaned_data)
+            order_data['document_type'] = Order.DOCUMENT_SALE
+            if order.status == Order.STATUS_DRAFT:
+                order = save_order_draft(
+                    order=order,
+                    order_data=order_data,
+                    items=items,
+                    user=self.request.user,
+                )
+            else:
+                order = revise_order(
+                    order=order,
+                    order_data=order_data,
+                    items=items,
+                    user=self.request.user,
+                )
+            messages.success(self.request, 'تم حفظ تعديلات الفاتورة وتسوية المخزون والمدفوعات بنجاح')
+            if hasattr(order, 'invoice'):
+                return redirect('invoices:detail', pk=order.invoice.pk)
+            return redirect('orders:detail', pk=order.pk)
+        except (
+            InvalidOperation, ValidationError, ProductVariant.DoesNotExist,
+            StockBatch.DoesNotExist, Warehouse.DoesNotExist, KeyError,
+            TypeError, ValueError, json.JSONDecodeError,
+        ) as exc:
+            form.add_error(None, getattr(exc, 'message', 'بيانات الفاتورة غير صحيحة'))
+            return self.form_invalid(form)
 
 
 class OrderConfirmView(SalesRequiredMixin, View):
@@ -554,22 +620,42 @@ def ajax_get_product_variants(request, product_id):
 @sales_required
 def ajax_get_variant_stock(request, variant_id):
     warehouse_id = request.GET.get('warehouse_id')
+    reserved_by_warehouse = {}
+    editing_order_id = request.GET.get('editing_order')
+    if editing_order_id:
+        editing_order = Order.objects.filter(
+            pk=editing_order_id,
+            document_type=Order.DOCUMENT_SALE,
+        )
+        if not (request.user.is_manager or request.user.is_superuser):
+            editing_order = editing_order.filter(created_by=request.user)
+        editing_order = editing_order.first()
+        if editing_order:
+            reserved_by_warehouse = {
+                row['warehouse_id'] or editing_order.warehouse_id: row['quantity']
+                for row in editing_order.items.filter(variant_id=variant_id)
+                .values('warehouse_id').annotate(quantity=Sum('quantity'))
+            }
     stocks = Stock.objects.filter(
         variant_id=variant_id,
-        quantity__gt=0,
         warehouse__is_active=True,
     ).select_related('warehouse')
     if request.user.role == 'sales' and not request.user.is_superuser:
         stocks = stocks.filter(warehouse__assigned_user=request.user, warehouse__warehouse_type=Warehouse.TYPE_REPRESENTATIVE)
     if warehouse_id:
         stock = stocks.filter(warehouse_id=warehouse_id).first()
-        return JsonResponse({'success': True, 'message': 'تم جلب المخزون', 'data': {'quantity': stock.quantity if stock else 0}})
+        try:
+            requested_warehouse_id = int(warehouse_id)
+        except (TypeError, ValueError):
+            requested_warehouse_id = None
+        quantity = (stock.quantity if stock else 0) + reserved_by_warehouse.get(requested_warehouse_id, 0)
+        return JsonResponse({'success': True, 'message': 'تم جلب المخزون', 'data': {'quantity': quantity}})
     show_costs = can_view_costs(request.user)
     data = [
         {
             'warehouse_id': stock.warehouse_id,
             'warehouse_name': stock.warehouse.name,
-            'quantity': stock.quantity,
+            'quantity': stock.quantity + reserved_by_warehouse.get(stock.warehouse_id, 0),
             'batches': [
                 {
                     'id': batch.id,
@@ -586,6 +672,7 @@ def ajax_get_variant_stock(request, variant_id):
             ],
         }
         for stock in stocks.order_by('warehouse__name')
+        if stock.quantity + reserved_by_warehouse.get(stock.warehouse_id, 0) > 0
     ]
     return JsonResponse({'success': True, 'message': 'تم جلب المخزون', 'data': {'warehouses': data}})
 

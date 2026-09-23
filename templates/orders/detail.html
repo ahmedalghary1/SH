@@ -28,6 +28,7 @@
     </table>
 </div>
 <div class="button-row">
+    {% if request.user.is_manager and order.status != 'cancelled' and order.status != 'returned' and order.status != 'partially_returned' %}<a class="btn btn-primary" href="{% url 'orders:update' order.pk %}">تعديل الفاتورة</a>{% endif %}
     {% if order.status == 'draft' %}<form method="post" action="{% url 'orders:confirm' order.pk %}">{% csrf_token %}<button class="btn btn-accent">تأكيد وخصم المخزون</button></form>{% endif %}
     <form method="post" action="{% url 'orders:cancel' order.pk %}" data-confirm="إلغاء الطلب؟">{% csrf_token %}<button class="btn btn-danger">إلغاء</button></form>
     {% if order.invoice %}

@@ -1,15 +1,16 @@
 {% extends 'base.html' %}
 {% load static %}
-{% block title %}فاتورة بيع جديدة{% endblock %}
+{% block title %}{% if is_edit_mode %}تعديل فاتورة{% else %}فاتورة بيع جديدة{% endif %}{% endblock %}
 {% block content %}
 <div class="page-head">
-    <h1>{% if current_draft %}استكمال فاتورة معلقة{% elif is_quote_mode %}عرض سعر جديد{% else %}فاتورة بيع جديدة{% endif %}</h1>
+    <h1>{% if is_edit_mode %}تعديل الفاتورة {{ editing_order.order_number }}{% elif current_draft %}استكمال فاتورة معلقة{% elif is_quote_mode %}عرض سعر جديد{% else %}فاتورة بيع جديدة{% endif %}</h1>
 </div>
 
 <form method="post" id="order-form" class="cashier-layout">
     {% csrf_token %}
     <input type="hidden" name="items_json" id="items-json" value="[]">
     <input type="hidden" name="draft_id" value="{% if current_draft %}{{ current_draft.pk }}{% endif %}">
+    <input type="hidden" id="editing-order-id" value="{% if is_edit_mode %}{{ editing_order.pk }}{% endif %}">
     {{ form.document_type }}
     {{ form.warehouse }}
     {{ form.order_type }}
@@ -21,7 +22,7 @@
         <div class="form-errors">{{ form.non_field_errors }}</div>
     {% endif %}
 
-    {% if not is_quote_mode %}
+    {% if not is_quote_mode and not is_edit_mode %}
         <div class="cashier-session-bar">
             <div class="session-actions">
                 <a class="btn btn-light btn-small" href="{% url 'orders:create' %}" data-new-invoice-link>
@@ -213,6 +214,16 @@
 
                 <!-- أزرار الإجراءات -->
                 <div class="invoice-actions">
+                    {% if is_edit_mode %}
+                    <button class="btn btn-success btn-large" name="action" value="update" type="submit">
+                        <svg class="ui-icon"><use href="#icon-invoice"></use></svg>
+                        حفظ التعديلات
+                    </button>
+                    <a class="btn btn-danger btn-large" href="{% if editing_order.invoice %}{% url 'invoices:detail' editing_order.invoice.pk %}{% else %}{% url 'orders:detail' editing_order.pk %}{% endif %}">
+                        <svg class="ui-icon"><use href="#icon-close"></use></svg>
+                        إلغاء
+                    </a>
+                    {% else %}
                     <button class="btn btn-success btn-large" name="action" value="confirm" type="submit">
                         <svg class="ui-icon"><use href="#icon-invoice"></use></svg>
                         حفظ وطباعة
@@ -226,6 +237,7 @@
                         إلغاء
                     </a>
                     <button id="new-invoice-submit" name="action" value="new_invoice" type="submit" hidden></button>
+                    {% endif %}
                 </div>
             </section>
         </div>

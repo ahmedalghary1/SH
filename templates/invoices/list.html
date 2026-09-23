@@ -43,7 +43,7 @@
                     <td class="actions">
                         <a class="btn btn-light" href="{% url 'invoices:detail' invoice.pk %}">عرض</a>
                         <a class="btn btn-accent" href="{% url 'invoices:print' invoice.pk %}" target="_blank">طباعة</a>
-                        {% if request.user.is_manager %}<a class="btn btn-light" href="{% url 'orders:update' invoice.order.pk %}">تعديل</a>{% endif %}
+                        {% if request.user.is_manager and invoice.order.status != 'cancelled' and invoice.order.status != 'returned' and invoice.order.status != 'partially_returned' %}<a class="btn btn-light" href="{% url 'orders:update' invoice.order.pk %}">تعديل</a>{% endif %}
                         {% if request.user.can_hard_delete %}<a class="btn btn-danger" href="{% url 'orders:delete' invoice.order.pk %}">حذف</a>{% endif %}
                     </td>
                 </tr>
