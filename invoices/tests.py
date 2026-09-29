@@ -178,6 +178,35 @@ class InvoicePDFExportTests(TestCase):
         self.assertEqual(credit_order.remaining_amount, Decimal('500.00'))
         self.assertFalse(PaymentTransaction.objects.filter(related_order=credit_order).exists())
 
+    def test_generate_invoice_uses_next_available_sequence_after_deletion(self):
+        today = self.order.created_at.strftime('%Y%m%d')
+        existing_number = f'INV-{today}-0002'
+        Invoice.objects.create(
+            order=Order.objects.create(
+                order_number='ORD-INVOICE-SEQUENCE-EXISTING',
+                order_type=Order.TYPE_B2C,
+                warehouse=self.order.warehouse,
+                status=Order.STATUS_CONFIRMED,
+                payment_method=Order.METHOD_CREDIT,
+                created_by=self.user,
+            ),
+            invoice_number=existing_number,
+        )
+        # Reproduce a gap: row count is now one although sequence 0002 remains.
+        self.invoice.delete()
+        new_order = Order.objects.create(
+            order_number='ORD-INVOICE-SEQUENCE-NEW',
+            order_type=Order.TYPE_B2C,
+            warehouse=self.order.warehouse,
+            status=Order.STATUS_CONFIRMED,
+            payment_method=Order.METHOD_CREDIT,
+            created_by=self.user,
+        )
+
+        invoice = generate_invoice(new_order, user=self.user)
+
+        self.assertEqual(invoice.invoice_number, f'INV-{today}-0003')
+
     def test_invoice_payment_add_records_installment_date_and_remaining_amount(self):
         self.client.login(username='manager', password='pass12345')
         cash = CashAccount.objects.create(name='Invoice Installment Cash', balance=Decimal('0.00'))

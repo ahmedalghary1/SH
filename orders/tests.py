@@ -671,6 +671,34 @@ class OrderCreateViewTests(TestCase):
         self.assertEqual(transaction.transaction_date, expected.date())
         self.assertEqual(transaction.transaction_time, expected.time())
 
+    def test_confirmed_invoice_uses_next_order_sequence_after_deletion(self):
+        self.client.force_login(self.sales)
+        today = timezone.localdate().strftime('%Y%m%d')
+        Order.objects.create(
+            order_number=f'ORD-{today}-0002',
+            order_type=Order.TYPE_B2C,
+            warehouse=self.warehouse,
+            status=Order.STATUS_CONFIRMED,
+            created_by=self.sales,
+        )
+
+        response = self.client.post(reverse('orders:create'), {
+            'document_type': Order.DOCUMENT_SALE,
+            'order_type': Order.TYPE_B2C,
+            'warehouse': str(self.warehouse.id),
+            'payment_method': Order.METHOD_CASH,
+            'discount_amount': '0',
+            'discount_percentage': '0',
+            'items_json': (
+                f'[{{"variant_id":"{self.variant.id}","warehouse_id":"{self.warehouse.id}",'
+                '"quantity":1,"unit_price":"300.00","discount_amount":0,"discount_percentage":0}}]'
+            ),
+            'action': 'confirm',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Order.objects.filter(order_number=f'ORD-{today}-0003').exists())
+
     def test_quote_datetime_is_editable_and_saved(self):
         self.client.force_login(self.sales)
 

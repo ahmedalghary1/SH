@@ -2,6 +2,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from accounts.models import Branch
 from finance.services import record_order_sale_payment
 from orders.models import Order
 from settings_app.models import CompanySettings
@@ -9,10 +10,26 @@ from settings_app.models import CompanySettings
 from .models import Invoice
 
 
-def generate_invoice_number():
-    today = timezone.localdate().strftime('%Y%m%d')
-    count = Invoice.objects.filter(issued_at__date=timezone.localdate()).count() + 1
-    return f'INV-{today}-{count:04d}'
+def generate_invoice_number(*, branch_id, invoice_date=None):
+    """Return the next unused invoice number for a branch and date.
+
+    Counting rows is unsafe because deleting an older invoice (or backdating an
+    invoice) can make ``count + 1`` point at a number that already exists.  The
+    caller locks the branch row, so finding the highest suffix is also safe when
+    two invoices are issued concurrently in the same branch.
+    """
+    invoice_date = invoice_date or timezone.localdate()
+    prefix = f'INV-{invoice_date:%Y%m%d}-'
+    numbers = Invoice.all_objects.filter(
+        branch_id=branch_id,
+        invoice_number__startswith=prefix,
+    ).values_list('invoice_number', flat=True)
+    highest_sequence = 0
+    for number in numbers:
+        suffix = number.removeprefix(prefix)
+        if suffix.isdigit():
+            highest_sequence = max(highest_sequence, int(suffix))
+    return f'{prefix}{highest_sequence + 1:04d}'
 
 
 def build_invoice_snapshot(order):
@@ -64,10 +81,17 @@ def generate_invoice(order, user=None):
         raise ValidationError('لا يمكن إصدار فاتورة نهائية لهذا المستند في حالته الحالية')
     if order.document_type == Order.DOCUMENT_QUOTE:
         raise ValidationError('لا يمكن إصدار فاتورة نهائية من تسعيرة غير مؤكدة')
+    # Serialise number allocation per branch. Locking Invoice rows alone cannot
+    # protect an empty date range, while the parent branch row always exists.
+    Branch.objects.select_for_update().get(pk=order.branch_id)
+    invoice_date = timezone.localtime(order.created_at).date() if order.created_at else timezone.localdate()
     invoice, created = Invoice.objects.get_or_create(
         order=order,
         defaults={
-            'invoice_number': generate_invoice_number(),
+            'invoice_number': generate_invoice_number(
+                branch_id=order.branch_id,
+                invoice_date=invoice_date,
+            ),
             'snapshot': build_invoice_snapshot(order),
         },
     )

@@ -6,7 +6,8 @@ from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
-from accounts.models import User
+from accounts.models import Branch, User
+from config.branching import get_current_branch_id, get_default_branch_id
 from audit.models import AuditLog
 from audit.services import log_audit
 from customers.models import Customer
@@ -35,10 +36,20 @@ def _set_order_created_at(order, invoice_datetime):
     order.created_at = invoice_datetime
 
 
-def generate_order_number():
-    today = timezone.localdate().strftime('%Y%m%d')
-    count = Order.objects.filter(created_at__date=timezone.localdate()).count() + 1
-    return f'ORD-{today}-{count:04d}'
+def generate_order_number(*, branch_id, order_date=None):
+    """Return the next unused order number for a branch and date."""
+    order_date = order_date or timezone.localdate()
+    prefix = f'ORD-{order_date:%Y%m%d}-'
+    numbers = Order.all_objects.filter(
+        branch_id=branch_id,
+        order_number__startswith=prefix,
+    ).values_list('order_number', flat=True)
+    highest_sequence = 0
+    for number in numbers:
+        suffix = number.removeprefix(prefix)
+        if suffix.isdigit():
+            highest_sequence = max(highest_sequence, int(suffix))
+    return f'{prefix}{highest_sequence + 1:04d}'
 
 
 def get_price_for_customer(variant, customer=None, order_type=None):
@@ -241,6 +252,7 @@ def _build_order_items(*, order, items, user, customer, document_type):
 def create_order(*, order_data, items, user, confirm=False, auto_collect=True):
     order_data = dict(order_data)
     invoice_datetime = order_data.pop('invoice_datetime', None)
+    normalized_invoice_datetime = _normalize_invoice_datetime(invoice_datetime)
     document_type = order_data.get('document_type') or Order.DOCUMENT_SALE
     if document_type == Order.DOCUMENT_QUOTE:
         confirm = False
@@ -248,6 +260,21 @@ def create_order(*, order_data, items, user, confirm=False, auto_collect=True):
     customer = order_data.get('customer')
     if not order_data.get('warehouse') and items:
         order_data['warehouse'] = items[0].get('warehouse')
+    warehouse = order_data.get('warehouse')
+    branch_id = (
+        getattr(warehouse, 'branch_id', None)
+        or getattr(customer, 'branch_id', None)
+        or get_current_branch_id()
+        or getattr(user, 'branch_id', None)
+        or get_default_branch_id()
+    )
+    # The branch row is a stable lock target even when this date has no orders.
+    Branch.objects.select_for_update().get(pk=branch_id)
+    order_date = (
+        timezone.localtime(normalized_invoice_datetime).date()
+        if normalized_invoice_datetime
+        else timezone.localdate()
+    )
     order_discount_amount = Decimal('0') if document_type == Order.DOCUMENT_SAMPLE else _as_decimal(order_data.get('discount_amount', order_data.get('discount', 0)))
     order_discount_percentage = Decimal('0') if document_type == Order.DOCUMENT_SAMPLE else _as_decimal(order_data.get('discount_percentage', 0))
     order_data['discount_amount'] = order_discount_amount
@@ -256,7 +283,8 @@ def create_order(*, order_data, items, user, confirm=False, auto_collect=True):
     if order_discount_amount > 0 or order_discount_percentage > 0:
         order_data['discount_approved_by'] = user
     order = Order.objects.create(
-        order_number=generate_order_number(),
+        order_number=generate_order_number(branch_id=branch_id, order_date=order_date),
+        branch_id=branch_id,
         created_by=user,
         **order_data,
     )
