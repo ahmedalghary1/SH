@@ -2,6 +2,8 @@ from audit.models import AuditLog
 from django.apps import apps
 from ipaddress import ip_address as parse_ip_address
 
+from config.branching import get_default_branch_id
+
 
 def log_audit(
     *,
@@ -47,6 +49,12 @@ def log_audit(
             branch_id = model.all_objects.filter(pk=object_id).values_list('branch_id', flat=True).first()
             if branch_id:
                 break
+    if not branch_id:
+        # Global records (notably a superuser's last_login/password upgrade)
+        # have no owning branch. Resolve the audit row's compatibility scope
+        # before saving; the authenticated user's own branch stays unchanged.
+        # Branch-owned business records retain their explicit/inferred branch.
+        branch_id = getattr(user, 'branch_id', None) or get_default_branch_id()
     AuditLog.objects.create(
         branch_id=branch_id,
         user=user,
