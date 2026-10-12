@@ -2,17 +2,22 @@ import base64
 import binascii
 import hashlib
 import json
+import logging
 from decimal import Decimal
 
 from django.core.files.base import ContentFile
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
+from config.branching import get_current_branch_id, reset_current_branch, set_current_branch
+from config.pwa import offline_scope
+from customers.services import visible_customers_for_user
 
 from accounts.models import User
 from customers.models import Customer
 from finance.models import CashAccount, PaymentTransaction
+from finance.validation import decimal_value, integer_value, positive_id
 from finance.services import (
     add_expense,
     collect_customer_balance_payment,
@@ -25,6 +30,7 @@ from finance.services import (
 from inventory.models import Stock, StockMovement, Warehouse
 from inventory.services import adjust_stock, stock_in, stock_out, transfer_stock
 from invoices.models import Invoice
+from invoices.services import delete_invoice, generate_invoice
 from orders.models import Order, OrderItem
 from orders.services import cancel_order, confirm_order, create_order, return_order
 from products.models import Category, Color, Product, ProductVariant, Size
@@ -42,6 +48,8 @@ from sales_reps import services as sales_rep_services
 from sales_reps.models import SalesRepStockAssignment
 
 from .models import SyncOperation
+
+logger = logging.getLogger(__name__)
 
 
 def payload_hash(payload):
@@ -95,7 +103,7 @@ def _server_is_newer(obj, local_timestamp):
 
 
 def _is_int(value):
-    return str(value or '').isdigit()
+    return positive_id(value) is not None
 
 
 def _model_by_pk(model, value):
@@ -105,7 +113,15 @@ def _model_by_pk(model, value):
 
 
 def _date_value(value):
-    return parse_date(str(value)) if value else None
+    if not value:
+        return None
+    try:
+        parsed = parse_date(str(value))
+    except (TypeError, ValueError, OverflowError):
+        parsed = None
+    if parsed is None:
+        raise ValidationError('التاريخ المدخل غير صالح.')
+    return parsed
 
 
 def _find_synced_object_id(*, device_id, entity_type, local_uuid):
@@ -359,12 +375,12 @@ def process_customer(operation, user):
         'whatsapp': customer_data.get('whatsapp') or '',
         'customer_type': customer_data.get('customer_type') or Customer.TYPE_RETAIL,
         'address': customer_data.get('address') or '',
-        'credit_limit': Decimal(str(customer_data.get('credit_limit') or 0)),
+        'credit_limit': _decimal_value(customer_data.get('credit_limit')) if user.is_manager else (customer.credit_limit if customer else Decimal('0')),
     }
     if customer is None:
         customer = Customer.objects.create(
             created_by=user,
-            opening_balance=Decimal(str(customer_data.get('opening_balance') or 0)),
+            opening_balance=_decimal_value(customer_data.get('opening_balance')) if user.is_manager else Decimal('0'),
             **fields,
         )
     else:
@@ -378,6 +394,8 @@ def process_customer(operation, user):
 @transaction.atomic
 def process_order(operation, user):
     order_data, items_data = _normalize_order_payload(operation)
+    if _form_payload(operation).get('draft_id'):
+        raise ValidationError('تعديل أو تأكيد فاتورة معلقة قائمة يحتاج إلى اتصال بالسيرفر.')
     local_timestamp = _payload_timestamp(operation, order_data)
     existing_order = _order_from_payload(order_data, operation)
 
@@ -386,24 +404,42 @@ def process_order(operation, user):
             return response_success(operation['local_uuid'], None, 'Order', resolution='server_deleted')
         if _server_is_newer(existing_order, local_timestamp):
             return response_success(operation['local_uuid'], existing_order.pk, 'Order', resolution='server_newer_ignored')
-        cancel_order(order=existing_order, user=user)
+        invoice = Invoice.objects.filter(order=existing_order).first()
+        if invoice:
+            delete_invoice(invoice=invoice, user=user)
+        else:
+            cancel_order(order=existing_order, user=user)
         return response_success(operation['local_uuid'], existing_order.pk, 'Order', resolution='local_deleted')
 
     if existing_order is not None and operation.get('operation_type') != 'create':
         if _server_is_newer(existing_order, local_timestamp):
             return response_success(operation['local_uuid'], existing_order.pk, 'Order', resolution='server_newer_ignored')
         requested_status = order_data.get('status')
+        if items_data:
+            raise ValidationError('تعديل أصناف فاتورة قائمة يحتاج إلى النموذج المتصل بالسيرفر.')
         if requested_status == Order.STATUS_CONFIRMED and existing_order.status == Order.STATUS_DRAFT:
-            confirm_order(order=existing_order, user=user)
+            existing_order = confirm_order(order=existing_order, user=user)
+            generate_invoice(existing_order, user=user)
             return response_success(operation['local_uuid'], existing_order.pk, 'Order', resolution='local_applied')
         if requested_status == Order.STATUS_CANCELLED:
-            cancel_order(order=existing_order, user=user)
+            invoice = Invoice.objects.filter(order=existing_order).first()
+            if invoice:
+                delete_invoice(invoice=invoice, user=user)
+            else:
+                cancel_order(order=existing_order, user=user)
             return response_success(operation['local_uuid'], existing_order.pk, 'Order', resolution='local_applied')
         if requested_status == Order.STATUS_RETURNED:
+            if not user.is_manager:
+                raise ValidationError('تنفيذ المرتجع الكامل يحتاج صلاحية المدير.')
             return_order(order=existing_order, user=user)
             return response_success(operation['local_uuid'], existing_order.pk, 'Order', resolution='local_applied')
         existing_order.notes = order_data.get('notes') or existing_order.notes
-        if requested_status in dict(Order.STATUS_CHOICES):
+        if requested_status and requested_status != existing_order.status:
+            transitions = {Order.STATUS_CONFIRMED: {Order.STATUS_PREPARING},
+                           Order.STATUS_PREPARING: {Order.STATUS_READY},
+                           Order.STATUS_READY: {Order.STATUS_COMPLETED}}
+            if not user.is_manager or requested_status not in transitions.get(existing_order.status, set()):
+                raise ValidationError('انتقال حالة الفاتورة غير مسموح.')
             existing_order.status = requested_status
         existing_order.save(update_fields=['notes', 'status', 'updated_at'])
         return response_success(operation['local_uuid'], existing_order.pk, 'Order', resolution='local_applied')
@@ -423,12 +459,12 @@ def process_order(operation, user):
         items.append({
             'variant': variant,
             'warehouse': item_warehouse,
-            'quantity': int(item.get('quantity') or 0),
+            'quantity': integer_value(item.get('quantity') or 0),
             'unit_price': Decimal(str(item.get('unit_price') or 0)),
             'discount_amount': Decimal(str(item.get('discount_amount') or item.get('discount') or 0)),
             'discount_percentage': Decimal(str(item.get('discount_percentage') or 0)),
         })
-    confirm = order_data.get('action') in {'confirm', 'new_invoice'}
+    confirm = order_data.get('action') == 'confirm'
     if order_data.get('document_type') == Order.DOCUMENT_QUOTE:
         confirm = False
     order = create_order(
@@ -446,7 +482,10 @@ def process_order(operation, user):
         items=items,
         user=user,
         confirm=confirm,
+        auto_collect=confirm,
     )
+    if confirm:
+        generate_invoice(order, user=user)
     return response_success(operation['local_uuid'], order.pk, 'Order', resolution='local_applied')
 
 
@@ -750,11 +789,11 @@ def _list_values(value):
 
 
 def _decimal_value(value, default='0'):
-    return Decimal(str(_first_value(value, default) or default))
+    return decimal_value(_first_value(value, default) or default, max_digits=12)
 
 
 def _int_value(value, default=0):
-    return int(_first_value(value, default) or default)
+    return integer_value(_first_value(value, default) or default, minimum=0)
 
 
 def _bool_value(value, default=True):
@@ -1438,52 +1477,154 @@ PROCESSORS = {
 }
 
 
+def _validate_operation(operation, user, branch_id):
+    if not isinstance(operation, dict) or not isinstance(operation.get('payload'), dict):
+        raise ValidationError('Operation payload must be an object')
+    for key, limit in [('idempotency_key', 160), ('device_id', 120), ('local_uuid', 120), ('entity_type', 40)]:
+        value = operation.get(key, '')
+        if not isinstance(value, str) or len(value) > limit or (key != 'device_id' and not value):
+            raise ValidationError(f'Invalid {key}')
+    if operation.get('operation_type', 'create') not in {'create', 'update', 'delete'}:
+        raise ValidationError('Unsupported operation type')
+    if operation.get('entity_type') not in PROCESSORS:
+        raise ValidationError('Unsupported entity type')
+    if not user or not user.is_authenticated or not user.is_active:
+        raise ValidationError('Authentication required')
+    if not branch_id:
+        raise ValidationError('اختر معرضًا أولًا قبل مزامنة العمليات.')
+    if operation.get('scope') and operation['scope'] != offline_scope(user, branch_id):
+        raise ValidationError('تغير الحساب أو المعرض. افتح الصفحة من جديد قبل المزامنة.')
+    path = operation['payload'].get('original_url') or ''
+    if not isinstance(path, str):
+        raise ValidationError('Invalid operation URL')
+    # Unsupported offline edits previously created duplicate financial effects
+    # or silently lost invoice lines. They retain the verified online workflow.
+    import re
+    if (re.match(r'^/orders/\d+/update/$', path)
+            or re.match(r'^/finance/transactions/.*(?:update|delete)/$', path)
+            or re.match(r'^/purchases/orders/\d+/(?:edit|discount|receive)/$', path)
+            or re.match(r'^/returns/\d+/', path)
+            or path == '/products/import/'):
+        raise ValidationError('هذه العملية تحتاج إلى اتصال بالإنترنت للتحقق من أثرها بأمان.')
+    if user.is_manager:
+        return
+    entity = operation['entity_type']
+    if entity in {'product', 'purchase', 'return'}:
+        raise ValidationError('غير مسموح بتنفيذ هذه العملية لهذا الحساب.')
+    if entity in {'order', 'customer', 'return'} and not user.is_sales:
+        raise ValidationError('غير مسموح بتنفيذ عملية مبيعات لهذا الحساب.')
+    if entity == 'stock' and (not user.is_warehouse or '/warehouses/' in path or '/adjustment/' in path):
+        raise ValidationError('غير مسموح بتعديل المخزون بهذه العملية.')
+    if entity == 'driver_action' and (not user.is_warehouse or any(part in path for part in ['/collection/', '/handover/'])):
+        raise ValidationError('غير مسموح بتنفيذ عملية المندوب.')
+    if entity == 'payment':
+        if '/transfer/' in path and (user.is_sales or user.is_warehouse):
+            pass
+        elif not user.is_sales or any(part in path for part in ['/accounts/', 'expense', 'supplier-payment']):
+            raise ValidationError('غير مسموح بتنفيذ هذه العملية المالية.')
+    if user.is_sales and entity == 'order':
+        data, items = _normalize_order_payload(operation)
+        order = _order_from_payload(data, operation)
+        if order and order.created_by_id != user.pk:
+            raise ValidationError('لا يمكنك تعديل فاتورة مستخدم آخر.')
+        for warehouse_id in [data.get('warehouse'), *[item.get('warehouse_server_id') or item.get('warehouse_id') for item in items]]:
+            if warehouse_id and not Warehouse.objects.filter(pk=warehouse_id, assigned_user=user, is_active=True).exists():
+                raise ValidationError('المخزن غير متاح لهذا المندوب.')
+        customer = _customer_from_payload(data, operation.get('device_id') or '')
+        if customer and not visible_customers_for_user(user).filter(pk=customer.pk).exists():
+            raise ValidationError('العميل غير متاح لهذا المندوب.')
+    if user.is_sales and entity == 'customer':
+        data = operation['payload'].get('customer') or _form_payload(operation)
+        server_id = data.get('server_id') or data.get('id')
+        if server_id and _is_int(server_id) and not visible_customers_for_user(user).filter(pk=server_id).exists():
+            raise ValidationError('العميل غير متاح لهذا المندوب.')
+        if operation.get('operation_type') == 'delete':
+            raise ValidationError('غير مسموح بحذف العميل لهذا الحساب.')
+    if entity == 'payment':
+        data = operation['payload'].get('payment') or _form_payload(operation)
+        if '/transfer/' in path:
+            from finance.forms import TransferForm
+            form_data = {**data, 'transaction_date': data.get('transaction_date') or timezone.now().isoformat()}
+            if not TransferForm(form_data, user=user).is_valid():
+                raise ValidationError('راجع الخزن والمبلغ وتاريخ التحويل المسموح لهذا الحساب.')
+        for name in ('cash_account',):
+            if data.get(name) and not CashAccount.objects.filter(pk=positive_id(data[name]), assigned_user=user, is_active=True).exists():
+                raise ValidationError('الخزنة غير متاحة لهذا الحساب.')
+        customer = _customer_from_payload(data, operation.get('device_id') or '')
+        if customer and not visible_customers_for_user(user).filter(pk=customer.pk).exists():
+            raise ValidationError('العميل غير متاح لهذا الحساب.')
+        order_id = data.get('order_server_id') or data.get('order')
+        if not order_id and '/invoices/' in path:
+            invoice = _model_by_pk(Invoice, _first_int_from_path(path))
+            order_id = invoice.order_id if invoice else None
+        if order_id and not Order.objects.filter(pk=positive_id(order_id), created_by=user).exists():
+            raise ValidationError('الفاتورة غير متاحة لهذا الحساب.')
+
+
 def process_operation(operation, user):
-    current_payload_hash = payload_hash(operation.get('payload') or {})
-    existing = SyncOperation.objects.filter(idempotency_key=operation['idempotency_key']).first()
-    if existing:
-        if existing.payload_hash and existing.payload_hash != current_payload_hash:
-            return response_failed(
-                operation.get('local_uuid'),
-                'Idempotency key already used with different payload',
-                'failed_conflict',
-            )
-        if existing.status in {SyncOperation.STATUS_SUCCESS, SyncOperation.STATUS_CONFLICT}:
-            return existing.response_json
+    branch_id = get_current_branch_id() or getattr(user, 'branch_id', None)
+    token = set_current_branch(branch_id)
+    try:
+        return _process_operation(operation, user, branch_id)
+    finally:
+        reset_current_branch(token)
 
-    processor = PROCESSORS.get(operation.get('entity_type'))
-    if processor is None:
-        result = response_failed(operation.get('local_uuid'), 'Unsupported entity type')
-        status = SyncOperation.STATUS_FAILED
-        server_model = None
-        server_object_id = None
-    else:
+
+def _process_operation(operation, user, branch_id):
+    local_uuid = operation.get('local_uuid') if isinstance(operation, dict) else ''
+    try:
+        _validate_operation(operation, user, branch_id)
+    except (ValidationError, TypeError, ValueError, AttributeError) as exc:
+        return response_failed(local_uuid, exc.messages[0] if isinstance(exc, ValidationError) else 'Invalid operation', 'failed_conflict')
+    current_payload_hash = payload_hash(operation['payload'])
+    # Claim the unique key BEFORE processing, and keep the business write and
+    # receipt in the same transaction. PostgreSQL concurrent requests wait on
+    # the row/unique key and return the committed original response.
+    with transaction.atomic():
+        record, _ = SyncOperation.all_objects.get_or_create(
+            idempotency_key=operation['idempotency_key'],
+            defaults={
+                'branch_id': branch_id, 'user': user,
+                'device_id': operation.get('device_id') or '',
+                'entity_type': operation['entity_type'],
+                'operation_type': operation.get('operation_type') or 'create',
+                'local_uuid': local_uuid, 'payload_hash': current_payload_hash,
+                'status': SyncOperation.STATUS_FAILED,
+            },
+        )
+        record = SyncOperation.all_objects.select_for_update().get(pk=record.pk)
+        if (record.user_id != user.pk or record.branch_id != branch_id
+                or record.entity_type != operation['entity_type']
+                or record.operation_type != (operation.get('operation_type') or 'create')
+                or record.local_uuid != local_uuid
+                or record.device_id != (operation.get('device_id') or '')
+                or (record.payload_hash and record.payload_hash != current_payload_hash)):
+            return response_failed(local_uuid, 'Idempotency key already belongs to another operation', 'failed_conflict')
+        if record.status in {SyncOperation.STATUS_SUCCESS, SyncOperation.STATUS_CONFLICT}:
+            return record.response_json
         try:
-            result = processor(operation, user)
-            status = SyncOperation.STATUS_SUCCESS
-            server_model = result.get('server_model')
-            server_object_id = str(result.get('server_id')) if result.get('server_id') else None
+            # Processor-level atomic blocks roll back partial writes on errors.
+            result = PROCESSORS[operation['entity_type']](operation, user)
+            record.status = SyncOperation.STATUS_SUCCESS
         except ValidationError as exc:
-            result = response_failed(operation.get('local_uuid'), exc.messages[0] if hasattr(exc, 'messages') else exc, 'failed_conflict')
-            status = SyncOperation.STATUS_CONFLICT
-            server_model = None
-            server_object_id = None
-        except Exception as exc:
-            result = response_failed(operation.get('local_uuid'), exc)
-            status = SyncOperation.STATUS_FAILED
-            server_model = None
-            server_object_id = None
-
-    operation_record = existing or SyncOperation(idempotency_key=operation['idempotency_key'])
-    operation_record.device_id = operation.get('device_id') or ''
-    operation_record.user = user
-    operation_record.entity_type = operation.get('entity_type') or ''
-    operation_record.operation_type = operation.get('operation_type') or ''
-    operation_record.local_uuid = operation.get('local_uuid') or ''
-    operation_record.server_model = server_model
-    operation_record.server_object_id = server_object_id
-    operation_record.payload_hash = current_payload_hash
-    operation_record.status = status
-    operation_record.response_json = result
-    operation_record.save()
-    return result
+            result = response_failed(local_uuid, exc.messages[0], 'failed_conflict')
+            record.status = SyncOperation.STATUS_CONFLICT
+        except PermissionDenied:
+            result = response_failed(local_uuid, 'ليس لديك صلاحية تنفيذ هذه العملية.', 'failed_conflict')
+            record.status = SyncOperation.STATUS_CONFLICT
+        except (TypeError, ValueError, KeyError, ArithmeticError) as exc:
+            result = response_failed(local_uuid, 'بيانات العملية غير صالحة. راجع القيم المدخلة.', 'failed_conflict')
+            record.status = SyncOperation.STATUS_CONFLICT
+        except ObjectDoesNotExist:
+            result = response_failed(local_uuid, 'أحد السجلات المرتبطة لم يعد متاحًا. راجع العملية قبل إرسالها.', 'failed_conflict')
+            record.status = SyncOperation.STATUS_CONFLICT
+        except Exception:
+            logger.exception('Offline sync operation failed: entity=%s local_uuid=%s', operation['entity_type'], local_uuid)
+            result = response_failed(local_uuid, 'تعذرت المزامنة مؤقتًا. تم الاحتفاظ بالعملية لإعادة المحاولة.')
+            record.status = SyncOperation.STATUS_FAILED
+        record.server_model = result.get('server_model')
+        record.server_object_id = str(result['server_id']) if result.get('server_id') else None
+        record.payload_hash = current_payload_hash
+        record.response_json = result
+        record.save(update_fields=['server_model', 'server_object_id', 'payload_hash', 'status', 'response_json', 'updated_at'])
+        return result

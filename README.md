@@ -72,3 +72,31 @@ POSTGRES_PORT=5432
 ```
 
 Do not commit real `.env` files, secrets, uploaded media, logs, or local SQLite databases.
+
+The PostgreSQL values must identify the existing production database. Preserve
+the server's private `.env`; do not replace it with the SQLite example. Legacy
+`ENGINE`, `NAME`, `USER`, `PASSWORD`, `HOST`, and `PORT` are still accepted.
+`DB_ENGINE` takes precedence if both formats exist. No database credentials are
+embedded in the application. Connection health checks and a connection timeout
+are enabled for PostgreSQL.
+
+This release uses Django 5.2 LTS and requires Python 3.10 or newer. See the
+[official supported versions](https://www.djangoproject.com/download/).
+
+## Invoice Deletion
+
+Managers with deletion permission can open the invoice's deletion confirmation
+and POST its cancellation. The transaction restores stock to its original
+warehouses, reverses actual payments in their original cash accounts, and removes
+the remaining customer debt. Invoice, payment, and audit records are retained;
+cancelled invoices disappear from the active list. Linked returns or handed-over
+representative collections must be reconciled before deletion. Repeated deletion
+does not reverse stock or cash twice. Editing/deletion requires a connection.
+
+## Release Review And Offline Use
+
+See [the Arabic review and deployment instructions](docs/review-2026-10-12-ar.md)
+and [PWA behavior and limitations](docs/pwa_offline_sync.md). This release adds no
+database schema migrations. Back up the production database and media, preserve
+the private environment, collect static files, and restart the application when
+deploying. A request reference is included on error pages and in application logs.

@@ -3,7 +3,7 @@ from django.contrib import messages
 from django.contrib.auth.views import LoginView, LogoutView
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
-from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, ListView, UpdateView, View
@@ -19,10 +19,6 @@ from .models import Branch, User
 from .permissions import ManagerRequiredMixin, SuperuserRequiredMixin
 
 
-# Keep the login POST tolerant of stale/missing CSRF cookies caused by old
-# cached auth pages or misconfigured deployment proxies. Other POST endpoints
-# remain protected by CsrfViewMiddleware.
-@method_decorator(csrf_exempt, name='dispatch')
 @method_decorator(ensure_csrf_cookie, name='dispatch')
 @method_decorator(never_cache, name='dispatch')
 class AppLoginView(LoginView):
@@ -31,12 +27,16 @@ class AppLoginView(LoginView):
     redirect_authenticated_user = True
     
     def dispatch(self, request, *args, **kwargs):
+        if request.method != 'POST':
+            return super().dispatch(request, *args, **kwargs)
         try:
             rate_limit(request, 'login', max_requests=10, period=60)
         except RateLimitExceeded:
             log_failed_login(request, reason='rate_limit_exceeded')
             messages.error(request, 'تجاوزت الحد المسموح من محاولات تسجيل الدخول. يرجى المحاولة مرة أخرى بعد دقيقة.')
-            return redirect(self.get_success_url())
+            response = self.render_to_response(self.get_context_data(form=self.get_form()), status=429)
+            response['Retry-After'] = '60'
+            return response
         return super().dispatch(request, *args, **kwargs)
 
     def form_invalid(self, form):
@@ -167,6 +167,9 @@ class BranchSelectView(SuperuserRequiredMixin, View):
     def post(self, request):
         branch_id = request.POST.get('branch')
         if branch_id:
+            if not branch_id.isdecimal() or len(branch_id) > 18:
+                messages.error(request, 'اختر معرضًا صالحًا.')
+                return redirect('accounts:branch_list')
             branch = get_object_or_404(Branch, pk=branch_id, is_active=True)
             request.session['active_branch_id'] = branch.pk
         else:

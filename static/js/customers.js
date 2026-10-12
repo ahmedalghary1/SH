@@ -1,6 +1,7 @@
 function bindB2BFields() {
     const type = document.getElementById("id_customer_type");
-    if (!type) return;
+    if (!type || type.dataset.b2bReady) return;
+    type.dataset.b2bReady = '1';
     const company = document.getElementById("id_company_name")?.closest("label");
     const tax = document.getElementById("id_tax_number")?.closest("label");
     const update = () => {
@@ -12,3 +13,5 @@ function bindB2BFields() {
     update();
 }
 document.addEventListener("DOMContentLoaded", bindB2BFields);
+document.addEventListener("sh:page-loaded", bindB2BFields);
+bindB2BFields();

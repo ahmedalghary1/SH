@@ -10,6 +10,7 @@ from django.views.generic import TemplateView, View
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, can_view_costs
 from customers.models import Customer
 from finance.models import PaymentTransaction
+from finance.validation import parse_date, positive_id, report_days
 from inventory.models import Stock, StockMovement, Warehouse
 from orders.models import Order, OrderItem
 from returns.models import SalesReturn
@@ -275,7 +276,7 @@ class InactiveCustomerReportView(ManagerRequiredMixin, GenericReportMixin, Templ
     report_title = 'تقرير العملاء غير النشطين'
 
     def get_report(self):
-        days = int(self.request.GET.get('days') or 90)
+        days = report_days(self.request.GET.get('days'))
         return services.inactive_customer_report(days=days)
 
 
@@ -314,7 +315,7 @@ class StaleProductsReportView(ManagerRequiredMixin, GenericReportMixin, Template
     report_title = 'المنتجات الراكدة'
 
     def get_report(self):
-        days = int(self.request.GET.get('days') or 90)
+        days = report_days(self.request.GET.get('days'))
         return services.stale_products_report(days=days)
 
 
@@ -710,14 +711,15 @@ class StockMovementReportView(RoleRequiredMixin, TemplateView):
         movement_type = self.request.GET.get('movement_type')
         q = self.request.GET.get('q', '').strip()
         
-        if date_from:
-            movements = movements.filter(created_at__date__gte=date_from)
-        if date_to:
-            movements = movements.filter(created_at__date__lte=date_to)
+        if parse_date(date_from):
+            movements = movements.filter(created_at__date__gte=parse_date(date_from))
+        if parse_date(date_to):
+            movements = movements.filter(created_at__date__lte=parse_date(date_to))
         if warehouse_id:
+            parsed_warehouse_id = positive_id(warehouse_id)
             movements = movements.filter(
-                models.Q(from_warehouse_id=warehouse_id) | models.Q(to_warehouse_id=warehouse_id)
-            )
+                models.Q(from_warehouse_id=parsed_warehouse_id) | models.Q(to_warehouse_id=parsed_warehouse_id)
+            ) if parsed_warehouse_id is not None else movements.none()
         if movement_type:
             movements = movements.filter(movement_type=movement_type)
         if q:

@@ -1,6 +1,7 @@
 (function () {
     const form = document.getElementById("order-form");
-    if (!form) return;
+    if (!form || form.dataset.orderReady) return;
+    form.dataset.orderReady = '1';
 
     const searchInput = document.getElementById("product-search");
     const variantSelect = document.getElementById("variant-select");
@@ -37,6 +38,11 @@
     }
     let selectedProduct = null;
     let selectedProductLabel = "";
+    let productSearchNumber = 0;
+    let customerSearchNumber = 0;
+    let variantRequestNumber = 0;
+    let metaRequestNumber = 0;
+    let searchTimer;
 
     const productCombo = document.createElement("div");
     const productToggle = document.createElement("button");
@@ -57,6 +63,7 @@
     searchInput.setAttribute("role", "combobox");
     searchInput.setAttribute("aria-expanded", "false");
     searchInput.setAttribute("aria-haspopup", "listbox");
+    if (typeof setupComboAria === 'function') setupComboAria(searchInput, resultsBox);
 
     function normalizeArabic(value) {
         return String(value || "")
@@ -229,14 +236,36 @@
         visibleItems.forEach(({ item, index }) => {
             const total = Math.max((Number(item.unit_price) * Number(item.quantity)) - lineDiscount(item), 0);
             const row = document.createElement("tr");
-            row.innerHTML = `
-                <td>${item.product_name}</td>
-                <td>${item.color || "-"} / ${item.size || "-"}</td>
-                <td><input class="invoice-line-input" type="number" min="1" step="1" value="${Number(item.quantity)}" data-line-quantity="${index}" aria-label="تعديل الكمية"></td>
-                <td><input class="invoice-line-input" type="number" min="0" step="0.01" value="${money(item.unit_price)}" data-line-price="${index}" aria-label="تعديل السعر"></td>
-                <td>${money(total)}</td>
-                <td><button type="button" class="btn btn-danger" data-remove="${index}">✕</button></td>
-            `;
+            const nameCell = document.createElement('td');
+            nameCell.textContent = item.product_name || '-';
+            const variantCell = document.createElement('td');
+            variantCell.textContent = `${item.color || '-'} / ${item.size || '-'}`;
+            const quantityCell = document.createElement('td');
+            const quantityInput = document.createElement('input');
+            quantityInput.className = 'invoice-line-input';
+            quantityInput.type = 'number';
+            quantityInput.min = '1'; quantityInput.step = '1';
+            quantityInput.value = Number(item.quantity);
+            quantityInput.dataset.lineQuantity = String(index);
+            quantityInput.setAttribute('aria-label', `تعديل كمية ${item.product_name || 'الصنف'}`);
+            quantityCell.appendChild(quantityInput);
+            const priceCell = document.createElement('td');
+            const linePrice = document.createElement('input');
+            linePrice.className = 'invoice-line-input';
+            linePrice.type = 'number'; linePrice.min = '0'; linePrice.step = '0.01';
+            linePrice.value = money(item.unit_price);
+            linePrice.dataset.linePrice = String(index);
+            linePrice.setAttribute('aria-label', `تعديل سعر ${item.product_name || 'الصنف'}`);
+            priceCell.appendChild(linePrice);
+            const totalCell = document.createElement('td');
+            totalCell.textContent = money(total);
+            const actions = document.createElement('td');
+            const remove = document.createElement('button');
+            remove.type = 'button'; remove.className = 'btn btn-danger';
+            remove.dataset.remove = String(index); remove.textContent = '✕';
+            remove.setAttribute('aria-label', `حذف ${item.product_name || 'الصنف'}`);
+            actions.appendChild(remove);
+            row.append(nameCell, variantCell, quantityCell, priceCell, totalCell, actions);
             body.appendChild(row);
         });
         updateSummary();
@@ -258,33 +287,14 @@
     }
 
     async function fetchJson(url, options = {}) {
-        try {
-            const headers = {
+        const headers = {
                 'X-CSRFToken': getCookie('csrftoken'),
                 ...options.headers,
             };
             if (!(options.body instanceof FormData) && !headers['Content-Type']) {
                 headers['Content-Type'] = 'application/json';
             }
-            const response = await fetch(url, {
-                ...options,
-                headers,
-            });
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-        } catch (error) {
-            if (window.SHOffline?.handleJsonRequest) {
-                try {
-                    return await window.SHOffline.handleJsonRequest(url, options);
-                } catch (offlineError) {
-                    console.error('Offline fallback error:', offlineError);
-                }
-            }
-            console.error('Fetch error:', error);
-            throw error;
-        }
+        return window.SHHttp.json(url, { ...options, headers });
     }
 
     function customerLabel(customer) {
@@ -310,7 +320,17 @@
     }
 
     async function renderProductResults(query) {
-        const data = await fetchJson(`/orders/ajax/search-products/?q=${encodeURIComponent(query)}`);
+        const thisSearch = ++productSearchNumber;
+        let data;
+        try {
+            data = await fetchJson(`/orders/ajax/search-products/?q=${encodeURIComponent(query)}`);
+        } catch (error) {
+            if (thisSearch !== productSearchNumber) return;
+            resultsBox.textContent = error.message;
+            openProductResults();
+            return;
+        }
+        if (thisSearch !== productSearchNumber) return;
         resultsBox.innerHTML = "";
         if (!data.data.length) {
             const empty = document.createElement("div");
@@ -324,6 +344,8 @@
             const button = document.createElement("button");
             button.type = "button";
             button.className = "combo-option search-result";
+            button.tabIndex = -1;
+            button.setAttribute('role', 'option');
             button.textContent = `${product.name} - ${product.sku}`;
             button.dataset.id = product.id;
             button.dataset.name = product.name;
@@ -355,19 +377,31 @@
             variantSelect.innerHTML = '<option value="">اختر المنتج أولا</option>';
             resetProductMeta();
         }
-        renderProductResults(q);
+        ++productSearchNumber;
+        ++variantRequestNumber;
+        ++metaRequestNumber;
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => renderProductResults(q), 180);
     });
 
     resultsBox.addEventListener("click", async (event) => {
         const button = event.target.closest(".search-result");
         if (!button) return;
         selectedProduct = { id: button.dataset.id, name: button.dataset.name };
+        const selectedProductId = selectedProduct.id;
+        const thisVariantRequest = ++variantRequestNumber;
+        ++productSearchNumber;
+        clearTimeout(searchTimer);
         searchInput.value = button.textContent;
         selectedProductLabel = button.textContent;
+        ++metaRequestNumber;
         closeProductResults();
         resetProductMeta();
+        variantSelect.disabled = true;
+        variantSelect.innerHTML = '<option value="">جارٍ تحميل الألوان والمقاسات...</option>';
         try {
-            const data = await fetchJson(`/orders/ajax/products/${selectedProduct.id}/variants/`);
+            const data = await fetchJson(`/orders/ajax/products/${selectedProductId}/variants/`);
+            if (thisVariantRequest !== variantRequestNumber || selectedProduct?.id !== selectedProductId) return;
             variantSelect.innerHTML = '<option value="">اختر اللون والمقاس</option>';
             if (data.success && data.data && data.data.length > 0) {
                 data.data.forEach((variant) => {
@@ -383,18 +417,30 @@
                 variantSelect.innerHTML = '<option value="">لا توجد متغيرات لهذا المنتج</option>';
             }
         } catch (error) {
+            if (thisVariantRequest !== variantRequestNumber) return;
             console.error('Error fetching variants:', error);
             variantSelect.innerHTML = '<option value="">خطأ في جلب المتغيرات</option>';
+        } finally {
+            if (thisVariantRequest === variantRequestNumber) variantSelect.disabled = false;
         }
     });
 
     customerSearch?.addEventListener("input", async () => {
+        const thisSearch = ++customerSearchNumber;
         const q = customerSearch.value.trim();
         if (q.length < 1) {
             customerResults.classList.remove("is-open");
             return;
         }
-        const data = await fetchJson(`/orders/ajax/search-customers/?q=${encodeURIComponent(q)}`);
+        let data;
+        try { data = await fetchJson(`/orders/ajax/search-customers/?q=${encodeURIComponent(q)}`); }
+        catch (error) {
+            if (thisSearch !== customerSearchNumber) return;
+            customerResults.textContent = error.message;
+            customerResults.classList.add('is-open');
+            return;
+        }
+        if (thisSearch !== customerSearchNumber) return;
         customerResults.innerHTML = "";
         data.data.forEach((customer) => {
             const button = document.createElement("button");
@@ -422,7 +468,7 @@
         option.selected = true;
         customerSearch.value = option.textContent;
         customerResults.classList.remove("is-open");
-        refreshVariantMeta();
+        customerSelect.dispatchEvent(new Event('change', { bubbles: true }));
     });
 
     function updateSelectedWarehouse() {
@@ -432,12 +478,19 @@
     }
 
     async function refreshVariantMeta() {
+        const thisRequest = ++metaRequestNumber;
         const variantId = variantSelect.value;
         resetProductMeta();
+        addButton.disabled = true;
         if (!variantId) return;
 
         const editingQuery = editingOrderId ? `?editing_order=${encodeURIComponent(editingOrderId)}` : "";
-        const stock = await fetchJson(`/orders/ajax/variants/${variantId}/stock/${editingQuery}`);
+        try {
+        const [stock, price] = await Promise.all([
+            fetchJson(`/orders/ajax/variants/${variantId}/stock/${editingQuery}`),
+            fetchJson(`/orders/ajax/variants/${variantId}/price/?order_type=${encodeURIComponent(orderType?.value || "b2c")}&customer_id=${encodeURIComponent(customerSelect?.value || "")}`),
+        ]);
+        if (thisRequest !== metaRequestNumber) return;
         const warehouses = stock.data.warehouses || [];
         itemWarehouse.innerHTML = warehouses.length
             ? '<option value="">اختر المخزن</option>'
@@ -453,9 +506,14 @@
         if (warehouses.length) itemWarehouse.value = warehouses[0].warehouse_id;
         updateSelectedWarehouse();
 
-        const price = await fetchJson(`/orders/ajax/variants/${variantId}/price/?order_type=${orderType?.value || "b2c"}&customer_id=${customerSelect?.value || ""}`);
         setFieldValue(priceInput, isSample() ? "0.00" : price.data.price);
         updateLineTotal();
+        addButton.disabled = warehouses.length === 0;
+        } catch (error) {
+            if (thisRequest !== metaRequestNumber) return;
+            if (typeof showPwaNotice === 'function') showPwaNotice(error.message, true);
+            else window.alert(error.message);
+        }
     }
 
     variantSelect.addEventListener("change", refreshVariantMeta);
@@ -495,12 +553,17 @@
         const alreadySelected = items
             .filter((item) => item.variant_id === variantSelect.value && item.warehouse_id === itemWarehouse.value)
             .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-        if (quantity <= 0 || quantity + alreadySelected > available) {
+        if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity + alreadySelected > available) {
             window.alert("الكمية غير متاحة");
             return;
         }
         if (!warehouse.value) warehouse.value = itemWarehouse.value;
         const unitPrice = isSample() ? 0 : Number(getFieldValue(priceInput) || 0);
+        if (!Number.isFinite(unitPrice) || unitPrice < 0 || !priceInput.checkValidity()) {
+            window.alert('أدخل سعرًا صحيحًا.');
+            priceInput.focus();
+            return;
+        }
         items.push({
             variant_id: variantSelect.value,
             product_name: selectedProduct.name,
@@ -518,6 +581,7 @@
             discount_percentage: 0,
         });
         renderItems();
+        form.dataset.unsaved = '1';
         qtyInput.value = 1;
         updateLineTotal();
     });
@@ -526,6 +590,7 @@
         const remove = event.target.closest("[data-remove]");
         if (!remove) return;
         items.splice(Number(remove.dataset.remove), 1);
+        form.dataset.unsaved = '1';
         warehouse.value = items[0]?.warehouse_id || "";
         renderItems();
     });
@@ -535,7 +600,7 @@
         if (quantityInput) {
             const index = Number(quantityInput.dataset.lineQuantity);
             const item = items[index];
-            const nextQuantity = Math.trunc(Number(quantityInput.value));
+            const nextQuantity = Number(quantityInput.value);
             const otherQuantity = items.reduce((sum, candidate, candidateIndex) => {
                 if (
                     candidateIndex !== index
@@ -546,7 +611,7 @@
                 }
                 return sum;
             }, 0);
-            if (!Number.isFinite(nextQuantity) || nextQuantity <= 0 || nextQuantity + otherQuantity > Number(item.available_quantity || 0)) {
+            if (!Number.isSafeInteger(nextQuantity) || nextQuantity <= 0 || nextQuantity + otherQuantity > Number(item.available_quantity || 0)) {
                 window.alert("الكمية غير متاحة");
                 quantityInput.value = item.quantity;
                 return;
@@ -610,7 +675,12 @@
         }
     });
 
-    document.getElementById("quick-customer-save")?.addEventListener("click", async () => {
+    document.getElementById("quick-customer-save")?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        const previousText = button.textContent;
+        button.disabled = true;
+        button.textContent = 'جارٍ الحفظ...';
+        try {
         const payload = new FormData();
         payload.append("name", document.getElementById("quick-customer-name").value);
         payload.append("customer_type", document.getElementById("quick-customer-type").value);
@@ -634,12 +704,18 @@
         option.textContent = customerLabel(data.data);
         option.selected = true;
         customerSelect.appendChild(option);
+        customerSelect.dispatchEvent(new Event('change', { bubbles: true }));
         if (typeof closeModal === "function") {
             closeModal(document.getElementById("customer-modal"));
         } else {
             document.getElementById("customer-modal").hidden = true;
         }
-        refreshVariantMeta();
+        } catch (error) {
+            window.alert(error.message);
+        } finally {
+            button.disabled = false;
+            button.textContent = previousText;
+        }
     });
 
     syncInvoiceKindFromFields();

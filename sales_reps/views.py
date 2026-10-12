@@ -46,7 +46,7 @@ class AssignStockView(WarehouseRequiredMixin, FormView):
             messages.success(self.request, 'تم تسليم البضاعة للمندوب')
             return redirect('sales_reps:dashboard')
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
@@ -60,7 +60,7 @@ class ReturnStockView(WarehouseRequiredMixin, FormView):
             messages.success(self.request, 'تم تسجيل رجوع بضاعة من المندوب')
             return redirect('sales_reps:dashboard')
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
@@ -74,7 +74,7 @@ class RecordSaleView(WarehouseRequiredMixin, FormView):
             messages.success(self.request, 'تم تسجيل بيع من عهدة المندوب')
             return redirect('sales_reps:dashboard')
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
@@ -88,7 +88,7 @@ class CollectionCreateView(ManagerRequiredMixin, FormView):
             messages.success(self.request, 'تم تسجيل تحصيل المندوب')
             return redirect('sales_reps:dashboard')
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
@@ -102,7 +102,7 @@ class HandoverCreateView(ManagerRequiredMixin, FormView):
             messages.success(self.request, 'تم تسليم نقدية المندوب للإدارة')
             return redirect('sales_reps:dashboard')
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 

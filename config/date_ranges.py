@@ -31,10 +31,16 @@ def resolve_date_period(params, today=None):
     """Return the selected date bounds; weeks always run Saturday-Friday."""
     today = today or timezone.localdate()
     period = (params.get('period') or '').strip()
-    date_from = parse_date(params.get('date_from', ''))
-    date_to = parse_date(params.get('date_to', ''))
-    datetime_from = parse_datetime(params.get('datetime_from', ''))
-    datetime_to = parse_datetime(params.get('datetime_to', ''))
+    def parsed(parser, value):
+        try:
+            return parser(value or '')
+        except (ValueError, TypeError, OverflowError):
+            return None
+
+    date_from = parsed(parse_date, params.get('date_from'))
+    date_to = parsed(parse_date, params.get('date_to'))
+    datetime_from = parsed(parse_datetime, params.get('datetime_from'))
+    datetime_to = parsed(parse_datetime, params.get('datetime_to'))
 
     if datetime_from and timezone.is_naive(datetime_from):
         datetime_from = timezone.make_aware(datetime_from, timezone.get_current_timezone())

@@ -15,21 +15,28 @@
   } catch (_error) {
     state = {tabs: []};
   }
+  if (!state || typeof state !== 'object') state = {tabs: []};
   if (!Array.isArray(state.tabs)) state.tabs = [];
+  state.tabs = state.tabs.filter(tab => tab && typeof tab.url === 'string' && tab.url.startsWith('/') && !tab.url.startsWith('//') && typeof tab.title === 'string');
 
   // DOM nodes are moved into these detached containers while their tab is
   // inactive. Moving (instead of serializing) preserves values, selection,
   // event handlers, dynamically added invoice rows, and component state.
   const cache = new Map();
   let activeUrl = currentUrl;
+  let lastLoadedUrl = currentUrl;
   let controller = null;
+  let navigationNumber = 0;
   const shellScriptPattern = /\/static\/js\/(?:main|internal-tabs)\.js|\/static\/js\/pwa\//;
-  const save = () => sessionStorage.setItem(storageKey, JSON.stringify(state));
+  const save = () => {
+    try { sessionStorage.setItem(storageKey, JSON.stringify(state)); } catch (_error) { /* Private browsing may block storage. */ }
+  };
   const titleFor = (doc, url) => doc.querySelector('h1')?.textContent.trim() || doc.title || url;
 
   function pageMetadata(source = content) {
     return {
       totalRecords: source.hasAttribute('data-total-records') ? source.dataset.totalRecords : null,
+      title: document.title,
     };
   }
 
@@ -68,27 +75,37 @@
     content.replaceChildren();
     while (entry.holder.firstChild) content.appendChild(entry.holder.firstChild);
     applyMetadata(entry.metadata);
+    if (entry.metadata?.title) document.title = entry.metadata.title;
     content.removeAttribute('aria-busy');
     activeUrl = url;
+    lastLoadedUrl = url;
     if (push) history.pushState({workspace: true}, '', url);
     render();
+    document.dispatchEvent(new CustomEvent('sh:page-loaded'));
     requestAnimationFrame(() => window.scrollTo(0, entry.scrollY || 0));
   }
 
   function render() {
     bar.innerHTML = '';
     state.tabs.forEach((tab, index) => {
-      const item = document.createElement('button');
-      item.type = 'button';
+      const item = document.createElement('div');
       item.className = 'workspace-tab' + (tab.url === activeUrl ? ' active' : '');
-      item.append(document.createTextNode(tab.title));
-      item.onclick = () => openTab(tab.url, true);
+      const opener = document.createElement('button');
+      opener.type = 'button';
+      opener.className = 'workspace-tab-open';
+      opener.textContent = tab.title;
+      if (tab.url === activeUrl) opener.setAttribute('aria-current', 'page');
+      opener.onclick = () => openTab(tab.url, true).catch(handleNavigationError);
 
-      const close = document.createElement('span');
-      close.textContent = ' ×';
-      close.setAttribute('aria-label', 'إغلاق');
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'workspace-tab-close';
+      close.textContent = '×';
+      close.setAttribute('aria-label', `إغلاق ${tab.title}`);
       close.onclick = event => {
         event.stopPropagation();
+        const page = tab.url === activeUrl ? content : cache.get(tab.url)?.holder;
+        if (page?.querySelector('form[data-unsaved="1"]') && !confirm('توجد تغييرات غير محفوظة. هل تريد إغلاق التبويب؟')) return;
         state.tabs.splice(index, 1);
         cache.delete(tab.url);
         save();
@@ -99,8 +116,8 @@
         content.replaceChildren();
         activeUrl = null;
         const next = state.tabs[Math.max(0, index - 1)];
-        if (next) openTab(next.url, true);
-        else openTab('/', true);
+        if (next) openTab(next.url, true).catch(handleNavigationError);
+        else openTab('/', true).catch(handleNavigationError);
       };
       item.onauxclick = event => {
         if (event.button === 1) {
@@ -108,16 +125,17 @@
           close.click();
         }
       };
-      item.append(close);
+      item.append(opener, close);
       bar.append(item);
     });
   }
 
-  async function runPageScripts(doc) {
+  async function runPageScripts(doc, thisNavigation) {
     for (const script of doc.querySelectorAll('script')) {
+      if (thisNavigation !== navigationNumber) return;
       if (script.src) {
         const source = new URL(script.src, location.origin);
-        if (shellScriptPattern.test(source.pathname)) continue;
+        if (shellScriptPattern.test(source.pathname) || source.origin !== location.origin) continue;
         await new Promise((resolve, reject) => {
           const loaded = document.createElement('script');
           loaded.src = source.href;
@@ -139,8 +157,10 @@
   async function openTab(value, push = true) {
     const url = normalizeUrl(value);
     if (url === activeUrl) return;
+    const thisNavigation = ++navigationNumber;
+    controller?.abort();
 
-    const previousUrl = activeUrl;
+    const previousUrl = activeUrl || lastLoadedUrl;
     stashActivePage();
     const cached = cache.get(url);
     if (cached) {
@@ -149,24 +169,27 @@
       return;
     }
 
-    controller?.abort();
     controller = new AbortController();
+    const requestController = controller;
     activeUrl = null;
     content.replaceChildren();
     content.setAttribute('aria-busy', 'true');
     const loading = document.createElement('div');
     loading.className = 'card';
+    loading.setAttribute('role', 'status');
     loading.textContent = 'جارٍ تحميل التبويب...';
     content.append(loading);
 
     try {
-      const response = await fetch(url, {headers: {'X-Workspace-Tab': '1'}, signal: controller.signal});
+      const response = await fetch(url, {headers: {'X-Workspace-Tab': '1'}, signal: requestController.signal});
+      if (thisNavigation !== navigationNumber) return;
       if (response.redirected && new URL(response.url).pathname.startsWith('/accounts/')) {
         location.href = response.url;
         return;
       }
       if (!response.ok) throw new Error('تعذر تحميل التبويب');
       const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+      if (thisNavigation !== navigationNumber) return;
       const next = doc.querySelector('[data-page-content]');
       if (!next) {
         location.href = url;
@@ -180,34 +203,50 @@
         scrollY: 0,
       };
       cache.set(url, entry);
+      entry.metadata.title = doc.title;
       applyMetadata(entry.metadata);
       content.removeAttribute('aria-busy');
       ensureTab(url, titleFor(doc, url));
       activeUrl = url;
-      await runPageScripts(doc);
+      lastLoadedUrl = url;
       if (push) history.pushState({workspace: true}, '', url);
+      document.title = doc.title || document.title;
+      await runPageScripts(doc, thisNavigation);
+      if (thisNavigation !== navigationNumber) return;
       save();
       render();
       document.dispatchEvent(new CustomEvent('sh:page-loaded'));
       window.scrollTo(0, 0);
     } catch (error) {
-      if (error.name === 'AbortError') return;
+      if (error.name === 'AbortError' || thisNavigation !== navigationNumber) return;
       cache.delete(url);
       content.removeAttribute('aria-busy');
       activeUrl = null;
       const previous = previousUrl && cache.get(previousUrl);
-      if (previous) restorePage(previousUrl, previous, false);
+      if (previous) {
+        history.replaceState({workspace: true}, '', previousUrl);
+        restorePage(previousUrl, previous, false);
+      }
       throw error;
     }
   }
 
+  function handleNavigationError(error) {
+    if (error.name === 'AbortError') return;
+    if (typeof showPwaNotice === 'function') showPwaNotice('تعذر تحميل الصفحة. تحقق من الاتصال وحاول مرة أخرى.', true);
+    else alert('تعذر تحميل الصفحة. تحقق من الاتصال وحاول مرة أخرى.');
+  }
+  window.SHWorkspace = {
+    hasUnsavedChanges: () => [...cache.values()].some(entry => entry.holder.querySelector('form[data-unsaved="1"]')),
+  };
+
   document.addEventListener('click', event => {
     const link = event.target.closest('a[href]');
-    if (!link || link.target || link.hasAttribute('download') || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    if (!link || event.defaultPrevented || event.button !== 0 || link.target || link.hasAttribute('download') || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     const url = new URL(link.href, location.origin);
     if (url.hash && normalizeUrl(url.href) === activeUrl) return;
     if (/\.(pdf|xlsx?|csv)$/i.test(url.pathname) || url.pathname.includes('/export/') || url.pathname.includes('/print')) return;
-    if (url.pathname.includes('/logout')) sessionStorage.removeItem(storageKey);
+    if (url.pathname.includes('/logout')) { try { sessionStorage.removeItem(storageKey); } catch (_error) { /* Storage unavailable. */ } }
     if (url.origin !== location.origin || url.pathname.startsWith('/accounts/') || url.pathname.startsWith('/admin/')) return;
     event.preventDefault();
     openTab(url.pathname + url.search).catch(error => {
@@ -218,7 +257,7 @@
     });
   });
 
-  addEventListener('popstate', () => openTab(location.pathname + location.search, false));
+  addEventListener('popstate', () => openTab(location.pathname + location.search, false).catch(handleNavigationError));
 
   cache.set(currentUrl, {
     holder: document.createElement('div'),

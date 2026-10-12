@@ -100,6 +100,8 @@ class SanitizingFilter(logging.Filter):
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
+        from config.request_context import request_id
+        record.request_id = request_id.get()
         # Sanitize the formatted message
         if isinstance(record.msg, str):
             record.msg = _sanitize_string(record.msg)

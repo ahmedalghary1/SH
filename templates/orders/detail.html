@@ -32,6 +32,7 @@
     {% if order.status == 'draft' %}<form method="post" action="{% url 'orders:confirm' order.pk %}">{% csrf_token %}<button class="btn btn-accent">تأكيد وخصم المخزون</button></form>{% endif %}
     <form method="post" action="{% url 'orders:cancel' order.pk %}" data-confirm="إلغاء الطلب؟">{% csrf_token %}<button class="btn btn-danger">إلغاء</button></form>
     {% if order.invoice %}
+        {% if request.user.can_hard_delete and order.status != 'cancelled' %}<a class="btn btn-danger" href="{% url 'invoices:delete' order.invoice.pk %}">حذف الفاتورة وعكس أثرها</a>{% endif %}
         <a class="btn btn-secondary" href="{% url 'returns:create' %}?invoice_number={{ order.invoice.invoice_number }}">مرتجع</a>
     {% else %}
         <a class="btn btn-secondary" href="{% url 'returns:create' %}?invoice_number={{ order.order_number }}">مرتجع</a>

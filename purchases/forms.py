@@ -2,6 +2,7 @@ import json
 from decimal import Decimal, InvalidOperation
 
 from django import forms
+from finance.validation import decimal_value, integer_value, positive_id
 from django.utils import timezone
 
 from finance.models import CashAccount
@@ -194,7 +195,7 @@ class PurchaseOrderForm(forms.Form):
             if not isinstance(posted, dict):
                 raise forms.ValidationError('بيانات الأصناف غير صحيحة')
             variant_id = str(posted.get('product_variant_id') or posted.get('variant_id') or '').strip()
-            if not variant_id:
+            if positive_id(variant_id) is None:
                 raise forms.ValidationError('اختر الصنف لكل بند')
             try:
                 quantity_decimal = Decimal(str(posted.get('quantity')))
@@ -202,7 +203,7 @@ class PurchaseOrderForm(forms.Form):
                 raise forms.ValidationError('كمية الشراء غير صحيحة')
             if not quantity_decimal.is_finite() or quantity_decimal != quantity_decimal.to_integral_value():
                 raise forms.ValidationError('كمية الشراء غير صحيحة')
-            quantity = int(quantity_decimal)
+            quantity = integer_value(quantity_decimal)
             if quantity <= 0:
                 raise forms.ValidationError('كمية الشراء يجب أن تكون أكبر من صفر')
             try:
@@ -213,6 +214,7 @@ class PurchaseOrderForm(forms.Form):
                 raise forms.ValidationError('سعر الشراء غير صحيح')
             if unit_cost < 0:
                 raise forms.ValidationError('سعر الشراء لا يمكن أن يكون سالبا')
+            unit_cost = decimal_value(unit_cost, max_digits=12)
             items.append({
                 'item_id': posted.get('purchase_item_id') or posted.get('item_id'),
                 'variant_id': variant_id,

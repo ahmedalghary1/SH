@@ -7,6 +7,7 @@ urlpatterns = [
     path('schema/', openapi.openapi_schema, name='api_schema'),
     path('docs/', openapi.swagger_ui, name='api_docs'),
     path('sync/ping/', views.ping_view, name='sync_ping'),
+    path('sync/session/', views.browser_session_view, name='sync_browser_session'),
     path('auth/login/', csrf_exempt(auth.login_view), name='sync_login'),
     path('auth/refresh/', csrf_exempt(auth.refresh_view), name='sync_refresh'),
     path('auth/me/', auth.me_view, name='sync_me'),

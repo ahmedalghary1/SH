@@ -30,6 +30,9 @@ def branch_context_is_set():
 
 def get_default_branch_id():
     """Return/create the compatibility branch used outside an HTTP request."""
+    current_branch_id = get_current_branch_id()
+    if current_branch_id is not None:
+        return current_branch_id
     from django.apps import apps
 
     Branch = apps.get_model("accounts", "Branch")

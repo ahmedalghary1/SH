@@ -2,13 +2,15 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import F, Sum
+from django.db.models import Sum
 
 from audit.models import AuditLog
 from audit.services import log_audit
 from finance.models import PaymentTransaction
 from finance.services import record_transaction
+from finance.validation import decimal_value, integer_value
 from inventory.models import Stock, StockMovement
+from inventory.services import return_stock, sale_stock
 from orders.models import Order
 from orders.services import get_order_item_warehouse
 
@@ -31,6 +33,9 @@ def calculate_available_return_quantity(order_item):
 
 @transaction.atomic
 def create_sales_return(*, order, return_type, reason='', user):
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    if return_type not in dict(SalesReturn.RETURN_TYPE_CHOICES):
+        raise ValidationError('نوع المرتجع غير صحيح')
     if order.status in {Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED}:
         raise ValidationError('لا يمكن إنشاء مرتجع لهذا الطلب في حالته الحالية')
     sales_return = SalesReturn.objects.create(
@@ -62,14 +67,17 @@ def add_return_item(*, sales_return, original_order_item, quantity, condition='g
         raise ValidationError('يمكن تعديل المرتجع في حالة المسودة فقط')
     if original_order_item.order_id != sales_return.order_id:
         raise ValidationError('الصنف لا يتبع الطلب المرتبط بالمرتجع')
-    quantity = int(quantity)
+    quantity = integer_value(quantity)
     if quantity <= 0:
         raise ValidationError('كمية المرتجع يجب أن تكون أكبر من صفر')
-    available = calculate_available_return_quantity(original_order_item)
+    already_added = sales_return.items.filter(original_order_item=original_order_item).aggregate(v=Sum('quantity'))['v'] or 0
+    available = calculate_available_return_quantity(original_order_item) - already_added
     if quantity > available:
         raise ValidationError('كمية المرتجع أكبر من الكمية المتاحة للإرجاع')
     if not original_order_item.variant:
         raise ValidationError('لا يمكن إرجاع صنف بدون متغير منتج')
+    if condition not in dict(SalesReturnItem.CONDITION_CHOICES):
+        raise ValidationError('حالة الصنف المرتجع غير صحيحة')
 
     refund_amount = _line_refund_unit_price(original_order_item) * quantity
     item = SalesReturnItem.objects.create(
@@ -108,7 +116,7 @@ def add_exchange_item(*, sales_return, old_order_item, new_product_variant, quan
         raise ValidationError('إضافة صنف استبدال متاحة لمرتجع الاستبدال فقط')
     if old_order_item.order_id != sales_return.order_id:
         raise ValidationError('الصنف القديم لا يتبع الطلب المرتبط بالمرتجع')
-    quantity = int(quantity)
+    quantity = integer_value(quantity)
     if quantity <= 0:
         raise ValidationError('كمية الاستبدال يجب أن تكون أكبر من صفر')
     if quantity > calculate_available_return_quantity(old_order_item):
@@ -120,7 +128,9 @@ def add_exchange_item(*, sales_return, old_order_item, new_product_variant, quan
         raise ValidationError('كمية الاستبدال أكبر من كمية الصنف المرتجع في هذا المرتجع')
 
     old_unit_price = _line_refund_unit_price(old_order_item)
-    new_unit_price = Decimal(str(new_unit_price))
+    new_unit_price = decimal_value(new_unit_price, max_digits=10)
+    if new_unit_price < 0:
+        raise ValidationError('سعر صنف الاستبدال لا يمكن أن يكون سالبًا')
     price_difference = (new_unit_price - old_unit_price) * quantity
     item = ExchangeItem.objects.create(
         sales_return=sales_return,
@@ -190,6 +200,15 @@ def complete_sales_return(*, sales_return, user, cash_account=None):
         raise ValidationError('يجب اعتماد المرتجع قبل إكماله')
 
     order = Order.objects.select_for_update().get(pk=sales_return.order_id)
+    if order.status in {Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED}:
+        raise ValidationError('حالة الطلب الحالية لا تسمح بإكمال المرتجع')
+    # Other pending returns may have completed since this one was drafted.
+    # Recheck aggregated quantities under the order lock before any side effect.
+    requested = sales_return.items.values('original_order_item_id').annotate(quantity=Sum('quantity'))
+    for row in requested:
+        original_item = order.items.get(pk=row['original_order_item_id'])
+        if row['quantity'] > calculate_available_return_quantity(original_item):
+            raise ValidationError('كمية المرتجع أكبر من الكمية المتبقية المتاحة للإرجاع')
     for item in sales_return.items.select_related('product_variant', 'original_order_item__warehouse'):
         item_warehouse = get_order_item_warehouse(item.original_order_item, order=order)
         if item.condition == SalesReturnItem.CONDITION_GOOD and item.return_to_stock:
@@ -237,21 +256,16 @@ def process_exchange(*, sales_return, user, cash_account=None):
 
 def _increase_stock_for_return(*, order, item, user):
     warehouse = get_order_item_warehouse(item.original_order_item, order=order)
-    stock, _ = Stock.objects.select_for_update().get_or_create(
+    movement = return_stock(
+        variant=item.product_variant,
         warehouse=warehouse,
-        variant=item.product_variant,
-        defaults={'quantity': 0},
-    )
-    stock.quantity = F('quantity') + item.quantity
-    stock.save(update_fields=['quantity'])
-    StockMovement.objects.create(
-        movement_type=StockMovement.TYPE_SALES_RETURN,
-        variant=item.product_variant,
-        to_warehouse=warehouse,
         quantity=item.quantity,
+        unit_cost=item.original_order_item.unit_cost,
         note=f'Sales return for order {order.order_number}',
-        created_by=user,
+        user=user,
     )
+    movement.movement_type = StockMovement.TYPE_SALES_RETURN
+    movement.save(update_fields=['movement_type'])
     if warehouse.warehouse_type == warehouse.TYPE_REPRESENTATIVE and warehouse.assigned_user_id:
         from sales_reps.services import restore_sales_rep_assignments
 
@@ -297,22 +311,22 @@ def _process_refund(*, sales_return, order, user, cash_account):
 def _process_exchange_stock_and_money(*, sales_return, order, user, cash_account):
     for exchange in sales_return.exchange_items.select_related('new_product_variant', 'old_order_item__warehouse'):
         warehouse = get_order_item_warehouse(exchange.old_order_item, order=order)
-        stock = Stock.objects.select_for_update().filter(
+        sale_stock(
+            variant=exchange.new_product_variant,
             warehouse=warehouse,
-            variant=exchange.new_product_variant,
-        ).first()
-        if not stock or stock.quantity < exchange.quantity:
-            raise ValidationError('مخزون صنف الاستبدال غير كاف')
-        stock.quantity = F('quantity') - exchange.quantity
-        stock.save(update_fields=['quantity'])
-        StockMovement.objects.create(
-            movement_type=StockMovement.TYPE_EXCHANGE_OUT,
-            variant=exchange.new_product_variant,
-            from_warehouse=warehouse,
             quantity=exchange.quantity,
+            movement_type=StockMovement.TYPE_EXCHANGE_OUT,
             note=f'Exchange out for order {order.order_number}',
-            created_by=user,
+            user=user,
         )
+        if warehouse.warehouse_type == warehouse.TYPE_REPRESENTATIVE and warehouse.assigned_user_id:
+            from sales_reps.services import consume_sales_rep_assignments
+
+            consume_sales_rep_assignments(
+                sales_rep=warehouse.assigned_user,
+                product_variant=exchange.new_product_variant,
+                quantity=exchange.quantity,
+            )
         if exchange.price_difference > 0:
             record_transaction(
                 transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,

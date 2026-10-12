@@ -5,22 +5,23 @@ from django.core.exceptions import ValidationError
 from django.db.models import Count, DecimalField, F, Sum, Value
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.generic import DetailView, ListView, View
 
-from accounts.permissions import SalesRequiredMixin
+from accounts.permissions import ManagerRequiredMixin, SalesRequiredMixin, can_hard_delete
 from config.search import arabic_search_q
 from config.date_ranges import PERIOD_CHOICES, filter_by_date_period
 from finance.models import PaymentTransaction
 from finance.services import collect_order_payment
+from finance.validation import positive_id
 from orders.models import Order
 from settings_app.models import CompanySettings
 
 from .forms import InvoiceFilterForm, InvoicePaymentForm
 from .models import Invoice
 from .pdf import build_invoice_report_pdf
-from .services import generate_invoice
+from .services import delete_invoice, generate_invoice, invoice_deletion_block_reason
 
 
 def _invoice_totals(queryset):
@@ -51,6 +52,8 @@ class InvoiceContextMixin:
         context['company_settings'] = CompanySettings.load()
         invoice = getattr(self, 'object', None)
         if invoice:
+            context['can_delete_invoice'] = can_hard_delete(self.request.user) and invoice.order.status != Order.STATUS_CANCELLED
+            context['invoice_is_cancelled'] = invoice.order.status == Order.STATUS_CANCELLED
             context['payment_rows'] = PaymentTransaction.objects.select_related(
                 'cash_account', 'created_by',
             ).filter(
@@ -72,6 +75,38 @@ class InvoiceDetailView(InvoiceContextMixin, SalesRequiredMixin, DetailView):
     template_name = 'invoices/detail.html'
     context_object_name = 'invoice'
 
+    def get_queryset(self):
+        queryset = Invoice.objects.select_related('order__customer', 'order__created_by')
+        if self.request.user.role == 'sales' and not self.request.user.is_superuser:
+            queryset = queryset.filter(order__created_by=self.request.user)
+        return queryset
+
+
+class InvoiceDeleteView(ManagerRequiredMixin, View):
+    def dispatch(self, request, *args, **kwargs):
+        from django.core.exceptions import PermissionDenied
+
+        if request.user.is_authenticated and not can_hard_delete(request.user):
+            raise PermissionDenied('ليس لديك صلاحية حذف الفاتورة')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, pk):
+        invoice = get_object_or_404(Invoice.objects.select_related('order'), pk=pk)
+        return render(request, 'invoices/confirm_delete.html', {
+            'invoice': invoice,
+            'delete_blocked_reason': invoice_deletion_block_reason(invoice.order),
+        })
+
+    def post(self, request, pk):
+        invoice = get_object_or_404(Invoice, pk=pk)
+        try:
+            delete_invoice(invoice=invoice, user=request.user)
+        except ValidationError as exc:
+            messages.error(request, '; '.join(exc.messages))
+            return redirect('invoices:delete', pk=invoice.pk)
+        messages.success(request, 'تم حذف الفاتورة وعكس المخزون والتحصيل ورصيد العميل مع حفظ سجل المراجعة')
+        return redirect('invoices:list')
+
 
 class InvoiceListView(SalesRequiredMixin, ListView):
     model = Invoice
@@ -80,7 +115,7 @@ class InvoiceListView(SalesRequiredMixin, ListView):
     paginate_by = 20
 
     def get_queryset(self):
-        qs = Invoice.objects.select_related('order__customer', 'order__created_by').order_by('-issued_at')
+        qs = Invoice.objects.exclude(order__status=Order.STATUS_CANCELLED).select_related('order__customer', 'order__created_by').order_by('-issued_at')
         if self.request.user.role == 'sales' and not self.request.user.is_superuser:
             qs = qs.filter(order__created_by=self.request.user)
         self.filter_form = InvoiceFilterForm(self.request.GET)
@@ -110,17 +145,18 @@ class InvoiceListView(SalesRequiredMixin, ListView):
         context['period_choices'] = PERIOD_CHOICES
         context['date_filter'] = getattr(self, 'date_filter', {})
         context['invoice_totals'] = _invoice_totals(self.object_list)
+        context['can_delete_invoices'] = can_hard_delete(self.request.user)
         return context
 
 
 class InvoiceExportMixin:
     def get_filtered_invoices(self, request):
-        qs = Invoice.objects.select_related('order__customer', 'order__created_by').order_by('-issued_at')
+        qs = Invoice.objects.exclude(order__status=Order.STATUS_CANCELLED).select_related('order__customer', 'order__created_by').order_by('-issued_at')
         if request.user.role == 'sales' and not request.user.is_superuser:
             qs = qs.filter(order__created_by=request.user)
         selected_ids = request.POST.getlist('invoice_ids') or request.GET.getlist('invoice_ids')
         if selected_ids:
-            qs = qs.filter(pk__in=selected_ids)
+            qs = qs.filter(pk__in=[parsed for value in selected_ids if (parsed := positive_id(value)) is not None])
         form = InvoiceFilterForm(request.GET)
         if form.is_valid():
             q = form.cleaned_data.get('q')
@@ -227,7 +263,7 @@ class InvoiceReportPrintView(InvoiceExportMixin, InvoiceContextMixin, SalesRequi
         return context
 
 
-class InvoicePrintView(InvoiceContextMixin, SalesRequiredMixin, DetailView):
+class InvoicePrintView(InvoiceDetailView):
     model = Invoice
     template_name = 'invoices/print.html'
     context_object_name = 'invoice'
@@ -285,6 +321,9 @@ class InvoicePaymentCreateView(InvoiceContextMixin, SalesRequiredMixin, View):
 
     def post(self, request, pk):
         invoice = self.get_invoice(request, pk)
+        if invoice.order.status == Order.STATUS_CANCELLED:
+            messages.error(request, 'لا يمكن تسجيل دفعة على فاتورة محذوفة')
+            return redirect('invoices:detail', pk=pk)
         form = InvoicePaymentForm(request.POST, invoice=invoice)
         if form.is_valid():
             try:
@@ -314,7 +353,7 @@ class GenerateInvoiceView(SalesRequiredMixin, View):
             messages.success(request, 'تم إصدار الفاتورة')
             return redirect('invoices:detail', pk=invoice.pk)
         except ValidationError as exc:
-            messages.error(request, exc.message)
+            messages.error(request, '; '.join(exc.messages))
             return redirect('orders:detail', pk=order.pk)
 
 # Create your views here.

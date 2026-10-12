@@ -6,6 +6,7 @@
     <h1>فاتورة {{ invoice.invoice_number }}</h1>
     <div class="actions">
         {% if request.user.is_manager and invoice.order.status != 'cancelled' and invoice.order.status != 'returned' and invoice.order.status != 'partially_returned' %}<a class="btn btn-primary" href="{% url 'orders:update' invoice.order.pk %}">تعديل الفاتورة</a>{% endif %}
+        {% if can_delete_invoice %}<a class="btn btn-danger" href="{% url 'invoices:delete' invoice.pk %}">حذف الفاتورة وعكس أثرها</a>{% endif %}
         <a class="btn btn-accent" href="{% url 'invoices:print' invoice.pk %}" target="_blank">طباعة</a>
     </div>
 </div>
@@ -16,6 +17,7 @@
         <h2>دفعات الفاتورة</h2>
         <span class="badge {% if invoice.order.payment_status == 'paid' %}success{% elif invoice.order.payment_status == 'partial' %}warning{% else %}danger{% endif %}">{{ invoice.order.get_payment_status_display }}</span>
     </div>
+    {% if invoice.order.status != 'cancelled' %}
     <form method="post" action="{% url 'invoices:payment_add' invoice.pk %}" class="form-grid">
         {% csrf_token %}
         {% if payment_form.non_field_errors %}<div class="form-errors">{{ payment_form.non_field_errors }}</div>{% endif %}
@@ -30,6 +32,7 @@
             <button class="btn btn-primary" type="submit">تسجيل دفعة</button>
         </div>
     </form>
+    {% else %}<p class="muted">تم إلغاء الفاتورة وعكس أثرها. الدفعات المعروضة محفوظة للمراجعة.</p>{% endif %}
     <div class="table-wrap">
         <table>
             <thead><tr><th>تاريخ الدفعة</th><th>النوع</th><th>الاتجاه</th><th>المبلغ</th><th>الخزنة</th><th>الموظف</th><th>ملاحظات</th><th>وقت التسجيل</th></tr></thead>

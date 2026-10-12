@@ -64,23 +64,55 @@ function addAutomaticDateTimeToCreateForm(root = document) {
 updateLiveDateTime();
 window.setInterval(updateLiveDateTime, 1000);
 
-const isAuthPage = window.location.pathname.startsWith("/accounts/");
+const isAuthPage = !document.body.dataset.pwaUserId;
+let requestedPwaUpdate = false;
 
 if ("serviceWorker" in navigator && isAuthPage) {
-    navigator.serviceWorker.getRegistrations?.()
-        .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
-        .catch((error) => {
-            console.warn("Service worker unregister failed on auth page", error);
-        });
+    navigator.serviceWorker.controller?.postMessage({ type: "CLEAR_SCOPE" });
 }
 
 if ("serviceWorker" in navigator && !isAuthPage) {
     window.addEventListener("load", () => {
         navigator.serviceWorker.register("/service-worker.js", { scope: "/" })
-            .then((registration) => registration.update?.())
+            .then((registration) => {
+                const offerUpdate = () => {
+                    if (!registration.waiting || !navigator.serviceWorker.controller) return;
+                    showPwaNotice("يتوفر تحديث للتطبيق. احفظ عملك ثم اضغط تحديث التطبيق.");
+                    const notice = document.querySelector("[data-pwa-notice]");
+                    const button = document.createElement("button");
+                    button.type = "button";
+                    button.className = "btn btn-light btn-small";
+                    button.textContent = "تحديث التطبيق";
+                    button.addEventListener("click", async () => {
+                        const status = await window.SHSync?.getQueueStatus?.();
+                        if (window.SHUi?.hasUnsavedChanges?.() || Number(status?.pending || status?.total || 0) > 0) {
+                            showPwaNotice("احفظ التغييرات وزامن العمليات المعلقة قبل تحديث التطبيق.", true);
+                            return;
+                        }
+                        requestedPwaUpdate = true;
+                        registration.waiting?.postMessage({ type: "SKIP_WAITING" });
+                    });
+                    notice?.appendChild(button);
+                    window.clearTimeout(showPwaNotice.timer);
+                };
+                offerUpdate();
+                registration.addEventListener("updatefound", () => {
+                    const worker = registration.installing;
+                    worker?.addEventListener("statechange", () => {
+                        if (worker.state === "installed") offerUpdate();
+                    });
+                });
+                return registration.update?.();
+            })
             .catch((error) => {
                 console.warn("Service worker registration failed", error);
             });
+    });
+}
+
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (requestedPwaUpdate) window.location.reload();
     });
 }
 
@@ -89,6 +121,8 @@ function showPwaNotice(message, isError = false) {
     if (!notice) {
         notice = document.createElement("div");
         notice.dataset.pwaNotice = "true";
+        notice.setAttribute("role", "status");
+        notice.setAttribute("aria-live", "polite");
         notice.style.position = "fixed";
         notice.style.insetInlineStart = "18px";
         notice.style.bottom = "18px";
@@ -166,6 +200,36 @@ function formatExactNumber(value) {
 
 window.SHNumbers = { normalize: normalizeNumberText, format: formatExactNumber };
 
+async function requestJson(url, options = {}) {
+    const method = (options.method || 'GET').toUpperCase();
+    const isRead = method === 'GET' || method === 'HEAD';
+    if (navigator.onLine === false && window.SHOffline?.handleJsonRequest) {
+        const payload = await window.SHOffline.handleJsonRequest(url, options);
+        if (payload?.success === false) throw new Error(payload.message || 'تعذر تنفيذ العملية على الجهاز.');
+        return payload;
+    }
+    let response;
+    try {
+        response = await fetch(url, { credentials: 'same-origin', ...options });
+    } catch (error) {
+        // A server may have committed a POST before its response was lost.
+        // Falling back to the offline queue afterwards would duplicate it.
+        if (isRead && error.name !== 'AbortError' && window.SHOffline?.handleJsonRequest) {
+            try { return await window.SHOffline.handleJsonRequest(url, options); } catch (_offlineError) { /* Show the original connection failure. */ }
+        }
+        if (error.name === 'AbortError') throw error;
+        throw new Error(isRead ? 'تعذر الاتصال. تحقق من الإنترنت ثم حاول مرة أخرى.' : 'تعذر تأكيد نتيجة الحفظ. تحقق من السجلات قبل إعادة المحاولة.');
+    }
+    if (!(response.headers.get('content-type') || '').includes('application/json')) {
+        throw new Error(response.redirected ? 'انتهت الجلسة. حدّث الصفحة ثم سجّل الدخول مجددًا.' : 'تعذر الاتصال بالخادم. حاول مرة أخرى.');
+    }
+    let payload;
+    try { payload = await response.json(); } catch (_error) { throw new Error('استجابة الخادم غير مكتملة. حاول مرة أخرى.'); }
+    if (!response.ok || payload?.success === false) throw new Error(payload?.message || 'تعذر تنفيذ العملية. حاول مرة أخرى.');
+    return payload;
+}
+window.SHHttp = { json: requestJson };
+
 function enhanceResponsiveTables(root = document) {
     const tables = root.querySelectorAll?.(".page-content table, table") || [];
 
@@ -196,6 +260,8 @@ function enhanceResponsiveTables(root = document) {
             region.setAttribute("aria-label", caption || heading || "جدول البيانات");
         }
 
+        if (region.dataset.overflowReady) return;
+        region.dataset.overflowReady = "1";
         const updateOverflowState = () => {
             region.classList.toggle("is-scrollable-x", region.scrollWidth > region.clientWidth + 2);
             region.classList.toggle("is-at-scroll-end", Math.abs(region.scrollLeft) + region.clientWidth >= region.scrollWidth - 3);
@@ -247,6 +313,9 @@ function enhanceSharedPageUi(root = document) {
         if (node.children.length || node.dataset.numberEnhanced) return;
         const raw = normalizeNumberText(node.textContent);
         if (!/^-?\d+(\.\d+)?$/.test(raw)) return;
+        // A plain integer cell may be a phone number, SKU, or document ID.
+        // Group only explicit numeric fields or decimal amounts in tables.
+        if (node.tagName === 'TD' && !node.hasAttribute('data-number') && !raw.includes('.')) return;
         node.dataset.numberEnhanced = '1';
         // Format the string directly. Converting through Number used to round
         // large values and could silently change the displayed value.
@@ -259,19 +328,56 @@ function enhanceSharedPageUi(root = document) {
         if ((form.method || 'get').toLowerCase() === 'post' && !form.querySelector('[name="_submission_token"]')) {
             const token = document.createElement('input');
             token.type = 'hidden'; token.name = '_submission_token';
-            token.value = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+            token.value = window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
             form.appendChild(token);
         }
         form.addEventListener('submit', (event) => {
-            if (!form.checkValidity()) return;
+            if (event.defaultPrevented || (!form.noValidate && !event.submitter?.formNoValidate && !form.checkValidity())) return;
+            const target = event.submitter?.getAttribute('formtarget') || form.target;
+            const action = event.submitter?.getAttribute('formaction') || form.getAttribute('action') || window.location.href;
+            if ((target && target !== '_self') || /\/(export[^/]*|print|report-print|download)(\/|\?|$)/.test(action)) return;
             if (form.dataset.submitting === '1') { event.preventDefault(); return; }
             form.dataset.submitting = '1';
-            setTimeout(() => form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(button => {
-                button.disabled = true; button.dataset.originalText = button.textContent; button.textContent = 'جارٍ الحفظ...';
-            }), 0);
+            // Validation, confirmations, and offline handlers may cancel later
+            // in the same event. Do not leave the form locked in that case.
+            setTimeout(() => {
+                if (event.defaultPrevented) { resetFormSubmission(form); return; }
+                form.setAttribute('aria-busy', 'true');
+                form.querySelectorAll('button[type="submit"], button:not([type]), input[type="submit"]').forEach(button => {
+                    if (button.disabled) return;
+                    button.dataset.submitDisabled = '1';
+                    button.disabled = true;
+                    button.dataset.originalText = button.tagName === 'INPUT' ? button.value : button.textContent;
+                    if (button.tagName === 'INPUT') button.value = 'جارٍ الحفظ...';
+                    else button.textContent = 'جارٍ الحفظ...';
+                });
+            }, 0);
+        });
+        form.addEventListener('input', () => {
+            if ((form.method || 'get').toLowerCase() === 'post') form.dataset.unsaved = '1';
+        });
+        form.addEventListener('change', () => {
+            if ((form.method || 'get').toLowerCase() === 'post') form.dataset.unsaved = '1';
         });
     });
 }
+
+function resetFormSubmission(form) {
+    delete form.dataset.submitting;
+    form.removeAttribute('aria-busy');
+    form.querySelectorAll('[data-submit-disabled]').forEach(button => {
+        button.disabled = false;
+        if (button.tagName === 'INPUT') button.value = button.dataset.originalText;
+        else button.textContent = button.dataset.originalText;
+        delete button.dataset.submitDisabled;
+        delete button.dataset.originalText;
+    });
+}
+window.SHUi = {
+    resetFormSubmission,
+    hasUnsavedChanges: () => Boolean(document.querySelector('form[data-unsaved="1"]')) || Boolean(window.SHWorkspace?.hasUnsavedChanges?.()),
+};
+window.addEventListener('pageshow', () => document.querySelectorAll('form[data-submitting="1"]').forEach(resetFormSubmission));
 document.addEventListener('DOMContentLoaded', () => enhanceSharedPageUi());
 document.addEventListener('DOMContentLoaded', () => addAutomaticDateTimeToCreateForm());
 document.addEventListener('sh:page-loaded', () => {
@@ -280,6 +386,9 @@ document.addEventListener('sh:page-loaded', () => {
     enhanceListControls();
     setupPasswordToggles();
     setupStockWarehouseFilters();
+    setupDatePeriodFilters();
+    updateActiveNavigation();
+    setupFormAccessibility();
 });
 
 document.addEventListener("submit", (event) => {
@@ -292,7 +401,7 @@ document.addEventListener("submit", (event) => {
     const missingCombo = Array.from(
         form.querySelectorAll(".combo-source[data-original-required='true']:not(:disabled)")
     ).find((select) => !select.value);
-    if (missingCombo) {
+    if (missingCombo && !form.noValidate && !event.submitter?.formNoValidate) {
         const combo = missingCombo.closest(".combo-field");
         const input = combo?.querySelector(".combo-input");
         event.preventDefault();
@@ -304,15 +413,24 @@ document.addEventListener("submit", (event) => {
 
 function openModal(modal) {
     if (!modal) return;
+    modal.returnFocusTo = document.activeElement;
     modal.hidden = false;
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const heading = modal.querySelector('h2, h3');
+    if (heading) {
+        heading.id ||= `${modal.id || 'modal'}-title`;
+        modal.setAttribute('aria-labelledby', heading.id);
+    }
     document.body.classList.add("modal-open");
-    const firstField = modal.querySelector("input, select, textarea, button, a[href]");
+    const firstField = modal.querySelector("input:not([type='hidden']):not(.combo-source):not(:disabled), select:not(.combo-source):not(:disabled), textarea:not(:disabled), button:not(:disabled), a[href]");
     firstField?.focus({ preventScroll: true });
 }
 
 function closeModal(modal) {
     if (!modal) return;
     modal.hidden = true;
+    if (modal.returnFocusTo?.isConnected) modal.returnFocusTo.focus({ preventScroll: true });
     if (!document.querySelector(".modal:not([hidden])")) {
         document.body.classList.remove("modal-open");
     }
@@ -339,6 +457,7 @@ function closeCombo(combo) {
     combo.classList.remove("is-open");
     const input = combo.querySelector(".combo-input");
     input?.setAttribute("aria-expanded", "false");
+    input?.removeAttribute('aria-activedescendant');
 }
 
 function closeAllCombos(except = null) {
@@ -355,7 +474,18 @@ function buildComboOption(label, value, isSelected = false) {
     option.dataset.value = value;
     option.setAttribute("role", "option");
     option.setAttribute("aria-selected", String(isSelected));
+    option.tabIndex = -1;
     return option;
+}
+
+let comboSequence = 0;
+function setupComboAria(input, list, source = input) {
+    list.id ||= `sh-combo-list-${++comboSequence}`;
+    input.setAttribute('aria-controls', list.id);
+    input.setAttribute('aria-autocomplete', 'list');
+    const label = source.labels?.[0]?.querySelector('span')?.textContent?.trim();
+    const accessibleLabel = source.getAttribute('aria-label') || label;
+    if (accessibleLabel) input.setAttribute('aria-label', accessibleLabel);
 }
 
 function enhanceSelect(select) {
@@ -394,6 +524,8 @@ function enhanceSelect(select) {
     combo.appendChild(list);
     select.classList.add("combo-source");
     select.tabIndex = -1;
+    select.setAttribute('aria-hidden', 'true');
+    setupComboAria(input, list, select);
 
     function optionData() {
         return Array.from(select.options).map((option) => ({
@@ -416,6 +548,7 @@ function enhanceSelect(select) {
         input.placeholder = selected && !selected.value ? label : "";
         input.disabled = select.disabled;
         input.required = select.dataset.originalRequired === "true" && !select.disabled;
+        if (select.value || select.disabled) input.setCustomValidity('');
         toggle.disabled = select.disabled;
         combo.classList.toggle("is-disabled", select.disabled);
     }
@@ -468,6 +601,9 @@ function enhanceSelect(select) {
         } else if (select.value) {
             setSelectValue("");
         }
+        // Clearing the hidden source dispatches change and syncInput. Keep the
+        // user's search text visible until they choose a replacement option.
+        if (!exact) input.value = typed;
         openCombo(typed);
     });
 
@@ -533,6 +669,7 @@ function enhanceListInput(input) {
     combo.appendChild(input);
     combo.appendChild(toggle);
     combo.appendChild(list);
+    setupComboAria(input, list);
 
     function datalistOptions() {
         return Array.from(datalist.options).map((option) => ({
@@ -653,8 +790,10 @@ function setupStockWarehouseFilters(root = document) {
         variantSelect.dataset.stockFilterReady = "true";
         const initialPlaceholder = warehouseSelect.options[0]?.textContent || "اختر المخزن";
         const scope = variantSelect.dataset.stockFilterScope || "all";
+        let requestNumber = 0;
 
         async function updateWarehouses() {
+            const thisRequest = ++requestNumber;
             const variantId = variantSelect.value;
             const selectedValue = warehouseSelect.value;
             if (!variantId) {
@@ -665,8 +804,8 @@ function setupStockWarehouseFilters(root = document) {
             warehouseSelect.disabled = true;
             setWarehouseOptions(warehouseSelect, [], "جاري تحميل المخازن...");
             try {
-                const response = await fetch(`/inventory/ajax/variant-warehouses/?variant_id=${encodeURIComponent(variantId)}&scope=${encodeURIComponent(scope)}`);
-                const payload = await response.json();
+                const payload = await requestJson(`/inventory/ajax/variant-warehouses/?variant_id=${encodeURIComponent(variantId)}&scope=${encodeURIComponent(scope)}`);
+                if (thisRequest !== requestNumber) return;
                 const warehouses = payload.data?.warehouses || [];
                 warehouseSelect.disabled = warehouses.length === 0;
                 setWarehouseOptions(
@@ -676,15 +815,9 @@ function setupStockWarehouseFilters(root = document) {
                     selectedValue,
                 );
             } catch (error) {
-                const offlinePayload = await window.SHOffline?.handleJsonRequest?.(`/inventory/ajax/variant-warehouses/?variant_id=${encodeURIComponent(variantId)}&scope=${encodeURIComponent(scope)}`).catch(() => null);
-                if (offlinePayload?.success) {
-                    const warehouses = offlinePayload.data?.warehouses || [];
-                    warehouseSelect.disabled = warehouses.length === 0;
-                    setWarehouseOptions(warehouseSelect, warehouses, warehouses.length ? initialPlaceholder : "Offline stock", selectedValue);
-                    return;
-                }
+                if (thisRequest !== requestNumber) return;
                 warehouseSelect.disabled = true;
-                setWarehouseOptions(warehouseSelect, [], "تعذر تحميل المخازن");
+                setWarehouseOptions(warehouseSelect, [], error.message || "تعذر تحميل المخازن");
             }
         }
 
@@ -735,6 +868,7 @@ document.addEventListener("click", (event) => {
             .then(() => window.SHSync?.cacheAppShell?.())
             .then(() => window.SHSync?.bootstrapNow?.())
             .then(() => window.SHSync?.processQueue?.())
+            .catch(() => showPwaNotice('تعذرت المزامنة. تحقق من الاتصال ثم حاول مرة أخرى.', true))
             .finally(() => {
                 syncButton.disabled = false;
             });
@@ -746,12 +880,20 @@ document.addEventListener("DOMContentLoaded", () => {
     enhanceListControls();
     setupPasswordToggles();
     setupStockWarehouseFilters();
+    setupDatePeriodFilters();
+    setupFormAccessibility();
+    updateActiveNavigation();
+});
 
+function updateActiveNavigation() {
     const currentPath = window.location.pathname;
     document.querySelectorAll(".side-nav a").forEach((link) => {
+        link.classList.remove('is-active');
+        link.removeAttribute('aria-current');
         const linkPath = new URL(link.href, window.location.origin).pathname;
         if (linkPath === currentPath || (linkPath !== "/" && currentPath.startsWith(linkPath))) {
             link.classList.add("is-active");
+            link.setAttribute('aria-current', 'page');
             const group = link.closest(".nav-group");
             if (group) {
                 group.classList.add("is-open", "is-active");
@@ -766,7 +908,20 @@ document.addEventListener("DOMContentLoaded", () => {
         firstGroup?.classList.add("is-open");
         firstGroup?.querySelector(".nav-group-toggle")?.setAttribute("aria-expanded", "true");
     }
-});
+}
+
+function setupFormAccessibility(root = document) {
+    root.querySelectorAll('form label').forEach((label) => {
+        const input = label.querySelector('input:not([type="hidden"]):not(.combo-source), select, textarea');
+        const error = label.querySelector('.error');
+        if (!input || !error) return;
+        error.id ||= `${input.id || `field-${++comboSequence}`}-error`;
+        input.setAttribute('aria-invalid', 'true');
+        input.setAttribute('aria-describedby', [...new Set([...(input.getAttribute('aria-describedby') || '').split(' '), error.id].filter(Boolean))].join(' '));
+    });
+    root.querySelectorAll('.form-errors').forEach((error) => error.setAttribute('role', 'alert'));
+    root.querySelectorAll('.modal:not([hidden])').forEach(openModal);
+}
 
 function setSidebarState(isOpen, { restoreFocus = false } = {}) {
     const body = document.body;
@@ -810,9 +965,53 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
-    closeAllCombos();
-    if (document.body.classList.contains("sidebar-open")) setSidebarState(false, { restoreFocus: true });
+    const input = event.target.closest('.combo-input');
+    const combo = input?.closest('.combo-field');
+    if (combo && ['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(event.key)) {
+        if (event.key === 'Escape') {
+            closeCombo(combo);
+            event.preventDefault();
+            return;
+        }
+        if (event.key !== 'Enter' && !combo.classList.contains('is-open')) combo.querySelector('.combo-toggle')?.click();
+        const options = [...combo.querySelectorAll('.combo-list button:not(:disabled)')];
+        const current = options.findIndex(option => option.classList.contains('is-keyboard-active'));
+        if (event.key === 'Enter') {
+            if (combo.classList.contains('is-open') && options[current]) {
+                event.preventDefault();
+                options[current].click();
+            }
+        } else if (options.length) {
+            event.preventDefault();
+            const next = current < 0 ? (event.key === 'ArrowUp' ? options.length - 1 : 0) : (current + (event.key === 'ArrowUp' ? -1 : 1) + options.length) % options.length;
+            options.forEach((option, index) => option.classList.toggle('is-keyboard-active', index === next));
+            options[next].id ||= `sh-combo-option-${++comboSequence}`;
+            input.setAttribute('aria-activedescendant', options[next].id);
+            options[next].scrollIntoView?.({ block: 'nearest' });
+        }
+    }
+    const modal = document.querySelector('.modal:not([hidden])');
+    if (modal && event.key === 'Escape') {
+        event.preventDefault();
+        closeModal(modal);
+        return;
+    }
+    if (modal && event.key === 'Tab') {
+        const fields = [...modal.querySelectorAll('input:not([type="hidden"]):not(.combo-source), select:not(.combo-source), textarea, button, a[href], [tabindex="0"]')].filter(node => !node.disabled && node.getClientRects().length && node.tabIndex !== -1);
+        const first = fields[0];
+        const last = fields[fields.length - 1];
+        if (event.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+    if (event.key === 'Escape') {
+        closeAllCombos();
+        if (document.body.classList.contains("sidebar-open")) setSidebarState(false, { restoreFocus: true });
+    }
+});
+
+document.addEventListener('focusout', event => {
+    const combo = event.target.closest('.combo-field');
+    if (combo) setTimeout(() => { if (!combo.contains(document.activeElement)) closeCombo(combo); }, 0);
 });
 
 // Content tabs use delegation so they also work after workspace navigation
@@ -860,7 +1059,8 @@ document.addEventListener('change', function (event) {
     if (isCustom) fields.querySelector('input')?.focus();
 });
 
-document.querySelectorAll('[data-period-filter]').forEach((filter) => {
+function setupDatePeriodFilters(root = document) {
+root.querySelectorAll('[data-period-filter]').forEach((filter) => {
     const select = filter.querySelector('[data-period-select]');
     const fields = filter.querySelector('[data-custom-period-fields]');
     if (!select || !fields) return;
@@ -868,3 +1068,4 @@ document.querySelectorAll('[data-period-filter]').forEach((filter) => {
     fields.classList.toggle('is-open', isCustom);
     fields.querySelectorAll('input').forEach((input) => { input.disabled = !isCustom; });
 });
+}

@@ -1,7 +1,10 @@
 
 import importlib.util
 import os
+import warnings
 from pathlib import Path
+
+from .database import database_config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -117,6 +120,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'config',
     'accounts',
     'products',
     'inventory',
@@ -135,6 +139,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'config.middleware.RequestIdMiddleware',
     'django.middleware.security.SecurityMiddleware',
 ]
 if USE_WHITENOISE:
@@ -146,6 +151,7 @@ MIDDLEWARE += [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'accounts.middleware.BranchContextMiddleware',
+    'config.pwa.PwaScopeMiddleware',
     'accounts.middleware.DuplicateSubmissionMiddleware',
     'audit.middleware.AuditRequestMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -175,17 +181,7 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 
 
-DATABASES = {
-    'default': {
-        'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.postgresql'),
-        'NAME': os.environ.get('POSTGRES_DB', 'elwsamst_sh'),
-        'USER': os.environ.get('POSTGRES_USER', 'elwsamst_system'),
-        'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'ahmed01552810113'),
-        'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
-        'PORT': os.environ.get('POSTGRES_PORT', '5432'),
-        'CONN_MAX_AGE': env_int('DB_CONN_MAX_AGE', 60),
-    }
-}
+DATABASES = {'default': database_config(os.environ, BASE_DIR)}
 
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
@@ -291,18 +287,27 @@ PDF_ARABIC_FONT_PATH = os.environ.get('PDF_ARABIC_FONT_PATH', '').strip()
 
 
 LOG_DIR = Path(os.environ.get('LOG_DIR', BASE_DIR / 'logs'))
-LOG_DIR.mkdir(exist_ok=True)
+LOG_TO_FILE = env_bool('LOG_TO_FILE', not DEBUG)
+if LOG_TO_FILE:
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        # Fail gracefully if a deployment has a read-only filesystem.
+        with (LOG_DIR / 'django.log').open('a', encoding='utf-8'):
+            pass
+    except OSError:
+        LOG_TO_FILE = False
+        warnings.warn('Log directory is not writable; using console logging.', RuntimeWarning)
 
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '{levelname} {asctime} {name} {module} {message}',
+            'format': '{levelname} {asctime} {name} {module} request={request_id} {message}',
             'style': '{',
         },
         'simple': {
-            'format': '{levelname} {asctime} {message}',
+            'format': '{levelname} {asctime} request={request_id} {message}',
             'style': '{',
         },
     },
@@ -341,7 +346,7 @@ LOGGING = {
     },
 }
 
-if not DEBUG:
+if LOG_TO_FILE:
     LOGGING['handlers']['django_file'] = {
         'class': 'logging.handlers.RotatingFileHandler',
         'filename': LOG_DIR / 'django.log',

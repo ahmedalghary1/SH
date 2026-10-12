@@ -5,10 +5,12 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
+from accounts.models import Branch
 from audit.models import AuditLog
 from audit.services import log_audit
 from finance.models import PaymentTransaction
 from finance.services import record_transaction
+from finance.validation import decimal_value, integer_value, validate_money_fields
 from inventory.models import StockBatch
 from inventory.services import stock_in, stock_out
 from products.models import ProductVariant
@@ -16,16 +18,23 @@ from products.models import ProductVariant
 from .models import PurchaseOrder, PurchaseOrderItem, Supplier
 
 
-def generate_purchase_number():
-    today = timezone.localdate().strftime('%Y%m%d')
-    count = PurchaseOrder.objects.filter(created_at__date=timezone.localdate()).count() + 1
-    return f'PO-{today}-{count:04d}'
+def generate_purchase_number(*, branch_id, order_date=None):
+    """Called under the branch lock; deleted/backdated rows cannot reuse a number."""
+    order_date = order_date or timezone.localdate()
+    prefix = f'PO-{order_date:%Y%m%d}-'
+    numbers = PurchaseOrder.all_objects.filter(
+        branch_id=branch_id, purchase_number__startswith=prefix,
+    ).values_list('purchase_number', flat=True)
+    highest = max((int(number[len(prefix):]) for number in numbers
+                   if number[len(prefix):].isascii() and number[len(prefix):].isdigit()), default=0)
+    return f'{prefix}{highest + 1:04d}'
 
 
 def recalculate_purchase_order(purchase_order):
     total = Decimal('0')
     for item in purchase_order.items.all():
         item.total_cost = item.unit_cost * item.quantity
+        validate_money_fields(item, 'total_cost')
         item.save(update_fields=['total_cost'])
         total += item.total_cost
     purchase_order.subtotal_amount = total
@@ -35,6 +44,7 @@ def recalculate_purchase_order(purchase_order):
         raise ValidationError('الخصم لا يمكن أن يتجاوز إجمالي الفاتورة')
     purchase_order.total_amount = total - purchase_order.discount_amount
     purchase_order.remaining_amount = max(purchase_order.total_amount - purchase_order.paid_amount, Decimal('0'))
+    validate_money_fields(purchase_order, 'subtotal_amount', 'discount_amount', 'total_amount', 'remaining_amount')
     purchase_order.save(update_fields=['subtotal_amount', 'discount_amount', 'total_amount', 'remaining_amount'])
     return purchase_order
 
@@ -45,7 +55,9 @@ def update_purchase_discount(*, purchase_order, discount_type, discount_value, u
     supplier = Supplier.objects.select_for_update().get(pk=purchase_order.supplier_id)
     old_remaining = purchase_order.remaining_amount
     purchase_order.discount_type = discount_type
-    purchase_order.discount_value = Decimal(discount_value or 0)
+    if discount_type not in dict(PurchaseOrder.DISCOUNT_TYPE_CHOICES):
+        raise ValidationError('نوع الخصم غير صحيح')
+    purchase_order.discount_value = decimal_value(discount_value, max_digits=14)
     if purchase_order.discount_value < 0 or (discount_type == PurchaseOrder.DISCOUNT_PERCENT and purchase_order.discount_value > 100):
         raise ValidationError('قيمة الخصم غير صحيحة')
     recalculate_purchase_order(purchase_order)
@@ -61,7 +73,9 @@ def create_purchase_order(*, supplier, items, user, status=PurchaseOrder.STATUS_
         raise ValidationError('حالة أمر الشراء عند الإنشاء يجب أن تكون مسودة أو تم الطلب')
     if not items:
         raise ValidationError('لا يمكن إنشاء أمر شراء بدون أصناف')
-    discount_value = Decimal(discount_value or 0)
+    if discount_type not in dict(PurchaseOrder.DISCOUNT_TYPE_CHOICES):
+        raise ValidationError('نوع الخصم غير صحيح')
+    discount_value = decimal_value(discount_value, max_digits=14)
     if discount_value < 0 or (discount_type == PurchaseOrder.DISCOUNT_PERCENT and discount_value > 100):
         raise ValidationError('قيمة الخصم غير صحيحة')
     if invoice_datetime and timezone.is_naive(invoice_datetime):
@@ -69,8 +83,9 @@ def create_purchase_order(*, supplier, items, user, status=PurchaseOrder.STATUS_
     effective_order_date = order_date or (
         timezone.localtime(invoice_datetime).date() if invoice_datetime else timezone.localdate()
     )
+    Branch.objects.select_for_update().get(pk=supplier.branch_id)
     purchase_order = PurchaseOrder.objects.create(
-        purchase_number=generate_purchase_number(),
+        purchase_number=generate_purchase_number(branch_id=supplier.branch_id, order_date=effective_order_date),
         supplier=supplier,
         status=status,
         order_date=effective_order_date,
@@ -81,19 +96,21 @@ def create_purchase_order(*, supplier, items, user, status=PurchaseOrder.STATUS_
         discount_value=discount_value,
     )
     for item in items:
-        quantity = int(item['quantity'])
-        unit_cost = Decimal(str(item['unit_cost']))
+        quantity = integer_value(item['quantity'])
+        unit_cost = decimal_value(item['unit_cost'], max_digits=12)
         if quantity <= 0:
             raise ValidationError('كمية الشراء يجب أن تكون أكبر من صفر')
         if unit_cost < 0:
             raise ValidationError('تكلفة الشراء لا يمكن أن تكون سالبة')
-        PurchaseOrderItem.objects.create(
+        purchase_item = PurchaseOrderItem(
             purchase_order=purchase_order,
             product_variant=item['product_variant'],
             quantity=quantity,
             unit_cost=unit_cost,
             total_cost=unit_cost * quantity,
         )
+        validate_money_fields(purchase_item, 'total_cost')
+        purchase_item.save()
     recalculate_purchase_order(purchase_order)
     if invoice_datetime:
         PurchaseOrder.objects.filter(pk=purchase_order.pk).update(created_at=invoice_datetime)
@@ -142,7 +159,9 @@ def update_purchase_order(
     if not items:
         raise ValidationError('لا يمكن حفظ فاتورة بدون أصناف')
 
-    discount_value = Decimal(str(discount_value or 0))
+    if discount_type not in dict(PurchaseOrder.DISCOUNT_TYPE_CHOICES):
+        raise ValidationError('نوع الخصم غير صحيح')
+    discount_value = decimal_value(discount_value, max_digits=14)
     if discount_value < 0 or (
         discount_type == PurchaseOrder.DISCOUNT_PERCENT and discount_value > Decimal('100')
     ):
@@ -181,10 +200,10 @@ def update_purchase_order(
 
         try:
             variant = ProductVariant.objects.get(pk=posted['variant_id'], is_active=True)
-        except ProductVariant.DoesNotExist:
+        except (ProductVariant.DoesNotExist, TypeError, ValueError):
             raise ValidationError('الصنف المحدد غير صحيح')
-        quantity = int(posted['quantity'])
-        unit_cost = Decimal(str(posted['unit_cost']))
+        quantity = integer_value(posted['quantity'])
+        unit_cost = decimal_value(posted['unit_cost'], max_digits=12)
         if quantity <= 0 or unit_cost < 0:
             raise ValidationError('بيانات الصنف غير صحيحة')
 
@@ -199,6 +218,7 @@ def update_purchase_order(
             existing.quantity = quantity
             existing.unit_cost = unit_cost
             existing.total_cost = unit_cost * quantity
+            validate_money_fields(existing, 'total_cost')
             existing.save(update_fields=['product_variant', 'quantity', 'unit_cost', 'total_cost'])
             if cost_changed and existing.received_quantity > 0:
                 StockBatch.objects.filter(
@@ -206,13 +226,15 @@ def update_purchase_order(
                     variant_id=existing.product_variant_id,
                 ).update(unit_cost=unit_cost)
         else:
-            PurchaseOrderItem.objects.create(
+            purchase_item = PurchaseOrderItem(
                 purchase_order=purchase_order,
                 product_variant=variant,
                 quantity=quantity,
                 unit_cost=unit_cost,
                 total_cost=unit_cost * quantity,
             )
+            validate_money_fields(purchase_item, 'total_cost')
+            purchase_item.save()
 
     for existing in existing_items.values():
         if existing.pk in retained_ids:
@@ -300,13 +322,15 @@ def receive_purchase_order_items(*, purchase_order, warehouse, received_items, u
         raise ValidationError('أدخل كميات الاستلام')
 
     for item_id, quantity in received_items.items():
-        quantity = int(quantity or 0)
+        quantity = integer_value(quantity or 0, minimum=0)
         if quantity <= 0:
             continue
-        item = PurchaseOrderItem.objects.select_for_update().select_related('product_variant').get(
-            pk=item_id,
-            purchase_order=purchase_order,
-        )
+        try:
+            item = PurchaseOrderItem.objects.select_for_update().select_related('product_variant').get(
+                pk=item_id, purchase_order=purchase_order,
+            )
+        except (PurchaseOrderItem.DoesNotExist, TypeError, ValueError):
+            raise ValidationError('أحد أصناف الاستلام غير صحيح') from None
         if quantity > item.remaining_quantity:
             raise ValidationError('لا يمكن استلام كمية أكبر من المتبقي في أمر الشراء')
 
@@ -351,7 +375,7 @@ def receive_purchase_order_items(*, purchase_order, warehouse, received_items, u
 
 @transaction.atomic
 def pay_supplier(*, purchase_order, amount, cash_account, user, notes='', transaction_date=None):
-    amount = Decimal(str(amount or 0))
+    amount = decimal_value(amount, max_digits=14)
     if amount <= 0:
         raise ValidationError('مبلغ الدفع يجب أن يكون أكبر من صفر')
     purchase_order = PurchaseOrder.objects.select_for_update().select_related('supplier').get(pk=purchase_order.pk)
@@ -434,8 +458,8 @@ def cancel_purchase_order(*, purchase_order, user=None):
 
 @transaction.atomic
 def create_purchase_return(*, supplier, product_variant, warehouse, quantity, unit_cost, user, notes=''):
-    quantity = int(quantity)
-    unit_cost = Decimal(str(unit_cost or 0))
+    quantity = integer_value(quantity)
+    unit_cost = decimal_value(unit_cost, max_digits=12)
     if quantity <= 0:
         raise ValidationError('كمية المرتجع يجب أن تكون أكبر من صفر')
     if unit_cost < 0:

@@ -5,6 +5,7 @@ from django.contrib.auth import authenticate, get_user_model
 from django.core import signing
 from django.http import JsonResponse
 from config.branching import reset_current_branch, set_current_branch
+from finance.validation import positive_id
 
 
 TOKEN_SALT = 'sync-api-token'
@@ -35,7 +36,7 @@ def user_payload(user):
 def parse_json_body(request):
     try:
         return json.loads(request.body.decode('utf-8') or '{}')
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, UnicodeDecodeError):
         return None
 
 
@@ -49,7 +50,7 @@ def login_view(request):
     if request.method != 'POST':
         return method_not_allowed(['POST'])
     payload = parse_json_body(request)
-    if payload is None:
+    if not isinstance(payload, dict):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     user = authenticate(request, username=payload.get('username'), password=payload.get('password'))
     if not user or not user.is_active or (not user.is_superuser and (not user.branch_id or not user.branch.is_active)):
@@ -67,7 +68,12 @@ def authenticate_token(request):
         data = signing.loads(token, salt=TOKEN_SALT, max_age=TOKEN_MAX_AGE)
     except signing.BadSignature:
         return None
-    return get_user_model().objects.filter(pk=data.get('user_id'), is_active=True).first()
+    if not isinstance(data, dict):
+        return None
+    user = get_user_model().all_objects.select_related('branch').filter(pk=positive_id(data.get('user_id')), is_active=True).first()
+    if user and not user.is_superuser and (not user.branch_id or not user.branch.is_active):
+        return None
+    return user
 
 
 def token_required(view_func):
@@ -80,7 +86,11 @@ def token_required(view_func):
         branch_id = user.branch_id
         if user.is_superuser:
             requested_branch = request.headers.get('X-Branch-ID')
-            branch_id = int(requested_branch) if requested_branch and requested_branch.isdigit() else None
+            branch_id = positive_id(requested_branch)
+            if requested_branch:
+                from accounts.models import Branch
+                if not branch_id or not Branch.objects.filter(pk=branch_id, is_active=True).exists():
+                    return JsonResponse({'error': 'Invalid or inactive branch'}, status=400)
         token = set_current_branch(branch_id)
         try:
             return view_func(request, *args, **kwargs)
@@ -102,7 +112,7 @@ def refresh_view(request):
         return method_not_allowed(['POST'])
     device_id = ''
     payload = parse_json_body(request) if request.body else {}
-    if payload is None:
+    if not isinstance(payload, dict):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     if payload:
         device_id = payload.get('device_id') or ''

@@ -27,8 +27,9 @@
         </button>
         <button class="btn btn-light topbar-action" type="button" data-pwa-sync title="مزامنة البيانات">
             <svg class="ui-icon" aria-hidden="true"><use href="#icon-exchange"></use></svg>
-            <span>مزامنة</span>
+            <span data-pwa-sync-label>مزامنة</span>
         </button>
+        <button class="btn btn-light topbar-action" type="button" data-pwa-queue hidden title="عرض العمليات المحفوظة محليًا"><span>العمليات المعلقة</span></button>
         <form method="post" action="{% url 'accounts:logout' %}">
             {% csrf_token %}
             <button class="btn btn-secondary topbar-action" type="submit" title="تسجيل الخروج">

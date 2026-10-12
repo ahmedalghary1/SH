@@ -8,7 +8,7 @@ from django.db.models import Count, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
-from django.utils.dateparse import parse_date
+from finance.validation import decimal_value, filter_id, integer_value, parse_date, positive_id
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
 
@@ -87,7 +87,7 @@ class ProductListView(RoleRequiredMixin, ExportListMixin, ListView):
         if q:
             qs = qs.filter(arabic_search_q(('name', 'sku'), q))
         if category:
-            qs = qs.filter(category_id=category)
+            qs = filter_id(qs, 'category_id', category)
         if status in {'active', 'inactive'}:
             qs = qs.filter(is_active=(status == 'active'))
         return qs.order_by('-created_at')
@@ -195,9 +195,9 @@ class ProductMovementReportView(RoleRequiredMixin, DetailView):
             'variant__color', 'variant__size', 'warehouse',
         )
         if variant_id:
-            movements = movements.filter(variant_id=variant_id)
-            order_items = order_items.filter(variant_id=variant_id)
-            batches = batches.filter(variant_id=variant_id)
+            movements = filter_id(movements, 'variant_id', variant_id)
+            order_items = filter_id(order_items, 'variant_id', variant_id)
+            batches = filter_id(batches, 'variant_id', variant_id)
         if day:
             movements = movements.filter(created_at__date=day)
             order_items = order_items.filter(order__created_at__date=day)
@@ -477,7 +477,7 @@ class ProductUpdateView(ManagerRequiredMixin, View):
                 messages.success(request, 'تم تحديث المنتج والمخزون')
                 return redirect('products:detail', pk=product.pk)
             except (ValidationError, ValueError) as exc:
-                message = exc.message if hasattr(exc, 'message') else str(exc)
+                message = '; '.join(exc.messages) if isinstance(exc, ValidationError) else str(exc)
                 form.add_error(None, message)
         return render(request, self.template_name, {
             'product': product,
@@ -491,7 +491,10 @@ class ProductUpdateView(ManagerRequiredMixin, View):
     def update_variant_prices(self, request, product):
         variant_ids = request.POST.getlist('variant_id')
         for variant_id in variant_ids:
-            variant = ProductVariant.objects.select_for_update().get(pk=variant_id, product=product)
+            try:
+                variant = ProductVariant.objects.select_for_update().get(pk=positive_id(variant_id), product=product)
+            except ProductVariant.DoesNotExist:
+                raise ValidationError('أحد أصناف المنتج غير صحيح') from None
             legacy_price = request.POST.get(f'variant_{variant_id}_sale_price', '').strip()
             raw_retail_price = request.POST.get(f'variant_{variant_id}_retail_price', '').strip() or legacy_price
             raw_wholesale_price = request.POST.get(f'variant_{variant_id}_wholesale_price', '').strip()
@@ -500,8 +503,8 @@ class ProductUpdateView(ManagerRequiredMixin, View):
             if raw_retail_price == '' or raw_wholesale_price == '':
                 raise ValidationError('أدخل سعر القطاعي والجملة لكل لون/مقاس')
             try:
-                retail_price = Decimal(raw_retail_price)
-                wholesale_price = Decimal(raw_wholesale_price)
+                retail_price = decimal_value(raw_retail_price, max_digits=10)
+                wholesale_price = decimal_value(raw_wholesale_price, max_digits=10)
             except (InvalidOperation, ValueError):
                 raise ValidationError('سعر القطاعي أو الجملة غير صحيح')
             if retail_price < 0 or wholesale_price < 0:
@@ -522,16 +525,18 @@ class ProductUpdateView(ManagerRequiredMixin, View):
     def update_stock_rows(self, request, product):
         stock_ids = request.POST.getlist('stock_id')
         for stock_id in stock_ids:
-            stock = Stock.objects.select_for_update().select_related('warehouse', 'variant').get(
-                pk=stock_id,
-                variant__product=product,
-            )
+            try:
+                stock = Stock.objects.select_for_update().select_related('warehouse', 'variant').get(
+                    pk=positive_id(stock_id), variant__product=product,
+                )
+            except Stock.DoesNotExist:
+                raise ValidationError('أحد صفوف المخزون غير صحيح') from None
             warehouse_id = request.POST.get(f'stock_{stock_id}_warehouse')
-            quantity = int(request.POST.get(f'stock_{stock_id}_quantity') or 0)
-            min_quantity = int(request.POST.get(f'stock_{stock_id}_min_quantity') or 0)
+            quantity = integer_value(request.POST.get(f'stock_{stock_id}_quantity') or 0, minimum=0)
+            min_quantity = integer_value(request.POST.get(f'stock_{stock_id}_min_quantity') or 0, minimum=0)
             if quantity < 0 or min_quantity < 0:
                 raise ValidationError('لا يمكن أن تكون كميات المخزون سالبة')
-            target_warehouse = get_object_or_404(Warehouse, pk=warehouse_id, is_active=True)
+            target_warehouse = get_object_or_404(Warehouse, pk=positive_id(warehouse_id), is_active=True)
             if target_warehouse != stock.warehouse and stock.quantity > 0:
                 variant = stock.variant
                 transfer_stock(
@@ -573,17 +578,20 @@ class ProductUpdateView(ManagerRequiredMixin, View):
 
         new_variant_ids = request.POST.getlist('new_stock_variant_id')
         for variant_id in new_variant_ids:
-            variant = ProductVariant.objects.select_for_update().get(pk=variant_id, product=product)
+            try:
+                variant = ProductVariant.objects.select_for_update().get(pk=positive_id(variant_id), product=product)
+            except ProductVariant.DoesNotExist:
+                raise ValidationError('أحد أصناف المنتج غير صحيح') from None
             warehouse_id = request.POST.get(f'new_stock_{variant_id}_warehouse')
-            quantity = int(request.POST.get(f'new_stock_{variant_id}_quantity') or 0)
-            min_quantity = int(request.POST.get(f'new_stock_{variant_id}_min_quantity') or 0)
+            quantity = integer_value(request.POST.get(f'new_stock_{variant_id}_quantity') or 0, minimum=0)
+            min_quantity = integer_value(request.POST.get(f'new_stock_{variant_id}_min_quantity') or 0, minimum=0)
             if quantity < 0 or min_quantity < 0:
                 raise ValidationError('لا يمكن أن تكون كميات المخزون سالبة')
             if quantity <= 0 and min_quantity <= 0 and not warehouse_id:
                 continue
             if not warehouse_id:
                 raise ValidationError('اختر المخزن عند إدخال كمية للون/المقاس')
-            warehouse = get_object_or_404(Warehouse, pk=warehouse_id, is_active=True)
+            warehouse = get_object_or_404(Warehouse, pk=positive_id(warehouse_id), is_active=True)
             stock, _ = Stock.objects.select_for_update().get_or_create(
                 warehouse=warehouse,
                 variant=variant,
@@ -659,12 +667,15 @@ class BulkPriceUpdateView(ManagerRequiredMixin, View):
         parsed_prices = {}
 
         for variant_id, raw_price in posted_prices.items():
+            if positive_id(variant_id) is None:
+                errors[variant_id] = 'الصنف غير صحيح'
+                continue
             if raw_price == '':
                 errors[variant_id] = 'أدخل السعر'
                 continue
             try:
-                price = Decimal(raw_price)
-            except (InvalidOperation, ValueError):
+                price = decimal_value(raw_price, max_digits=10)
+            except (ValidationError, InvalidOperation, ValueError):
                 errors[variant_id] = 'السعر غير صحيح'
                 continue
             if price < 0:
@@ -679,7 +690,9 @@ class BulkPriceUpdateView(ManagerRequiredMixin, View):
 
         updated_count = 0
         with transaction.atomic():
-            variants = self.get_queryset().select_for_update().filter(pk__in=parsed_prices.keys())
+            # Only lock variants; nullable category/color/size joins cannot be
+            # locked with FOR UPDATE on PostgreSQL.
+            variants = self.get_queryset().select_for_update(of=('self',)).filter(pk__in=parsed_prices.keys())
             for variant in variants:
                 new_price = parsed_prices[str(variant.pk)]
                 if variant.sale_price != new_price:
@@ -1050,15 +1063,17 @@ def api_products(request):
     if q:
         qs = qs.filter(arabic_search_q(('name', 'sku', 'variants__variant_sku'), q)).distinct()
     if category:
-        qs = qs.filter(category_id=category)
+        qs = filter_id(qs, 'category_id', category)
     if color:
-        qs = qs.filter(variants__color_id=color).distinct()
+        qs = filter_id(qs, 'variants__color_id', color).distinct()
     if size:
-        qs = qs.filter(variants__size_id=size).distinct()
+        qs = filter_id(qs, 'variants__size_id', size).distinct()
 
     warehouse_obj = None
     if warehouse:
-        warehouse_obj = Warehouse.objects.filter(pk=warehouse, is_active=True).first()
+        warehouse_obj = Warehouse.objects.filter(pk=positive_id(warehouse), is_active=True).first()
+        if warehouse_obj is None:
+            qs = qs.none()
 
     stock_filter = Q()
     if warehouse_obj:

@@ -4,6 +4,7 @@ from django.db.models import F
 
 from audit.models import AuditLog
 from audit.services import log_audit
+from finance.validation import decimal_value, integer_value
 
 from .models import Stock, StockBatch, StockMovement
 
@@ -25,7 +26,7 @@ def _create_batch(*, variant, warehouse, quantity, unit_cost=0, source='', note=
         warehouse=warehouse,
         received_quantity=quantity,
         remaining_quantity=quantity,
-        unit_cost=unit_cost or 0,
+        unit_cost=decimal_value(unit_cost, max_digits=12),
         source=source,
         note=note,
         created_by=user,
@@ -88,9 +89,11 @@ def _consumed_cost_total(consumptions):
 
 @transaction.atomic
 def stock_in(*, variant, warehouse, quantity, user, note='', unit_cost=None, source='manual_in', movement_type=StockMovement.TYPE_IN):
+    quantity = integer_value(quantity)
     if quantity <= 0:
         raise ValidationError('الكمية يجب أن تكون أكبر من صفر')
     stock = _get_locked_stock(warehouse, variant)
+    integer_value(stock.quantity + quantity)
     old_quantity = stock.quantity
     stock.quantity = F('quantity') + quantity
     stock.save(update_fields=['quantity'])
@@ -131,6 +134,7 @@ def stock_in(*, variant, warehouse, quantity, user, note='', unit_cost=None, sou
 
 @transaction.atomic
 def stock_out(*, variant, warehouse, quantity, user, note='', batch=None):
+    quantity = integer_value(quantity)
     if quantity <= 0:
         raise ValidationError('الكمية يجب أن تكون أكبر من صفر')
     stock = _get_locked_stock(warehouse, variant)
@@ -170,12 +174,19 @@ def stock_out(*, variant, warehouse, quantity, user, note='', batch=None):
 def transfer_stock(*, variant, from_warehouse, to_warehouse, quantity, user, note='', movement_type=StockMovement.TYPE_TRANSFER):
     if from_warehouse == to_warehouse:
         raise ValidationError('لا يمكن التحويل إلى نفس المخزن')
+    quantity = integer_value(quantity)
     if quantity <= 0:
         raise ValidationError('الكمية يجب أن تكون أكبر من صفر')
-    source = _get_locked_stock(from_warehouse, variant)
+    # Opposing transfers lock warehouses in the same order to avoid deadlocks.
+    locked_stocks = {
+        warehouse.pk: _get_locked_stock(warehouse, variant)
+        for warehouse in sorted((from_warehouse, to_warehouse), key=lambda warehouse: warehouse.pk)
+    }
+    source = locked_stocks[from_warehouse.pk]
     if source.quantity < quantity:
         raise ValidationError('الكمية غير متاحة للتحويل')
-    target = _get_locked_stock(to_warehouse, variant)
+    target = locked_stocks[to_warehouse.pk]
+    integer_value(target.quantity + quantity)
     source_old_quantity = source.quantity
     target_old_quantity = target.quantity
     source.quantity = F('quantity') - quantity
@@ -230,6 +241,7 @@ def transfer_stock(*, variant, from_warehouse, to_warehouse, quantity, user, not
 
 @transaction.atomic
 def adjust_stock(*, variant, warehouse, new_quantity, user, note=''):
+    new_quantity = integer_value(new_quantity, minimum=0)
     if new_quantity < 0:
         raise ValidationError('لا يمكن أن تكون الكمية سالبة')
     stock = _get_locked_stock(warehouse, variant)
@@ -280,6 +292,7 @@ def adjust_stock(*, variant, warehouse, new_quantity, user, note=''):
 
 @transaction.atomic
 def sale_stock(*, variant, warehouse, quantity, user, note='', batch=None, movement_type=StockMovement.TYPE_SALE):
+    quantity = integer_value(quantity)
     stock = _get_locked_stock(warehouse, variant)
     if stock.quantity < quantity:
         raise ValidationError('الكمية غير متاحة')
@@ -317,7 +330,9 @@ def sale_stock(*, variant, warehouse, quantity, user, note='', batch=None, movem
 
 @transaction.atomic
 def return_stock(*, variant, warehouse, quantity, user, note='', unit_cost=None):
+    quantity = integer_value(quantity)
     stock = _get_locked_stock(warehouse, variant)
+    integer_value(stock.quantity + quantity)
     old_quantity = stock.quantity
     stock.quantity = F('quantity') + quantity
     stock.save(update_fields=['quantity'])

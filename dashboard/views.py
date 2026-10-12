@@ -5,6 +5,7 @@ from django.views.generic import TemplateView
 
 from accounts.permissions import RoleRequiredMixin, can_view_costs
 from customers.models import Customer
+from finance.validation import filter_id
 from inventory.models import Stock, StockMovement, Warehouse
 from orders.models import Order
 from reports.services import manager_dashboard_kpis
@@ -46,7 +47,7 @@ class DashboardView(RoleRequiredMixin, TemplateView):
             warehouse_filter = self.request.GET.get('warehouse')
             low_stocks = Stock.objects.select_related('warehouse', 'variant__product').filter(quantity__lte=F('min_quantity'))
             if warehouse_filter:
-                low_stocks = low_stocks.filter(warehouse_id=warehouse_filter)
+                low_stocks = filter_id(low_stocks, 'warehouse_id', warehouse_filter)
             context['low_stocks'] = low_stocks[:20]
             context['warehouses'] = Warehouse.objects.filter(is_active=True)
         elif user.role == 'warehouse':

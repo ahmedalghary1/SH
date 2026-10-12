@@ -1,5 +1,6 @@
 from audit.models import AuditLog
 from django.apps import apps
+from ipaddress import ip_address as parse_ip_address
 
 
 def log_audit(
@@ -34,6 +35,11 @@ def log_audit(
         notes: Additional notes about the action
     """
     branch_id = getattr(branch, 'pk', branch)
+    # PostgreSQL's inet column rejects malformed forwarded IP headers.
+    try:
+        ip_address = str(parse_ip_address(ip_address)) if ip_address else None
+    except ValueError:
+        ip_address = None
     if not branch_id and model_name and object_id:
         for model in apps.get_models():
             if model.__name__ != model_name or not hasattr(model, 'all_objects'):

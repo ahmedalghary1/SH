@@ -1,5 +1,6 @@
 import {
     getDeviceId,
+    getAll,
     getDueQueueItems,
     importBootstrap,
     markLocalEntitySynced,
@@ -7,7 +8,9 @@ import {
     nowIso,
     removeQueueItem,
     setMetadata,
+    STORE_NAMES,
 } from "./db.js";
+import { getOfflineScope } from "./identity.js";
 
 const ENDPOINTS = {
     sales: "/api/sync/sales/",
@@ -98,6 +101,9 @@ const APP_SHELL_URLS = [
 
 let syncInProgress = false;
 let bootstrapInProgress = false;
+let csrfToken = null;
+let shellCached = false;
+let lastBootstrapAt = 0;
 
 function getCookie(name) {
     let cookieValue = null;
@@ -136,18 +142,23 @@ function uniqueUrls(urls) {
 }
 
 export async function cacheAppShell(extraUrls = []) {
-    if (!("serviceWorker" in navigator)) return;
+    const scope = getOfflineScope();
+    if (!("serviceWorker" in navigator) || !scope || !navigator.onLine) return;
     const urls = uniqueUrls([
-        ...APP_SHELL_URLS,
+        ...(shellCached ? [] : APP_SHELL_URLS.filter((url) => !["/reports/", "/settings/"].includes(url))),
         `${window.location.pathname}${window.location.search}`,
         ...extraUrls,
     ]);
     if (!urls.length) return;
 
     try {
-        const registration = await navigator.serviceWorker.ready;
+        // Don't wait forever on a browser where worker installation is disabled.
+        const registration = await navigator.serviceWorker.getRegistration("/");
+        if (!registration) return;
         const worker = navigator.serviceWorker.controller || registration.active || registration.waiting || registration.installing;
-        worker?.postMessage({ type: "CACHE_URLS", urls });
+        worker?.postMessage({ type: "PWA_SCOPE", scope });
+        worker?.postMessage({ type: "CACHE_URLS", urls, scope });
+        if (worker) shellCached = true;
     } catch (error) {
         syncStatusEvent({ state: "app_shell_cache_failed", error: String(error.message || error) });
     }
@@ -161,22 +172,35 @@ async function jsonFetch(url, options = {}) {
     if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
         headers["Content-Type"] = "application/json";
     }
-    const csrf = getCookie("csrftoken");
+    const scope = getOfflineScope();
+    if (!scope) throw new Error("سجّل الدخول قبل المزامنة.");
+    headers["X-PWA-Scope"] = scope;
+    const csrf = csrfToken || getCookie("csrftoken");
     if (csrf) headers["X-CSRFToken"] = csrf;
-    const response = await fetch(url, {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    let response;
+    try { response = await fetch(url, {
         credentials: "same-origin",
+        cache: "no-store",
         ...options,
+        signal: controller.signal,
         headers,
-    });
+    }); } finally { window.clearTimeout(timeout); }
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        throw new Error(payload.error || payload.message || `HTTP ${response.status}`);
+    if (!response.ok || response.redirected || !(response.headers.get("content-type") || "").includes("application/json")) {
+        const error = new Error(payload.error || payload.message || ([401, 403].includes(response.status) || response.redirected
+            ? "انتهت الجلسة. سجّل الدخول بالحساب نفسه لإكمال المزامنة." : `HTTP ${response.status}`));
+        error.status = response.redirected ? 401 : response.status;
+        error.code = payload.code;
+        throw error;
     }
     return payload;
 }
 
 function endpointFor(item) {
-    return ENDPOINTS[item.entity_name] || ENDPOINTS.sales;
+    if (!ENDPOINTS[item.entity_name]) throw new Error("نوع العملية غير مدعوم للمزامنة.");
+    return ENDPOINTS[item.entity_name];
 }
 
 async function operationForServer(item) {
@@ -187,11 +211,12 @@ async function operationForServer(item) {
         entity_type: item.entity_type || DEFAULT_ENTITY_TYPES[item.entity_name] || item.entity_name,
         operation_type: item.operation_type || "create",
         local_uuid: item.local_uuid,
+        scope: getOfflineScope(),
         payload: {
             ...(item.payload || {}),
             local_uuid: item.local_uuid,
             queued_at: item.timestamp,
-            updated_at: item.payload?.updated_at || item.updated_at || item.timestamp || nowIso(),
+            updated_at: item.payload?.updated_at || item.timestamp || nowIso(),
         },
     };
 }
@@ -212,7 +237,9 @@ async function pushQueueItem(item) {
     });
     const result = Array.isArray(payload) ? payload[0] : payload;
     if (!result || !["success", "synced", "ignored"].includes(result.status)) {
-        throw new Error(result?.error || "Sync operation failed");
+        const error = new Error(result?.error || "Sync operation failed");
+        error.permanent = result?.status === "failed_conflict";
+        throw error;
     }
     await applyServerResult(item, result);
     await removeQueueItem(item.id);
@@ -220,11 +247,13 @@ async function pushQueueItem(item) {
 }
 
 export async function bootstrapNow() {
-    if (!navigator.onLine || bootstrapInProgress) return null;
+    if (!navigator.onLine || bootstrapInProgress || !getOfflineScope()) return null;
     bootstrapInProgress = true;
     try {
         const payload = await jsonFetch("/api/sync/bootstrap-browser/");
         await importBootstrap(payload);
+        csrfToken = payload.csrf_token || csrfToken;
+        lastBootstrapAt = Date.now();
         await setMetadata("last_successful_sync_at", nowIso());
         await cacheAppShell();
         syncStatusEvent({ state: "bootstrapped" });
@@ -237,33 +266,60 @@ export async function bootstrapNow() {
     }
 }
 
-export async function processQueue() {
-    if (!navigator.onLine || syncInProgress) return;
+async function processQueueUnlocked() {
     syncInProgress = true;
     syncStatusEvent({ state: "syncing" });
     try {
+        // Refresh CSRF and confirm the session/branch before any money or stock
+        // operation. An old cached page must not use a new account's cookie.
+        const session = await jsonFetch("/api/sync/session/");
+        if (session.scope !== getOfflineScope()) throw new Error("تغير الحساب أو المعرض. افتح الصفحة من جديد.");
+        csrfToken = session.csrf_token;
         const items = await getDueQueueItems();
+        let synced = 0;
+        let failed = 0;
         for (const item of items) {
             try {
                 await pushQueueItem(item);
+                synced += 1;
                 syncStatusEvent({ state: "item_synced", item_id: item.id, entity_name: item.entity_name });
             } catch (error) {
-                await markQueueItemFailed(item, error.message || error);
-                syncStatusEvent({ state: "item_failed", item_id: item.id, error: String(error.message || error) });
+                failed += 1;
+                if (![401, 403].includes(error.status) && error.code !== "scope_changed") {
+                    await markQueueItemFailed(item, error.message || error, { permanent: error.permanent });
+                }
+                syncStatusEvent({ state: error.permanent ? "conflict" : "item_failed", item_id: item.id, error: String(error.message || error) });
+                // Preserve ordering: later operations may depend on this record.
+                break;
             }
         }
-        await setMetadata("last_successful_sync_at", nowIso());
-        if (items.length) await bootstrapNow();
-        syncStatusEvent({ state: "idle" });
+        if (synced) await setMetadata("last_successful_sync_at", nowIso());
+        if (synced && !failed) await bootstrapNow();
+        syncStatusEvent({ state: failed ? "pending" : "idle", ...(await getQueueStatus()) });
+    } catch (error) {
+        syncStatusEvent({ state: [401, 403].includes(error.status) ? "authentication_required" : "sync_failed", error: String(error.message || error) });
     } finally {
         syncInProgress = false;
     }
 }
 
+export async function getQueueStatus() {
+    if (!getOfflineScope()) return { pending: 0, conflicts: 0 };
+    const items = await getAll(STORE_NAMES.syncQueue);
+    return { pending: items.length, conflicts: items.filter((item) => item.status === "conflict").length };
+}
+
+export async function processQueue() {
+    if (!navigator.onLine || syncInProgress || !getOfflineScope()) return;
+    const run = () => { if (!syncInProgress) return processQueueUnlocked(); };
+    if (navigator.locks?.request) {
+        await navigator.locks.request(`sh-sync-${getOfflineScope()}`, { ifAvailable: true }, (lock) => lock ? run() : undefined);
+    } else await run(); // Server idempotency still protects browsers without Web Locks.
+}
+
 async function startOnlineWork() {
-    await cacheAppShell();
-    await bootstrapNow();
     await processQueue();
+    if (Date.now() - lastBootstrapAt > 60000) await bootstrapNow();
 }
 
 window.addEventListener("online", startOnlineWork);
@@ -277,12 +333,17 @@ navigator.serviceWorker?.addEventListener("message", (event) => {
     }
 });
 
-if (navigator.onLine) {
+if (navigator.onLine && getOfflineScope()) {
     startOnlineWork();
 }
+window.setInterval(() => {
+    if (navigator.onLine && !document.hidden && getOfflineScope()) processQueue();
+}, 30000);
+navigator.serviceWorker?.addEventListener("controllerchange", () => cacheAppShell());
 
 window.SHSync = {
     bootstrapNow,
     cacheAppShell,
     processQueue,
+    getQueueStatus,
 };

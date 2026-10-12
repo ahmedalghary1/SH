@@ -1,5 +1,6 @@
 from django.contrib import messages
 from decimal import Decimal
+from finance.validation import report_days
 from django.db.models import (
     Count,
     DateField,
@@ -575,7 +576,7 @@ class InactiveCustomersReportView(SalesRequiredMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
-        days = int(self.request.GET.get('days') or 90)
+        days = report_days(self.request.GET.get('days'))
         self.days = days
         return get_inactive_customers(days, user=self.request.user)
 

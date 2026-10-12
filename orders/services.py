@@ -11,6 +11,7 @@ from config.branching import get_current_branch_id, get_default_branch_id
 from audit.models import AuditLog
 from audit.services import log_audit
 from customers.models import Customer
+from finance.validation import decimal_value, integer_value, validate_money_fields
 from inventory.models import Stock, StockBatch, StockMovement, Warehouse
 from inventory.services import return_stock, sale_stock
 from settings_app.models import CompanySettings
@@ -19,7 +20,7 @@ from .models import Order, OrderItem
 
 
 def _as_decimal(value):
-    return Decimal(str(value or 0))
+    return decimal_value(value)
 
 
 def _normalize_invoice_datetime(value):
@@ -94,11 +95,11 @@ def _validate_discount_percentage(*, discount_amount, discount_percentage, base_
 
 
 def prepare_order_item_pricing(*, variant, quantity, user, customer=None, order_type=None, unit_price=None, discount_amount=0, discount_percentage=0, unit_cost=None, allow_free=False):
-    quantity = int(quantity)
+    quantity = integer_value(quantity)
     if quantity <= 0:
         raise ValidationError('الكمية يجب أن تكون أكبر من صفر')
     default_price = _as_decimal(get_price_for_customer(variant, customer=customer, order_type=order_type))
-    original_unit_price = default_price if unit_price in (None, '') else _as_decimal(unit_price)
+    original_unit_price = default_price if unit_price in (None, '') else decimal_value(unit_price, max_digits=10)
     if original_unit_price < 0:
         raise ValidationError('سعر البيع لا يمكن أن يكون سالبا')
     line_base = original_unit_price * quantity
@@ -116,7 +117,7 @@ def prepare_order_item_pricing(*, variant, quantity, user, customer=None, order_
     )
     line_total = max(line_base - line_discount, Decimal('0'))
     final_unit_price = line_total / quantity
-    unit_cost = _as_decimal(unit_cost if unit_cost is not None else getattr(variant, 'cost_price', 0) or 0)
+    unit_cost = decimal_value(unit_cost if unit_cost is not None else getattr(variant, 'cost_price', 0) or 0, max_digits=10)
     if final_unit_price < unit_cost and not (can_sell_below_cost or allow_free):
         raise ValidationError('لا يمكن البيع تحت التكلفة لهذا المستخدم')
     cost_total = unit_cost * quantity
@@ -157,6 +158,7 @@ def calculate_order_totals(order):
         subtotal += line_before_discount
         item_discounts += line_discount
         total_cost += item.cost_total
+        validate_money_fields(item, 'total', 'cost_total', 'profit_total', 'unit_price', 'discount')
     if items:
         OrderItem.objects.bulk_update(
             items,
@@ -182,6 +184,7 @@ def calculate_order_totals(order):
         order.payment_status = Order.PAYMENT_PAID
     else:
         order.payment_status = Order.PAYMENT_PARTIAL
+    validate_money_fields(order, 'subtotal', 'discount', 'total', 'total_cost', 'gross_profit', 'remaining_amount')
     order.save(update_fields=[
         'subtotal', 'discount', 'discount_amount', 'total', 'total_cost',
         'gross_profit', 'remaining_amount', 'payment_status',
@@ -209,7 +212,7 @@ def _build_order_items(*, order, items, user, customer, document_type):
         stock_batch = item.get('stock_batch')
         if not warehouse:
             raise ValidationError('يجب تحديد مخزن لكل صنف في الفاتورة')
-        quantity = int(item['quantity'])
+        quantity = integer_value(item['quantity'])
         pricing = prepare_order_item_pricing(
             variant=variant,
             quantity=quantity,
@@ -243,6 +246,7 @@ def _build_order_items(*, order, items, user, customer, document_type):
             cost_total=pricing['cost_total'],
             profit_total=pricing['profit_total'],
         ))
+        validate_money_fields(rows[-1], 'total', 'cost_total', 'profit_total', 'unit_price', 'discount')
     if rows:
         OrderItem.objects.bulk_create(rows, batch_size=200)
     return subtotal_before_item_discounts, subtotal_after_item_discounts, item_discount_total
@@ -546,6 +550,10 @@ def cancel_order(*, order, user):
         return order
     if order.status not in {Order.STATUS_CONFIRMED, Order.STATUS_PREPARING, Order.STATUS_READY, Order.STATUS_COMPLETED}:
         raise ValidationError('لا يمكن إلغاء هذا الطلب')
+    if order.sales_returns.exclude(status='rejected').exists():
+        raise ValidationError('لا يمكن حذف أو إلغاء فاتورة مرتبطة بمرتجع؛ راجع المرتجع أولًا')
+    if order.items.filter(variant__isnull=True).exists():
+        raise ValidationError('تعذر عكس المخزون لأن أحد أصناف الفاتورة لم يعد موجودًا')
     for item in order.items.select_related('variant', 'warehouse'):
         warehouse = get_order_item_warehouse(item, order=order)
         return_stock(
@@ -568,8 +576,9 @@ def cancel_order(*, order, user):
         from finance.services import record_order_refund
 
         record_order_refund(order=order, user=user, notes=f'رد تلقائي لإلغاء الطلب {order.order_number}')
+    order.remaining_amount = Decimal('0')
     order.status = Order.STATUS_CANCELLED
-    order.save(update_fields=['status'])
+    order.save(update_fields=['status', 'remaining_amount'])
     
     log_audit(
         user=user,
@@ -628,7 +637,8 @@ def revise_order(*, order, order_data, items, user):
     from finance.services import collect_order_payment
     from invoices.services import build_invoice_snapshot
 
-    order = Order.objects.select_for_update().select_related('customer').get(pk=order.pk)
+    # A nullable customer join cannot be locked by PostgreSQL FOR UPDATE.
+    order = Order.objects.select_for_update().get(pk=order.pk)
     editable_statuses = {
         Order.STATUS_CONFIRMED,
         Order.STATUS_PREPARING,

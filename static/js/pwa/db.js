@@ -1,4 +1,4 @@
-const DB_NAME = "sh-offline-db";
+import { databaseName, getOfflineScope } from "./identity.js";
 const DB_VERSION = 2;
 
 export const STORE_NAMES = {
@@ -57,7 +57,11 @@ function addEntityIndexes(store) {
 export function openOfflineDB() {
     if (dbPromise) return dbPromise;
     dbPromise = new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        if (!globalThis.indexedDB) {
+            reject(new Error("المتصفح لا يتيح التخزين المحلي. استخدم اتصالًا بالإنترنت."));
+            return;
+        }
+        const request = indexedDB.open(databaseName(), DB_VERSION);
         request.onupgradeneeded = () => {
             const db = request.result;
             [
@@ -82,8 +86,12 @@ export function openOfflineDB() {
             }
             createStore(db, STORE_NAMES.metadata, { keyPath: "key" });
         };
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+            request.result.onversionchange = () => { request.result.close(); dbPromise = null; };
+            resolve(request.result);
+        };
+        request.onerror = () => { dbPromise = null; reject(request.error); };
+        request.onblocked = () => { dbPromise = null; reject(new Error("أغلق التبويبات القديمة لتحديث التخزين المحلي.")); };
     });
     return dbPromise;
 }
@@ -217,8 +225,14 @@ export async function enqueueOperation({
 }
 
 export async function queueEntityOperation(entityName, actionType, payload, options = {}) {
-    const localRecord = await saveLocalEntity(entityName, payload, options.operation_type || "create");
-    return enqueueOperation({
+    const storeName = storeForEntity(entityName);
+    const localUuid = payload.local_uuid || payload.id || uuid();
+    const localRecord = storeName === STORE_NAMES.syncQueue ? null : withRecordMeta({
+        ...payload, id: payload.id || localUuid, local_uuid: localUuid,
+    }, options.operation_type || "create", "pending");
+    const timestamp = nowIso();
+    const item = withRecordMeta({
+        id: uuid(),
         action_type: actionType,
         entity_name: entityName,
         entity_type: options.entity_type,
@@ -228,34 +242,49 @@ export async function queueEntityOperation(entityName, actionType, payload, opti
             local_uuid: localRecord?.local_uuid || payload.local_uuid,
             updated_at: localRecord?.updated_at || payload.updated_at || nowIso(),
         },
-        local_uuid: localRecord?.local_uuid || payload.local_uuid,
-        local_record_id: localRecord?.id || payload.id,
+        local_uuid: localRecord?.local_uuid || localUuid,
+        local_record_id: localRecord?.id || payload.id || null,
+        timestamp, status: "pending", attempts: 0, next_attempt_at: timestamp,
+        idempotency_key: uuid(), scope: getOfflineScope(), sync_status: "pending",
     });
+    const db = await openOfflineDB();
+    const stores = localRecord ? [storeName, STORE_NAMES.syncQueue] : [STORE_NAMES.syncQueue];
+    await new Promise((resolve, reject) => {
+        const tx = db.transaction(stores, "readwrite");
+        tx.oncomplete = resolve;
+        tx.onerror = tx.onabort = () => reject(tx.error || new Error("لم يكتمل الحفظ المحلي."));
+        if (localRecord) tx.objectStore(storeName).put(localRecord);
+        tx.objectStore(STORE_NAMES.syncQueue).put(item);
+    });
+    return item;
 }
 
 export async function getDueQueueItems() {
     const items = await getAll(STORE_NAMES.syncQueue);
     const now = Date.now();
-    return items
-        .filter((item) => ["pending", "failed"].includes(item.status))
-        .filter((item) => !item.next_attempt_at || Date.parse(item.next_attempt_at) <= now)
-        .sort((a, b) => Date.parse(a.timestamp || a.created_at) - Date.parse(b.timestamp || b.created_at));
+    const ordered = items.sort((a, b) => Date.parse(a.timestamp || a.created_at) - Date.parse(b.timestamp || b.created_at));
+    const due = [];
+    for (const item of ordered) {
+        if (!["pending", "failed"].includes(item.status) || (item.next_attempt_at && Date.parse(item.next_attempt_at) > now)) break;
+        due.push(item);
+    }
+    return due;
 }
 
 export async function removeQueueItem(id) {
     await deleteRecord(STORE_NAMES.syncQueue, id);
 }
 
-export async function markQueueItemFailed(item, error) {
+export async function markQueueItemFailed(item, error, { permanent = false } = {}) {
     const attempts = Number(item.attempts || 0) + 1;
     const delay = Math.min(5 * 60 * 1000, 1000 * (2 ** attempts));
     const failed = {
         ...item,
         attempts,
-        status: "failed",
+        status: permanent ? "conflict" : "failed",
         sync_status: "failed",
         error: String(error || "Sync failed"),
-        next_attempt_at: new Date(Date.now() + delay).toISOString(),
+        next_attempt_at: permanent ? null : new Date(Date.now() + delay).toISOString(),
         updated_at: nowIso(),
     };
     await putRecord(STORE_NAMES.syncQueue, failed);
@@ -296,13 +325,19 @@ function serverKey(prefix, id) {
 }
 
 export async function importBootstrap(payload) {
+    if (!payload.scope || payload.scope !== getOfflineScope()) {
+        throw new Error("تغير الحساب أو المعرض. أعد فتح الصفحة قبل تنزيل البيانات.");
+    }
     const importedAt = nowIso();
-    await setMetadata("last_bootstrap_at", importedAt);
     if (payload.user) await setMetadata("user", payload.user);
     if (payload.company) await setMetadata("company", payload.company);
     if (payload.cash) await setMetadata("cash", payload.cash);
 
-    await Promise.all((payload.products || []).map((product) => putRecord(STORE_NAMES.products, {
+    const snapshots = new Map();
+    const collect = (storeName, record) => snapshots.get(storeName).push(record);
+    [STORE_NAMES.products, STORE_NAMES.productVariants, STORE_NAMES.customers, STORE_NAMES.sales,
+        STORE_NAMES.stock, STORE_NAMES.warehouses, STORE_NAMES.cashAccounts].forEach((name) => snapshots.set(name, []));
+    (payload.products || []).forEach((product) => collect(STORE_NAMES.products, {
         ...product,
         id: serverKey("server-product", product.id),
         server_id: product.id,
@@ -310,8 +345,8 @@ export async function importBootstrap(payload) {
         operation_type: "update",
         created_at: product.created_at || product.updated_at || importedAt,
         updated_at: product.updated_at || importedAt,
-    })));
-    await Promise.all((payload.variants || []).map((variant) => putRecord(STORE_NAMES.productVariants, {
+    }));
+    (payload.variants || []).forEach((variant) => collect(STORE_NAMES.productVariants, {
         ...variant,
         id: serverKey("server-variant", variant.id),
         server_id: variant.id,
@@ -319,8 +354,8 @@ export async function importBootstrap(payload) {
         operation_type: "update",
         created_at: variant.created_at || variant.updated_at || importedAt,
         updated_at: variant.updated_at || importedAt,
-    })));
-    await Promise.all((payload.customers || []).map((customer) => putRecord(STORE_NAMES.customers, {
+    }));
+    (payload.customers || []).forEach((customer) => collect(STORE_NAMES.customers, {
         ...customer,
         id: customer.local_uuid || serverKey("server-customer", customer.id),
         local_uuid: customer.local_uuid || serverKey("server-customer", customer.id),
@@ -329,8 +364,8 @@ export async function importBootstrap(payload) {
         operation_type: "update",
         created_at: customer.created_at || customer.updated_at || importedAt,
         updated_at: customer.updated_at || importedAt,
-    })));
-    await Promise.all((payload.orders || []).map((order) => putRecord(STORE_NAMES.sales, {
+    }));
+    (payload.orders || []).forEach((order) => collect(STORE_NAMES.sales, {
         ...order,
         id: order.local_uuid || serverKey("server-order", order.id),
         local_uuid: order.local_uuid || serverKey("server-order", order.id),
@@ -339,16 +374,16 @@ export async function importBootstrap(payload) {
         operation_type: "update",
         created_at: order.created_at || importedAt,
         updated_at: order.updated_at || importedAt,
-    })));
-    await Promise.all((payload.stock || []).map((stock) => putRecord(STORE_NAMES.stock, {
+    }));
+    (payload.stock || []).forEach((stock) => collect(STORE_NAMES.stock, {
         ...stock,
         id: `${stock.warehouse_id}:${stock.variant_id}`,
         sync_status: "synced",
         operation_type: "update",
         created_at: stock.updated_at || importedAt,
         updated_at: stock.updated_at || importedAt,
-    })));
-    await Promise.all((payload.warehouses || []).map((warehouse) => putRecord(STORE_NAMES.warehouses, {
+    }));
+    (payload.warehouses || []).forEach((warehouse) => collect(STORE_NAMES.warehouses, {
         ...warehouse,
         id: `server-warehouse-${warehouse.id}`,
         server_id: warehouse.id,
@@ -356,8 +391,8 @@ export async function importBootstrap(payload) {
         operation_type: "update",
         created_at: warehouse.updated_at || importedAt,
         updated_at: warehouse.updated_at || importedAt,
-    })));
-    await Promise.all((payload.cash_accounts || []).map((account) => putRecord(STORE_NAMES.cashAccounts, {
+    }));
+    (payload.cash_accounts || []).forEach((account) => collect(STORE_NAMES.cashAccounts, {
         ...account,
         id: `server-cash-account-${account.id}`,
         server_id: account.id,
@@ -365,7 +400,27 @@ export async function importBootstrap(payload) {
         operation_type: "update",
         created_at: account.updated_at || importedAt,
         updated_at: account.updated_at || importedAt,
-    })));
+    }));
+    // Replace complete snapshots atomically, retaining all unsent local edits.
+    const db = await openOfflineDB();
+    await new Promise((resolve, reject) => {
+        const tx = db.transaction([...snapshots.keys()], "readwrite");
+        tx.oncomplete = resolve;
+        tx.onerror = tx.onabort = () => reject(tx.error);
+        for (const [name, records] of snapshots) {
+            const store = tx.objectStore(name);
+            const request = store.getAll();
+            request.onsuccess = () => {
+                const pending = new Set();
+                request.result.forEach((row) => {
+                    if (row.sync_status !== "synced") pending.add(row.id);
+                    else store.delete(row.id);
+                });
+                records.forEach((row) => { if (!pending.has(row.id)) store.put(row); });
+            };
+        }
+    });
+    await setMetadata("last_bootstrap_at", importedAt);
 }
 
 export async function searchProducts(query = "") {

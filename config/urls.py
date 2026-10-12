@@ -32,6 +32,11 @@ from django.views.static import serve as static_serve
 
 from .pwa import manifest_view, offline_view, service_worker_view
 
+handler400 = 'config.errors.bad_request'
+handler403 = 'config.errors.permission_denied'
+handler404 = 'config.errors.page_not_found'
+handler500 = 'config.errors.server_error'
+
 
 def _check_database():
     """Test basic DB connectivity."""

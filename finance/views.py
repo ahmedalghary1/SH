@@ -8,7 +8,7 @@ from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.utils import timezone
-from django.utils.dateparse import parse_date
+from .validation import parse_date, positive_id
 from django.views.generic import CreateView, DetailView, FormView, ListView, TemplateView, UpdateView
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, can_view_costs, SalesRequiredMixin
@@ -66,7 +66,7 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
         )
 
         selected_account_id = self.request.GET.get('account', '').strip()
-        selected_account = all_cash_accounts.filter(pk=selected_account_id).first() if selected_account_id.isdigit() else None
+        selected_account = all_cash_accounts.filter(pk=positive_id(selected_account_id)).first() if positive_id(selected_account_id) is not None else None
         scoped_accounts = all_cash_accounts.filter(pk=selected_account.pk) if selected_account else all_cash_accounts
         account_ids = list(scoped_accounts.values_list('pk', flat=True))
 
@@ -463,9 +463,9 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
         cash_account_id = self.request.GET.get('cash_account', '').strip()
         query = self.request.GET.get('q', '').strip()
 
-        if customer_id.isdigit():
+        if positive_id(customer_id) is not None:
             queryset = queryset.filter(related_customer_id=customer_id)
-        if cash_account_id.isdigit():
+        if positive_id(cash_account_id) is not None:
             queryset = queryset.filter(cash_account_id=cash_account_id)
         queryset, self.date_filter = filter_by_split_datetime(queryset, self.request.GET, 'transaction_date', 'transaction_time')
         if query:
@@ -759,7 +759,7 @@ class CustomerStatementView(ManagerRequiredMixin, TemplateView):
             from customers.models import Customer
 
             try:
-                customer = Customer.objects.select_related('created_by').filter(pk=customer_id).first()
+                customer = Customer.objects.select_related('created_by').filter(pk=positive_id(customer_id)).first()
             except (TypeError, ValueError):
                 customer = None
             if customer:

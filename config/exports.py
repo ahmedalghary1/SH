@@ -43,10 +43,22 @@ def export_csv_response(*, filename, headers, rows):
     response['Content-Disposition'] = f'attachment; filename="{filename}.csv"'
     response.write('\ufeff')
     writer = csv.writer(response)
-    writer.writerow(headers)
+    writer.writerow([_spreadsheet_text(value) for value in headers])
     for row in rows:
-        writer.writerow(row)
+        writer.writerow([_spreadsheet_text(value) for value in row])
     return response
+
+
+def _spreadsheet_text(value):
+    if isinstance(value, str) and value.lstrip().startswith(('=', '+', '-', '@')):
+        return "'" + value
+    return value
+
+
+def _xlsx_value(value):
+    if isinstance(value, datetime) and timezone.is_aware(value):
+        return timezone.localtime(value).replace(tzinfo=None)
+    return _spreadsheet_text(value)
 
 
 def export_xlsx_response(*, filename, title, headers, rows, metadata=()):
@@ -54,19 +66,19 @@ def export_xlsx_response(*, filename, title, headers, rows, metadata=()):
     sheet = workbook.active
     sheet.title = 'كشف الحساب'
     sheet.sheet_view.rightToLeft = True
-    sheet.append([title])
+    sheet.append([_xlsx_value(title)])
     sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
     sheet['A1'].font = Font(bold=True, size=16)
     for label, value in metadata:
-        sheet.append([label, value])
+        sheet.append([_xlsx_value(label), _xlsx_value(value)])
     sheet.append([])
     header_row = sheet.max_row + 1
-    sheet.append(headers)
+    sheet.append([_xlsx_value(value) for value in headers])
     for cell in sheet[header_row]:
         cell.font = Font(bold=True, color='FFFFFF')
         cell.fill = PatternFill('solid', fgColor='071D35')
     for row in rows:
-        sheet.append(list(row))
+        sheet.append([_xlsx_value(value) for value in row])
     for row in sheet.iter_rows():
         for cell in row:
             cell.alignment = Alignment(horizontal='right')

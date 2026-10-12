@@ -2,6 +2,7 @@ import json
 
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
+from django.middleware.csrf import get_token
 from django.utils.dateparse import parse_datetime
 
 from customers.models import Customer
@@ -11,6 +12,8 @@ from inventory.models import Stock, Warehouse
 from orders.models import Order
 from products.models import Product, ProductVariant
 from settings_app.models import CompanySettings
+from config.branching import get_current_branch_id
+from config.pwa import offline_scope
 
 from .auth import method_not_allowed, token_required, user_payload
 from .serializers import serialize_customer, serialize_order, serialize_product, serialize_stock, serialize_variant
@@ -27,6 +30,8 @@ def _allowed_stock(user):
     stock = Stock.objects.select_related('warehouse', 'variant__product').filter(warehouse__is_active=True, variant__is_active=True)
     if getattr(user, 'is_sales', False):
         stock = stock.filter(warehouse__assigned_user=user)
+    elif not _can_view_all_inventory(user):
+        return stock.none()
     return stock
 
 
@@ -85,9 +90,13 @@ def _bootstrap_payload(user):
     can_view_costs = bool(getattr(user, 'is_manager', False))
     products, variants = _allowed_products_and_variants(user)
     customers = visible_customers_for_user(user, Customer.objects.filter(is_active=True)).order_by('-created_at')
+    if not (getattr(user, 'is_manager', False) or getattr(user, 'is_sales', False)):
+        customers = customers.none()
     company = CompanySettings.load()
-    cash_account = CashAccount.get_default()
+    accounts = _allowed_cash_accounts(user)
+    cash_account = CashAccount.get_default() if getattr(user, 'is_manager', False) else accounts.first()
     return {
+        'scope': offline_scope(user, get_current_branch_id()),
         'user': user_payload(user),
         'permissions': user_payload(user)['permissions'],
         'company': {
@@ -98,8 +107,8 @@ def _bootstrap_payload(user):
             'max_sales_discount_percentage': str(company.max_sales_discount_percentage),
         },
         'cash': {
-            'balance': str(cash_account.balance),
-            'name': cash_account.name,
+            'balance': str(cash_account.balance) if cash_account else '0.00',
+            'name': cash_account.name if cash_account else '',
         },
         'products': [serialize_product(product) for product in products],
         'variants': [serialize_variant(variant, can_view_costs=can_view_costs) for variant in variants],
@@ -140,7 +149,10 @@ def changes_view(request):
     if request.method != 'GET':
         return method_not_allowed(['GET'])
     since_param = request.GET.get('since')
-    since = parse_datetime(since_param) if since_param else None
+    try:
+        since = parse_datetime(since_param) if since_param else None
+    except (TypeError, ValueError, OverflowError):
+        since = None
     if since_param and since is None:
         return JsonResponse({'error': 'Invalid since datetime'}, status=400)
     payload = _bootstrap_payload(request.sync_user)
@@ -165,10 +177,12 @@ def push_view(request):
         return method_not_allowed(['POST'])
     try:
         operations = json.loads(request.body.decode('utf-8') or '[]')
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, UnicodeDecodeError):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     if not isinstance(operations, list):
         return JsonResponse({'error': 'Expected a list of operations'}, status=400)
+    if len(operations) > 100:
+        return JsonResponse({'error': 'أرسل 100 عملية كحد أقصى في الطلب الواحد.'}, status=400)
     results = []
     for operation in operations:
         if not isinstance(operation, dict):
@@ -184,7 +198,7 @@ def push_view(request):
 def _read_operations(request):
     try:
         payload = json.loads(request.body.decode('utf-8') or '{}')
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, UnicodeDecodeError):
         return None, JsonResponse({'error': 'Invalid JSON'}, status=400)
     if isinstance(payload, list):
         return payload, None
@@ -199,6 +213,8 @@ def _browser_push(request, default_entity_type):
     operations, error_response = _read_operations(request)
     if error_response:
         return error_response
+    if len(operations) > 100:
+        return JsonResponse({'error': 'أرسل 100 عملية كحد أقصى في الطلب الواحد.'}, status=400)
     results = []
     for operation in operations:
         if not isinstance(operation, dict):
@@ -215,10 +231,23 @@ def _browser_push(request, default_entity_type):
 
 
 @login_required
+def browser_session_view(request):
+    if request.method != 'GET':
+        return method_not_allowed(['GET'])
+    response = JsonResponse({'scope': offline_scope(request.user, get_current_branch_id()), 'csrf_token': get_token(request)})
+    response['Cache-Control'] = 'no-store'
+    return response
+
+
+@login_required
 def browser_bootstrap_view(request):
     if request.method != 'GET':
         return method_not_allowed(['GET'])
-    return JsonResponse(_bootstrap_payload(request.user))
+    payload = _bootstrap_payload(request.user)
+    payload['csrf_token'] = get_token(request)
+    response = JsonResponse(payload)
+    response['Cache-Control'] = 'no-store'
+    return response
 
 
 @login_required
@@ -226,7 +255,10 @@ def browser_changes_view(request):
     if request.method != 'GET':
         return method_not_allowed(['GET'])
     since_param = request.GET.get('since')
-    since = parse_datetime(since_param) if since_param else None
+    try:
+        since = parse_datetime(since_param) if since_param else None
+    except (TypeError, ValueError, OverflowError):
+        since = None
     if since_param and since is None:
         return JsonResponse({'error': 'Invalid since datetime'}, status=400)
     payload = _bootstrap_payload(request.user)

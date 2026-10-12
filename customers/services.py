@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
+from finance.validation import report_days
 
 from django.db.models import Case, DecimalField, F, OuterRef, Q, Subquery, Sum, Value, When
 from django.db.models.functions import Coalesce
@@ -168,6 +169,7 @@ def get_customer_complaints_count(customer):
 
 
 def get_inactive_customers(days=90, user=None):
+    days = report_days(days)
     cutoff = timezone.now() - timedelta(days=days)
     active_customer_ids = Order.objects.filter(created_at__gte=cutoff).exclude(status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED]).values('customer_id')
     qs = Customer.objects.filter(is_active=True)

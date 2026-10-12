@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from customers.models import Customer
 from finance.models import CashAccount, PaymentTransaction
+from finance.validation import filter_id, report_days
 from inventory.models import Stock
 from orders.models import Order, OrderItem
 from products.models import ProductVariant
@@ -64,9 +65,9 @@ def apply_order_filters(qs, request, *, restrict_to_user=False):
     payment_status = request.GET.get('payment_status')
     customer_type = request.GET.get('customer_type')
     if customer:
-        qs = qs.filter(customer_id=customer)
+        qs = filter_id(qs, 'customer_id', customer)
     if employee:
-        qs = qs.filter(created_by_id=employee)
+        qs = filter_id(qs, 'created_by_id', employee)
     if status:
         qs = qs.filter(status=status)
     if payment_status:
@@ -185,6 +186,7 @@ def customer_debt_report():
 
 
 def inactive_customer_report(days=90):
+    days = report_days(days)
     cutoff = timezone.now() - timedelta(days=days)
     qs = Customer.objects.filter(is_active=True).exclude(order__created_at__gte=cutoff).order_by('name')
     return {
@@ -255,6 +257,7 @@ def low_stock_report():
 
 
 def stale_products_report(days=90):
+    days = report_days(days)
     cutoff = timezone.now() - timedelta(days=days)
     sold_variant_ids = OrderItem.objects.filter(order__created_at__gte=cutoff).exclude(order__status__in=EXCLUDED_SALES_STATUSES).values('variant_id')
     qs = ProductVariant.objects.select_related('product').exclude(pk__in=sold_variant_ids).filter(is_active=True)

@@ -19,6 +19,7 @@ from config.date_ranges import PERIOD_CHOICES, filter_by_date_period
 from config.exports import ExportListMixin
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
+from finance.validation import decimal_value, positive_id
 from inventory.models import Stock
 from products.models import Category, Color, Product, ProductVariant, Size
 
@@ -32,7 +33,7 @@ def _decimal_from_post(value, default=Decimal('0')):
     if value in (None, ''):
         return default
     try:
-        return Decimal(str(value))
+        return decimal_value(value, max_digits=14)
     except (InvalidOperation, TypeError):
         raise ValidationError('القيمة الرقمية غير صحيحة')
 
@@ -342,7 +343,7 @@ class RawMaterialPurchaseView(ManagerRequiredMixin, FormView):
             messages.success(self.request, 'تم تسجيل شراء الخام وخصم السعر من الخزنة')
             return redirect(self.success_url)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
@@ -449,7 +450,7 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
             items = []
             for posted in posted_items:
                 try:
-                    product_variant = ProductVariant.objects.get(pk=posted['variant_id'], is_active=True)
+                    product_variant = ProductVariant.objects.get(pk=positive_id(posted['variant_id']), is_active=True)
                 except ProductVariant.DoesNotExist:
                     raise ValidationError('الصنف المحدد غير صحيح')
                 items.append({
@@ -505,7 +506,7 @@ class PurchaseOrderCreateView(ManagerRequiredMixin, FormView):
                 messages.success(self.request, 'تم تسجيل شراء البضاعة وإضافتها للمخزن')
             return redirect('purchases:order_detail', pk=po.pk)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
@@ -571,7 +572,7 @@ class PurchaseOrderUpdateView(ManagerRequiredMixin, FormView):
             messages.success(self.request, 'تم تعديل فاتورة الشراء وإعادة حساب رصيد المورد')
             return redirect('purchases:order_detail', pk=purchase_order.pk)
         except ValidationError as exc:
-            form.add_error(None, getattr(exc, 'message', None) or '; '.join(exc.messages))
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
@@ -620,7 +621,7 @@ def ajax_quick_create_purchase_product(request):
                 unit_cost=_decimal_from_post(request.POST.get('unit_cost')),
             )
     except ValidationError as exc:
-        message = getattr(exc, 'message', None) or '; '.join(exc.messages)
+        message = '; '.join(exc.messages)
         return JsonResponse({'success': False, 'message': message}, status=400)
 
     return JsonResponse({
@@ -717,7 +718,7 @@ class PurchaseReceiveView(WarehouseRequiredMixin, FormView):
             messages.success(self.request, 'تم تسجيل استلام البضاعة')
             return redirect('purchases:order_detail', pk=self.purchase_order.pk)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
@@ -742,7 +743,7 @@ class SupplierPaymentView(ManagerRequiredMixin, FormView):
             messages.success(self.request, 'تم تسجيل دفع المورد')
             return redirect('purchases:order_detail', pk=self.purchase_order.pk)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
@@ -768,7 +769,7 @@ class PurchaseOrderCancelView(ManagerRequiredMixin, View):
             cancel_purchase_order(purchase_order=purchase_order, user=request.user)
             messages.success(request, 'تم إلغاء أمر الشراء')
         except ValidationError as exc:
-            messages.error(request, exc.message)
+            messages.error(request, '; '.join(exc.messages))
         return redirect('purchases:order_detail', pk=pk)
 
 

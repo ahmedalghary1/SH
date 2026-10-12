@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Count, DecimalField, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
@@ -22,6 +23,7 @@ from config.ratelimit import RateLimitExceeded, rate_limit
 from config.search import arabic_search_q
 from customers.models import Customer
 from customers.services import visible_customers_for_user
+from finance.validation import decimal_value, integer_value, positive_id
 from invoices.services import generate_invoice
 from inventory.models import Stock, StockBatch, Warehouse
 from products.models import Product, ProductVariant
@@ -127,7 +129,7 @@ class OrderListView(RoleRequiredMixin, ExportListMixin, ListView):
         if getattr(self, 'document_type', None):
             qs = qs.filter(document_type=self.document_type)
         if getattr(self, 'document_type', None) == Order.DOCUMENT_SALE:
-            qs = qs.exclude(status=Order.STATUS_DRAFT)
+            qs = qs.exclude(status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED])
         if getattr(self, 'order_type', None):
             qs = qs.filter(order_type=self.order_type)
         if self.request.user.role == 'sales' and not self.request.user.is_superuser:
@@ -366,6 +368,7 @@ class OrderCreateView(SalesRequiredMixin, FormView):
                 raise ValidationError('الكمية الإجمالية غير متاحة في دفعة السعر المحددة')
         return items
 
+    @transaction.atomic
     def form_valid(self, form):
         try:
             items = self.build_posted_items()
@@ -398,6 +401,7 @@ class OrderCreateView(SalesRequiredMixin, FormView):
             messages.success(self.request, 'تم حفظ الطلب')
             return redirect('orders:detail', pk=order.pk)
         except (InvalidOperation, ValidationError, ProductVariant.DoesNotExist, StockBatch.DoesNotExist, Warehouse.DoesNotExist, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            transaction.set_rollback(True)
             form.add_error(None, getattr(exc, 'message', 'بيانات الطلب غير صحيحة'))
             return self.form_invalid(form)
 
@@ -469,6 +473,7 @@ class OrderUpdateView(OrderCreateView):
         context['editing_order'] = self.get_current_draft()
         return context
 
+    @transaction.atomic
     def form_valid(self, form):
         try:
             items = self.build_posted_items()
@@ -498,40 +503,57 @@ class OrderUpdateView(OrderCreateView):
             StockBatch.DoesNotExist, Warehouse.DoesNotExist, KeyError,
             TypeError, ValueError, json.JSONDecodeError,
         ) as exc:
+            transaction.set_rollback(True)
             form.add_error(None, getattr(exc, 'message', 'بيانات الفاتورة غير صحيحة'))
             return self.form_invalid(form)
 
 
 class OrderConfirmView(SalesRequiredMixin, View):
+    @transaction.atomic
     def post(self, request, pk):
-        order = get_object_or_404(Order, pk=pk)
+        orders = Order.objects.all()
+        if _is_restricted_sales_user(request.user):
+            orders = orders.filter(created_by=request.user)
+        order = get_object_or_404(orders, pk=pk)
         try:
-            confirm_order(order=order, user=request.user)
+            order = confirm_order(order=order, user=request.user)
+            generate_invoice(order, user=request.user)
             messages.success(request, 'تم تأكيد الطلب وخصم المخزون')
         except ValidationError as exc:
-            messages.error(request, exc.message)
+            transaction.set_rollback(True)
+            messages.error(request, '; '.join(exc.messages))
         return redirect('orders:detail', pk=pk)
 
 
 class OrderCancelView(SalesRequiredMixin, View):
     def post(self, request, pk):
-        order = get_object_or_404(Order, pk=pk)
+        orders = Order.objects.all()
+        if _is_restricted_sales_user(request.user):
+            orders = orders.filter(created_by=request.user)
+        order = get_object_or_404(orders, pk=pk)
         try:
-            cancel_order(order=order, user=request.user)
+            if hasattr(order, 'invoice'):
+                from invoices.services import delete_invoice
+                delete_invoice(invoice=order.invoice, user=request.user)
+            else:
+                cancel_order(order=order, user=request.user)
             messages.success(request, 'تم إلغاء الطلب')
         except ValidationError as exc:
-            messages.error(request, exc.message)
+            messages.error(request, '; '.join(exc.messages))
         return redirect('orders:detail', pk=pk)
 
 
 class OrderReturnView(SalesRequiredMixin, View):
     def post(self, request, pk):
-        order = get_object_or_404(Order, pk=pk)
+        orders = Order.objects.all()
+        if _is_restricted_sales_user(request.user):
+            orders = orders.filter(created_by=request.user)
+        order = get_object_or_404(orders, pk=pk)
         try:
             return_order(order=order, user=request.user)
             messages.success(request, 'تم تسجيل المرتجع')
         except ValidationError as exc:
-            messages.error(request, exc.message)
+            messages.error(request, '; '.join(exc.messages))
         return redirect('orders:detail', pk=pk)
 
 
@@ -622,6 +644,11 @@ def ajax_get_variant_stock(request, variant_id):
     warehouse_id = request.GET.get('warehouse_id')
     reserved_by_warehouse = {}
     editing_order_id = request.GET.get('editing_order')
+    for value in (warehouse_id, editing_order_id):
+        if value and positive_id(value) is None:
+            return JsonResponse({'success': False, 'message': 'معرّف المخزن أو الفاتورة غير صالح'}, status=400)
+    warehouse_id = positive_id(warehouse_id)
+    editing_order_id = positive_id(editing_order_id)
     if editing_order_id:
         editing_order = Order.objects.filter(
             pk=editing_order_id,
@@ -644,11 +671,7 @@ def ajax_get_variant_stock(request, variant_id):
         stocks = stocks.filter(warehouse__assigned_user=request.user, warehouse__warehouse_type=Warehouse.TYPE_REPRESENTATIVE)
     if warehouse_id:
         stock = stocks.filter(warehouse_id=warehouse_id).first()
-        try:
-            requested_warehouse_id = int(warehouse_id)
-        except (TypeError, ValueError):
-            requested_warehouse_id = None
-        quantity = (stock.quantity if stock else 0) + reserved_by_warehouse.get(requested_warehouse_id, 0)
+        quantity = (stock.quantity if stock else 0) + reserved_by_warehouse.get(warehouse_id, 0)
         return JsonResponse({'success': True, 'message': 'تم جلب المخزون', 'data': {'quantity': quantity}})
     show_costs = can_view_costs(request.user)
     data = [
@@ -682,6 +705,8 @@ def ajax_get_variant_stock(request, variant_id):
 def ajax_get_variant_price(request, variant_id):
     order_type = request.GET.get('order_type', Order.TYPE_B2C)
     customer_id = request.GET.get('customer_id')
+    if customer_id and positive_id(customer_id) is None:
+        return JsonResponse({'success': False, 'message': 'معرّف العميل غير صالح'}, status=400)
     variant = get_object_or_404(_available_variants_for_user(request.user).select_related('product'), pk=variant_id)
     customer = visible_customers_for_user(request.user, Customer.objects.filter(pk=customer_id)).first() if customer_id else None
     price = get_price_for_customer(variant, customer=customer, order_type=order_type)
@@ -712,22 +737,33 @@ def ajax_calculate_order_totals(request):
         return JsonResponse({'success': False, 'message': 'تجاوزت الحد المسموح من الطلبات. يرجى المحاولة مرة أخرى بعد دقيقة.'}, status=429)
     try:
         payload = json.loads(request.body.decode('utf-8'))
+        if not isinstance(payload, dict):
+            raise ValueError('Invalid payload')
         items = payload.get('items', [])
-        paid_amount = Decimal(str(payload.get('paid_amount', 0)))
-        order_discount_amount = Decimal(str(payload.get('discount_amount', payload.get('discount', 0))))
-        order_discount_percentage = Decimal(str(payload.get('discount_percentage', 0)))
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+            raise ValueError('Invalid items')
+        paid_amount = decimal_value(payload.get('paid_amount', 0), max_digits=12)
+        if paid_amount < 0:
+            raise ValueError('Invalid payment')
+        order_discount_amount = decimal_value(payload.get('discount_amount', payload.get('discount', 0)), max_digits=12)
+        order_discount_percentage = decimal_value(payload.get('discount_percentage', 0), max_digits=5)
         customer_id = payload.get('customer_id')
+        if customer_id and positive_id(customer_id) is None:
+            raise ValueError('Invalid customer')
         customer = visible_customers_for_user(request.user, Customer.objects.filter(pk=customer_id)).first() if customer_id else None
         order_type = payload.get('order_type', Order.TYPE_B2C)
-    except (json.JSONDecodeError, ValueError):
+    except (UnicodeDecodeError, ValueError, ValidationError, TypeError):
         return JsonResponse({'success': False, 'message': 'بيانات غير صحيحة', 'errors': {}}, status=400)
 
     subtotal = Decimal('0')
     discount = Decimal('0')
     try:
         for item in items:
-            variant = _available_variants_for_user(request.user).select_related('product').get(pk=item.get('variant_id'))
-            quantity = Decimal(str(item.get('quantity', 0)))
+            variant_id = positive_id(item.get('variant_id'))
+            if variant_id is None:
+                raise ValidationError('معرّف المنتج غير صالح')
+            variant = _available_variants_for_user(request.user).select_related('product').get(pk=variant_id)
+            quantity = integer_value(item.get('quantity', 0))
             pricing = prepare_order_item_pricing(
                 variant=variant,
                 quantity=item.get('quantity', 0),
@@ -746,8 +782,8 @@ def ajax_calculate_order_totals(request):
             discount_amount=order_discount_amount,
             discount_percentage=order_discount_percentage,
         )
-    except (ProductVariant.DoesNotExist, ValidationError, ValueError) as exc:
-        return JsonResponse({'success': False, 'message': getattr(exc, 'message', 'بيانات الخصم غير صحيحة'), 'errors': {}}, status=400)
+    except (ProductVariant.DoesNotExist, ValidationError, ValueError, TypeError) as exc:
+        return JsonResponse({'success': False, 'message': '؛ '.join(exc.messages) if isinstance(exc, ValidationError) else 'بيانات الخصم غير صحيحة', 'errors': {}}, status=400)
 
     total_discount = discount + order_discount
     total = max(subtotal - total_discount, Decimal('0'))

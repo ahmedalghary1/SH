@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}تأكيد حذف الفاتورة{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>حذف الفاتورة {{ invoice.invoice_number }}</h1>
+    <a class="btn btn-light" href="{% url 'invoices:detail' invoice.pk %}">رجوع</a>
+</div>
+<section class="card">
+    <h2>راجع أثر الحذف قبل التأكيد</h2>
+    <p>سيتم إلغاء الفاتورة وإزالتها من قائمة الفواتير النشطة، مع الاحتفاظ بسجلها للمراجعة.</p>
+    <ul>
+        <li>إرجاع كميات الأصناف إلى مخازنها وعكس تكلفة المخزون الأصلية.</li>
+        <li>عكس الدفعات الفعلية المرتبطة بالفاتورة في الخزن الأصلية.</li>
+        <li>إزالة المديونية المتبقية للفاتورة من حساب العميل.</li>
+    </ul>
+    <p class="muted">إذا كانت للفاتورة مرتجعات أو عهدة تم تسليمها، فقد يمنع النظام الحذف حتى تُراجع العمليات المرتبطة.</p>
+    {% if delete_blocked_reason %}
+        <div class="form-errors" role="alert">{{ delete_blocked_reason }}</div>
+    {% else %}
+        <form method="post" class="form-actions">
+            {% csrf_token %}
+            <button class="btn btn-danger" type="submit">تأكيد حذف الفاتورة وعكس أثرها</button>
+            <a class="btn btn-light" href="{% url 'invoices:detail' invoice.pk %}">الاحتفاظ بالفاتورة</a>
+        </form>
+    {% endif %}
+</section>
+{% endblock %}

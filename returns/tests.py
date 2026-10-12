@@ -152,15 +152,13 @@ class SalesReturnServiceTests(TestCase):
 
     def test_return_rejects_quantity_already_returned(self):
         self._completed_return(quantity=3)
-        second_return = create_sales_return(
-            order=self.order,
-            return_type=SalesReturn.TYPE_PARTIAL_RETURN,
-            reason='Duplicate',
-            user=self.user,
-        )
-
         with self.assertRaises(ValidationError):
-            add_return_item(sales_return=second_return, original_order_item=self.order_item, quantity=1)
+            create_sales_return(
+                order=self.order,
+                return_type=SalesReturn.TYPE_PARTIAL_RETURN,
+                reason='Duplicate',
+                user=self.user,
+            )
 
     def test_damaged_return_does_not_increase_available_stock(self):
         self._completed_return(quantity=1, condition=SalesReturnItem.CONDITION_DAMAGED, return_to_stock=False)

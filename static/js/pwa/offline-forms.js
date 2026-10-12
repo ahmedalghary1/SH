@@ -1,5 +1,6 @@
 import {
     estimateOrderTotals,
+    getMetadata,
     nowIso,
     priceForVariant,
     queueEntityOperation,
@@ -91,7 +92,15 @@ async function serializeForm(form, submitter = null) {
 }
 
 function pathFromAction(action) {
-    return new URL(action || window.location.href, window.location.origin).pathname;
+    const url = new URL(action || window.location.href, window.location.href);
+    return url.origin === window.location.origin ? url.pathname : "";
+}
+
+function formPath(form, submitter = null) {
+    // Buttons named "action" shadow HTMLFormElement.action in real browsers.
+    // Read attributes so cashier forms still reach the correct offline handler.
+    const action = submitter?.getAttribute('formaction') || form.getAttribute('action') || window.location.href;
+    return pathFromAction(action);
 }
 
 function serverIdFromPath(path) {
@@ -101,6 +110,7 @@ function serverIdFromPath(path) {
 
 function localUuidFor(classification, serverId) {
     if (!serverId) return uuid();
+    if (classification.entity_name === "customers") return `server-${serverId}`;
     const prefix = SERVER_ENTITY_PREFIX[classification.entity_name] || classification.entity_type || classification.entity_name;
     return `server-${prefix}-${serverId}`;
 }
@@ -122,6 +132,13 @@ function operationTypeForPath(path) {
 }
 
 function classifyPath(path) {
+    // These workflows require their normal server view to validate/reverse
+    // existing effects. Capturing them as generic creates would duplicate data.
+    if (/^\/orders\/\d+\/update\/$/.test(path)
+        || /^\/finance\/transactions\/.*(?:update|delete)\/$/.test(path)
+        || /^\/purchases\/orders\/\d+\/(?:edit|discount|receive)\/$/.test(path)
+        || /^\/returns\/\d+\//.test(path)
+        || path === "/products/import/") return null;
     if (path.startsWith("/orders/")) return { entity_name: "sales", entity_type: "order", action_type: "create_invoice" };
     if (path.startsWith("/invoices/") && path.includes("/payments/add/")) return { entity_name: "cash", entity_type: "payment", action_type: "cash_transaction" };
     if (path.includes("/interactions/")) return null;
@@ -151,6 +168,8 @@ function showOfflineNotice(message, isError = false) {
         notice.style.borderRadius = "8px";
         notice.style.boxShadow = "0 8px 24px rgba(0,0,0,.16)";
         notice.style.fontWeight = "600";
+        notice.setAttribute("role", "status");
+        notice.setAttribute("aria-live", "polite");
         document.body.appendChild(notice);
     }
     notice.textContent = message;
@@ -272,6 +291,7 @@ function genericPayload(fields, path, localUuid, entityType, serverId = "") {
 
 async function applyOptimisticStockMutation(classification, payload) {
     if (classification.entity_name === "sales" && payload.items) {
+        if (payload.order?.document_type === 'quote' || payload.order?.action !== 'confirm') return;
         await Promise.all(payload.items.map((item) => updateStockQuantity({
             variant_id: item.variant_id,
             warehouse_id: item.warehouse_id,
@@ -298,12 +318,17 @@ async function applyOptimisticStockMutation(classification, payload) {
 }
 
 async function queueFormSubmission(form, submitter = null) {
-    const action = submitter?.formAction || form.action || window.location.href;
-    const path = pathFromAction(action);
+    const path = formPath(form, submitter);
     const classification = classifyPath(path);
-    if (!classification) return false;
+    if (!classification) throw new Error("هذه العملية تحتاج إلى اتصال بالإنترنت للتحقق من أثرها بأمان.");
+    if (classification.entity_name === 'sales' && form.querySelector('[name="draft_id"]')?.value) {
+        throw new Error('تعديل أو تأكيد فاتورة معلقة قائمة يحتاج إلى اتصال بالسيرفر.');
+    }
+    if (!await getMetadata("last_bootstrap_at")) throw new Error("افتح التطبيق أثناء الاتصال أولًا لتجهيز البيانات المحلية.");
 
     const fields = await serializeForm(form, submitter);
+    delete fields.csrfmiddlewaretoken;
+    delete fields._submission_token;
     const serverId = serverIdFromPath(path);
     const localUuid = localUuidFor(classification, serverId);
     const operationType = operationTypeForPath(path);
@@ -319,19 +344,21 @@ async function queueFormSubmission(form, submitter = null) {
     payload.original_url = path;
     payload.server_id = serverId || payload.server_id || "";
 
-    await applyOptimisticStockMutation(classification, payload);
     await queueEntityOperation(classification.entity_name, classification.action_type, payload, {
         entity_type: classification.entity_type,
         operation_type: operationType,
     });
+    // Queue persistence is authoritative. A failed local estimate must not
+    // encourage the user to submit an already-saved operation a second time.
+    await applyOptimisticStockMutation(classification, payload).catch(() => {});
     requestBackgroundSync();
     return true;
 }
 
 function shouldCaptureForm(form) {
-    const method = String(form.method || "get").toLowerCase();
+    const method = String(form.getAttribute('method') || "get").toLowerCase();
     if (method !== "post") return false;
-    const path = pathFromAction(form.action || window.location.href);
+    const path = formPath(form);
     if (path.startsWith("/accounts/") || path.startsWith("/admin/") || path.startsWith("/api/")) return false;
     return Boolean(classifyPath(path));
 }
@@ -346,11 +373,10 @@ function getField(form, nameOrId) {
 }
 
 function validateOfflineForm(form, submitter = null) {
-    const action = submitter?.formAction || form.action || window.location.href;
-    const path = pathFromAction(action);
+    const path = formPath(form, submitter);
 
     if (form.id === "order-form" && !submitter?.matches("[data-delete-draft]")) {
-        const items = parseItems(getField(form, "items_json")?.value || getField(form, "items-json")?.value);
+        const items = parseItemsJson(getField(form, "items_json")?.value || getField(form, "items-json")?.value);
         if (!items.length) {
             showOfflineNotice("أضف منتجا واحدا على الأقل قبل الحفظ أوفلاين.", true);
             return false;
@@ -410,6 +436,7 @@ function validateOfflineForm(form, submitter = null) {
 }
 
 async function handleQuickCustomer(options = {}) {
+    if (!await getMetadata("last_bootstrap_at")) throw new Error("جهّز التطبيق أثناء الاتصال أولًا.");
     const body = options.body instanceof FormData ? options.body : new FormData();
     const fields = await formDataToObject(body);
     const localUuid = uuid();
@@ -467,10 +494,10 @@ function submitNormally(form, submitter = null) {
     const hidden = [];
 
     if (submitter) {
-        if (submitter.hasAttribute("formaction")) form.action = submitter.formAction;
-        if (submitter.hasAttribute("formmethod")) form.method = submitter.formMethod;
-        if (submitter.hasAttribute("formenctype")) form.enctype = submitter.formEnctype;
-        if (submitter.hasAttribute("formtarget")) form.target = submitter.formTarget;
+        if (submitter.hasAttribute("formaction")) form.setAttribute('action', submitter.formAction);
+        if (submitter.hasAttribute("formmethod")) form.setAttribute('method', submitter.formMethod);
+        if (submitter.hasAttribute("formenctype")) form.setAttribute('enctype', submitter.formEnctype);
+        if (submitter.hasAttribute("formtarget")) form.setAttribute('target', submitter.formTarget);
         if (submitter.name) {
             const input = document.createElement("input");
             input.type = "hidden";
@@ -539,11 +566,9 @@ export async function handleJsonRequest(url, options = {}) {
 
 async function handleCapturedSubmit(form, submitter = null) {
     window.setTimeout(async () => {
-        pendingSubmissions.delete(form);
         try {
             if (!form.isConnected) return;
-            if (typeof form.reportValidity === "function" && !form.reportValidity()) return;
-            if (!validateOfflineForm(form, submitter)) return;
+            if (!submitter?.formNoValidate && typeof form.reportValidity === "function" && !form.reportValidity()) return;
 
             if (await isServerReachable()) {
                 window.SHUnsavedForms?.markSaved?.(form);
@@ -551,21 +576,36 @@ async function handleCapturedSubmit(form, submitter = null) {
                 return;
             }
 
+            if (form.dataset.offlineQueued === "true") {
+                showOfflineNotice("تم حفظ هذه البيانات محليًا بالفعل. عدّل البيانات قبل إنشاء عملية جديدة.");
+                return;
+            }
+            if (!validateOfflineForm(form, submitter)) return;
+
             const queued = await queueFormSubmission(form, submitter);
             if (queued) {
                 form.dataset.offlineQueued = "true";
                 window.SHUnsavedForms?.markSaved?.(form);
+                window.dispatchEvent(new CustomEvent('sh-sync-status', { detail: { state: 'pending' } }));
                 showOfflineNotice("تم الحفظ محليا. ستتم المزامنة تلقائيا عند عودة الاتصال.");
                 return;
             }
         } catch (error) {
             showOfflineNotice(`تعذر الحفظ المحلي: ${error.message || error}`, true);
+        } finally {
+            pendingSubmissions.delete(form);
         }
     }, 0);
 }
 
 document.addEventListener("submit", (event) => {
     const form = event.target;
+    if (form instanceof HTMLFormElement && !navigator.onLine && String(form.getAttribute('method')).toLowerCase() === "post"
+        && !classifyPath(formPath(form, event.submitter)) && /^(?:\/orders\/|\/invoices\/|\/finance\/|\/returns\/|\/products\/|\/purchases\/)/.test(formPath(form, event.submitter))) {
+        event.preventDefault();
+        showOfflineNotice("هذه العملية تحتاج إلى الاتصال بالإنترنت. البيانات في النموذج محفوظة حتى عودة الاتصال.", true);
+        return;
+    }
     if (!(form instanceof HTMLFormElement) || !shouldCaptureForm(form)) return;
 
     event.preventDefault();
@@ -573,6 +613,14 @@ document.addEventListener("submit", (event) => {
     pendingSubmissions.add(form);
     handleCapturedSubmit(form, event.submitter);
 }, true);
+document.addEventListener("input", (event) => {
+    const form = event.target?.form;
+    if (form) delete form.dataset.offlineQueued;
+});
+document.addEventListener("change", (event) => {
+    const form = event.target?.form;
+    if (form) delete form.dataset.offlineQueued;
+});
 
 window.addEventListener("online", () => {
     document.body.classList.remove("is-offline");
@@ -581,7 +629,7 @@ window.addEventListener("online", () => {
 
 window.addEventListener("offline", () => {
     document.body.classList.add("is-offline");
-    showOfflineNotice("Offline mode is active. New work will be queued locally.");
+    showOfflineNotice("أنت تعمل بدون اتصال. العمليات المدعومة تُحفظ محليًا ثم تُزامن عند عودة الإنترنت.");
 });
 
 if (!navigator.onLine) {

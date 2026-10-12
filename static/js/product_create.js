@@ -51,20 +51,13 @@
     async function postQuickCreate(item) {
         const payload = new FormData();
         item.fields(payload);
-        const response = await fetch(item.endpoint, {
+        const data = await window.SHHttp.json(item.endpoint, {
             method: "POST",
             headers: { "X-CSRFToken": getCookie("csrftoken") },
             credentials: "same-origin",
             body: payload,
         });
-        const contentType = response.headers.get("content-type") || "";
-        if (!contentType.includes("application/json")) {
-            throw new Error(response.redirected
-                ? "انتهت الجلسة. حدّث الصفحة ثم سجّل الدخول مجددًا."
-                : "تعذّر الاتصال بالخادم. حاول مرة أخرى.");
-        }
-        const data = await response.json();
-        if (!response.ok || !data.success) {
+        if (!data.success) {
             throw new Error(data.message || "تعذر الحفظ");
         }
         return data.data;

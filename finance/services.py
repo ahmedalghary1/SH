@@ -11,20 +11,21 @@ from audit.models import AuditLog
 from audit.services import log_audit
 
 from .models import CashAccount, PaymentTransaction
+from .validation import decimal_value
 
 
 CUSTOMER_RECEIPT_REFERENCE_PREFIX = 'RCP-'
 
 
 def _as_decimal(amount):
-    amount = Decimal(str(amount or 0))
+    amount = decimal_value(amount, max_digits=14)
     if amount <= 0:
         raise ValidationError('المبلغ يجب أن يكون أكبر من صفر')
     return amount
 
 
 def _money(amount):
-    return Decimal(str(amount or 0))
+    return decimal_value(amount)
 
 
 def customer_ledger_delta(customer):
@@ -658,31 +659,53 @@ def record_order_sale_payment(*, order, user, cash_account=None, notes='', trans
 @transaction.atomic
 def record_order_refund(*, order, user, cash_account=None, amount=None, notes=''):
     order = order.__class__.objects.select_for_update().get(pk=order.pk)
-    incoming = PaymentTransaction.objects.filter(
+    payments = list(PaymentTransaction.objects.select_for_update().filter(
         related_order=order,
+    ).order_by('pk'))
+    receipt_references = {
+        row.reference for row in payments
+        if not row.affects_cash and (row.reference or '').startswith(CUSTOMER_RECEIPT_REFERENCE_PREFIX)
+    }
+    # Receipt allocations did not move cash a second time, but their share of
+    # a real customer receipt must be refunded when its invoice is cancelled.
+    verified_receipts = set(PaymentTransaction.objects.filter(
+        reference__in=receipt_references,
+        related_order__isnull=True,
+        related_customer_id=order.customer_id,
         transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
         direction=PaymentTransaction.DIRECTION_IN,
-    ).aggregate(v=Sum('amount'))['v'] or Decimal('0')
-    outgoing = PaymentTransaction.objects.filter(
-        related_order=order,
-        transaction_type=PaymentTransaction.TYPE_REFUND,
-        direction=PaymentTransaction.DIRECTION_OUT,
-    ).aggregate(v=Sum('amount'))['v'] or Decimal('0')
-    refundable = incoming - outgoing
-    amount_to_refund = Decimal(str(amount)) if amount is not None else refundable
-    amount_to_refund = min(amount_to_refund, refundable)
-    if amount_to_refund <= 0:
-        return None
-    return record_transaction(
-        transaction_type=PaymentTransaction.TYPE_REFUND,
-        direction=PaymentTransaction.DIRECTION_OUT,
-        amount=amount_to_refund,
-        cash_account=cash_account,
-        related_order=order,
-        related_customer=order.customer,
-        notes=notes or f'رد تلقائي لإلغاء الطلب {order.order_number}',
-        created_by=user,
+        affects_cash=True,
+    ).values_list('reference', 'cash_account_id'))
+    balances = {}
+    for row in payments:
+        current = balances.get(row.cash_account_id, Decimal('0'))
+        if row.direction == PaymentTransaction.DIRECTION_IN and row.transaction_type in {
+            PaymentTransaction.TYPE_CUSTOMER_PAYMENT, PaymentTransaction.TYPE_SALES_REP_COLLECTION,
+        } and (row.affects_cash or (row.reference, row.cash_account_id) in verified_receipts):
+            current += row.amount
+        elif row.affects_cash and row.direction == PaymentTransaction.DIRECTION_OUT and row.transaction_type == PaymentTransaction.TYPE_REFUND:
+            current -= row.amount
+        balances[row.cash_account_id] = current
+    remaining = decimal_value(amount, max_digits=14) if amount is not None else sum(
+        (max(balance, Decimal('0')) for balance in balances.values()), Decimal('0'),
     )
+    last_refund = None
+    for account_id, balance in sorted(balances.items()):
+        refund = min(max(balance, Decimal('0')), remaining)
+        if refund <= 0:
+            continue
+        last_refund = record_transaction(
+            transaction_type=PaymentTransaction.TYPE_REFUND,
+            direction=PaymentTransaction.DIRECTION_OUT,
+            amount=refund,
+            cash_account=cash_account or CashAccount.objects.get(pk=account_id),
+            related_order=order,
+            related_customer=order.customer,
+            notes=notes or f'رد تلقائي لإلغاء الطلب {order.order_number}',
+            created_by=user,
+        )
+        remaining -= refund
+    return last_refund
 
 
 @transaction.atomic
@@ -694,9 +717,9 @@ def collect_order_payment(
     from customers.models import Customer
 
     order = Order.objects.select_for_update().get(pk=order.pk)
-    if order.status == Order.STATUS_DRAFT or order.document_type == Order.DOCUMENT_QUOTE:
+    if order.status in {Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED} or order.document_type == Order.DOCUMENT_QUOTE:
         raise ValidationError('لا يمكن تسجيل قبض على فاتورة معلقة أو عرض سعر')
-    amount = Decimal(str(amount or 0))
+    amount = decimal_value(amount, max_digits=14)
     if amount == 0:
         raise ValidationError('مبلغ التحصيل لا يمكن أن يساوي صفر')
     if amount < 0:
@@ -952,7 +975,7 @@ def transfer_between_accounts(*, from_account, to_account, amount, user, notes='
 
 @transaction.atomic
 def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, order=None, customer=None, notes='', transaction_date=None):
-    amount = Decimal(str(amount or 0))
+    amount = decimal_value(amount, max_digits=14)
     if amount == 0:
         raise ValidationError('مبلغ التحصيل لا يمكن أن يساوي صفر')
     if amount < 0:

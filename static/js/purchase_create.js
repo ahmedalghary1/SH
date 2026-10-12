@@ -1,6 +1,7 @@
 (function () {
     const form = document.querySelector("[data-purchase-direct-form]");
-    if (!form) return;
+    if (!form || form.dataset.purchaseCreateReady) return;
+    form.dataset.purchaseCreateReady = '1';
 
     function field(id) {
         return document.getElementById(id);
@@ -14,11 +15,13 @@
     const totalCell = form.querySelector("[data-purchase-total]");
     const discountType = field("id_discount_type");
     const discountValue = field("id_discount_value");
+    const paidAmount = field("id_paid_amount");
     const addItemButton = form.querySelector("[data-add-purchase-item]");
     let editingIndex = null;
     let items = [];
     try {
         items = itemsJson?.value ? JSON.parse(itemsJson.value || "[]") : [];
+        if (!Array.isArray(items)) items = [];
     } catch (error) {
         items = [];
     }
@@ -76,14 +79,22 @@
         const subtotal = items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_cost || 0), 0);
         const entered = Math.max(0, Number(discountValue?.value || 0));
         const discount = discountType?.value === 'percent' ? subtotal * Math.min(entered, 100) / 100 : Math.min(entered, subtotal);
-        form.querySelector('[data-subtotal]').textContent = money(subtotal);
-        form.querySelector('[data-discount]').textContent = money(discount);
-        form.querySelector('[data-net]').textContent = money(subtotal - discount);
+        const net = subtotal - discount;
+        const paid = Math.max(0, Number(paidAmount?.value || 0));
+        [
+            ['[data-subtotal]', subtotal], ['[data-discount]', discount], ['[data-net]', net],
+            ['[data-purchase-summary-total]', net], ['[data-purchase-summary-paid]', paid],
+            ['[data-purchase-summary-remaining]', Math.max(0, net - paid)],
+        ].forEach(([selector, value]) => {
+            const node = form.querySelector(selector);
+            if (node) node.textContent = money(value);
+        });
         updateItemsJson();
     }
 
     discountType?.addEventListener('change', renderItems);
     discountValue?.addEventListener('input', renderItems);
+    paidAmount?.addEventListener('input', renderItems);
 
     function requireAny(message, ...inputs) {
         const hasValue = inputs.some((input) => String(input?.value || "").trim());
@@ -152,16 +163,16 @@
         if (productVariant) productVariant.value = "";
         if (quantity) quantity.value = "1";
         if (unitCost) unitCost.value = "";
+        productVariant?.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     async function postForm(endpoint, payload) {
-        const response = await fetch(endpoint, {
+        const data = await window.SHHttp.json(endpoint, {
             method: "POST",
             headers: { "X-CSRFToken": getCookie("csrftoken") },
             body: payload,
         });
-        const data = await response.json();
-        if (!response.ok || !data.success) {
+        if (!data.success) {
             throw new Error(data.message || "تعذر الحفظ");
         }
         return data.data;
@@ -275,7 +286,13 @@
         const removeItem = event.target.closest("[data-remove-purchase-item]");
         if (removeItem) {
             event.preventDefault();
-            items.splice(Number(removeItem.dataset.removePurchaseItem), 1);
+            const removedIndex = Number(removeItem.dataset.removePurchaseItem);
+            if (!Number.isInteger(removedIndex) || !items[removedIndex] || Number(items[removedIndex].received_quantity || 0) > 0) return;
+            items.splice(removedIndex, 1);
+            if (editingIndex === removedIndex) {
+                editingIndex = null;
+                if (addItemButton) addItemButton.textContent = 'إضافة للفاتورة';
+            } else if (editingIndex !== null && removedIndex < editingIndex) editingIndex -= 1;
             renderItems();
             return;
         }
@@ -309,7 +326,13 @@
         }
     });
 
-    form.addEventListener("submit", () => {
+    form.addEventListener("submit", (event) => {
+        if (editingIndex !== null) {
+            event.preventDefault();
+            window.alert('حدّث الصنف الجاري تعديله قبل تسجيل الشراء.');
+            addItemButton?.focus();
+            return;
+        }
         updateItemsJson();
     });
 

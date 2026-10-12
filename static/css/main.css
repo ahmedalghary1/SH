@@ -7416,3 +7416,54 @@ textarea:focus {
         max-height: 94dvh;
     }
 }
+
+/* Keep workspace controls visually compact while making both actions keyboard accessible. */
+.workspace-tab {
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+}
+.workspace-tab-open,
+.workspace-tab-close {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    padding: .15rem .25rem;
+    min-height: 1.75rem;
+}
+.workspace-tab-open {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.workspace-tab-close {
+    flex: 0 0 auto;
+    min-width: 1.75rem;
+    border-radius: 50%;
+}
+.workspace-tab-close:hover {
+    background: rgba(127, 127, 127, .18);
+}
+.combo-option.is-keyboard-active {
+    background: var(--accent-soft, #e8f1ff);
+    outline: 2px solid var(--accent-color, #2563eb);
+    outline-offset: -2px;
+}
+[data-pwa-notice] .btn {
+    display: block;
+    margin-top: .6rem;
+}
+dialog.sync-queue-panel {
+    width: min(640px, calc(100vw - 32px));
+    max-height: min(80vh, 80dvh);
+    overflow: auto;
+    border: 1px solid #d8e0ea;
+    border-radius: 8px;
+    padding: 22px;
+    color: #13263d;
+}
+dialog.sync-queue-panel::backdrop { background: rgb(10 25 45 / 45%); }
+.sync-queue-row { padding: 14px 0; border-bottom: 1px solid #d8e0ea; overflow-wrap: anywhere; }
+.sync-queue-row p { margin: 6px 0; }

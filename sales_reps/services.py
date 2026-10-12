@@ -8,6 +8,7 @@ from django.utils import timezone
 from accounts.models import User
 from finance.models import CashAccount, PaymentTransaction
 from finance.services import record_customer_balance_adjustment, record_transaction
+from finance.validation import decimal_value, integer_value
 from inventory.models import Stock, StockMovement, Warehouse
 from inventory.services import sale_stock, transfer_stock
 from orders.models import Order
@@ -99,7 +100,7 @@ def restore_sales_rep_assignments(*, sales_rep, product_variant, quantity):
 @transaction.atomic
 def assign_stock_to_sales_rep(*, sales_rep, product_variant, source_warehouse, quantity, assigned_by, notes=''):
     _validate_sales_rep(sales_rep)
-    quantity = int(quantity)
+    quantity = integer_value(quantity)
     if quantity <= 0:
         raise ValidationError('كمية التسليم يجب أن تكون أكبر من صفر')
     rep_warehouse = get_or_create_sales_rep_warehouse(sales_rep)
@@ -139,7 +140,7 @@ def assign_stock_to_sales_rep(*, sales_rep, product_variant, source_warehouse, q
 
 @transaction.atomic
 def return_stock_from_sales_rep(*, assignment, quantity, user, notes=''):
-    quantity = int(quantity)
+    quantity = integer_value(quantity)
     if quantity <= 0:
         raise ValidationError('كمية الرجوع يجب أن تكون أكبر من صفر')
     assignment = SalesRepStockAssignment.objects.select_for_update().select_related('source_warehouse', 'product_variant').get(pk=assignment.pk)
@@ -166,7 +167,7 @@ def return_stock_from_sales_rep(*, assignment, quantity, user, notes=''):
 
 @transaction.atomic
 def record_sales_rep_sale(*, assignment, quantity, user, order=None, notes=''):
-    quantity = int(quantity)
+    quantity = integer_value(quantity)
     if quantity <= 0:
         raise ValidationError('كمية البيع يجب أن تكون أكبر من صفر')
     assignment = SalesRepStockAssignment.objects.select_for_update().select_related('product_variant').get(pk=assignment.pk)
@@ -193,7 +194,7 @@ def record_sales_rep_sale(*, assignment, quantity, user, order=None, notes=''):
 @transaction.atomic
 def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, customer=None, order=None, notes=''):
     _validate_sales_rep(sales_rep)
-    amount = Decimal(str(amount or 0))
+    amount = decimal_value(amount, max_digits=14)
     if amount == 0:
         raise ValidationError('مبلغ التحصيل لا يمكن أن يساوي صفر')
     if order:
@@ -299,7 +300,7 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, c
 @transaction.atomic
 def handover_sales_rep_cash(*, sales_rep, amount, target_cash_account, user, source_cash_account=None, notes=''):
     _validate_sales_rep(sales_rep)
-    amount = Decimal(str(amount or 0))
+    amount = decimal_value(amount, max_digits=14)
     if amount <= 0:
         raise ValidationError('مبلغ التسليم يجب أن يكون أكبر من صفر')
     source_cash_account = source_cash_account or get_or_create_sales_rep_cash_account(sales_rep)

@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db.models import F, Q
 from django.http import JsonResponse
+from finance.validation import positive_id
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.views.decorators.http import require_GET
@@ -114,7 +115,7 @@ class StockListView(RoleRequiredMixin, ExportListMixin, ListView):
             qs = qs.filter(warehouse__in=self.get_allowed_warehouses())
         warehouse_id = self.request.GET.get('warehouse')
         if warehouse_id:
-            if warehouse_id.isdigit() and self.get_allowed_warehouses().filter(pk=warehouse_id).exists():
+            if positive_id(warehouse_id) is not None and self.get_allowed_warehouses().filter(pk=warehouse_id).exists():
                 qs = qs.filter(warehouse_id=warehouse_id)
             else:
                 qs = qs.none()
@@ -183,7 +184,7 @@ class StockInView(WarehouseRequiredMixin, FormView):
             messages.success(self.request, 'تم تسجيل دخول المخزون')
             return redirect(self.success_url)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
@@ -206,7 +207,7 @@ class StockOutView(WarehouseRequiredMixin, FormView):
             messages.success(self.request, 'تم تسجيل خروج المخزون')
             return redirect(self.success_url)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
@@ -221,7 +222,7 @@ class StockTransferView(WarehouseRequiredMixin, FormView):
             messages.success(self.request, 'تم تحويل المخزون')
             return redirect(self.success_url)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
@@ -243,7 +244,7 @@ class RepresentativeIssueView(WarehouseRequiredMixin, FormView):
             messages.success(self.request, 'تم تسليم الكمية للمندوب')
             return redirect(self.success_url)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
@@ -272,7 +273,7 @@ class RepresentativeReturnView(WarehouseRequiredMixin, FormView):
             messages.success(self.request, 'تم استلام الكمية المرتجعة من المندوب')
             return redirect(self.success_url)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
@@ -287,15 +288,17 @@ class StockAdjustmentView(ManagerRequiredMixin, FormView):
             messages.success(self.request, 'تمت تسوية المخزون')
             return redirect(self.success_url)
         except ValidationError as exc:
-            form.add_error(None, exc.message)
+            form.add_error(None, '; '.join(exc.messages))
             return self.form_invalid(form)
 
 
 @require_GET
 @role_required('manager', 'sales', 'warehouse')
 def ajax_check_stock(request):
-    variant_id = request.GET.get('variant_id')
-    warehouse_id = request.GET.get('warehouse_id')
+    variant_id = positive_id(request.GET.get('variant_id'))
+    warehouse_id = positive_id(request.GET.get('warehouse_id'))
+    if variant_id is None or warehouse_id is None:
+        return JsonResponse({'success': False, 'message': 'اختر صنفًا ومخزنًا صحيحين'}, status=400)
     stock = Stock.objects.filter(variant_id=variant_id, warehouse_id=warehouse_id).first()
     quantity = stock.quantity if stock else 0
     return JsonResponse({'success': True, 'message': 'تم جلب الكمية', 'data': {'quantity': quantity}})
@@ -303,7 +306,9 @@ def ajax_check_stock(request):
 @require_GET
 @role_required('manager', 'sales', 'warehouse')
 def ajax_variant_warehouses(request):
-    variant_id = request.GET.get('variant_id')
+    variant_id = positive_id(request.GET.get('variant_id'))
+    if variant_id is None:
+        return JsonResponse({'success': False, 'message': 'اختر صنفًا صحيحًا'}, status=400)
     scope = request.GET.get('scope', 'all')
     stocks = Stock.objects.filter(
         variant_id=variant_id,

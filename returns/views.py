@@ -121,6 +121,7 @@ class SimpleReturnCreateView(SalesRequiredMixin, FormView):
             rows.append({
                 'item': item,
                 'available_quantity': available_quantity,
+                'returned_quantity': item.quantity - available_quantity,
                 'quantity_value': posted_quantity if posted_quantity is not None else available_quantity,
                 'selected': self.request.POST.get(f'selected_{item.pk}') == 'on' if is_post else False,
                 'condition_value': self.request.POST.get(f'condition_{item.pk}', SalesReturnItem.CONDITION_GOOD),
@@ -243,6 +244,7 @@ class SimpleExchangeCreateView(SalesRequiredMixin, FormView):
             rows.append({
                 'item': item,
                 'available_quantity': available_quantity,
+                'returned_quantity': item.quantity - available_quantity,
                 'quantity_value': posted_quantity if posted_quantity is not None else available_quantity,
                 'selected': self.request.POST.get(f'selected_{item.pk}') == 'on' if is_post else False,
                 'unit_price': unit_price,
@@ -412,6 +414,7 @@ class SalesReturnCreateView(SalesRequiredMixin, FormView):
             rows.append({
                 'item': item,
                 'available_quantity': available_quantity,
+                'returned_quantity': item.quantity - available_quantity,
                 'quantity_value': posted_quantity if posted_quantity is not None else available_quantity,
                 'selected': self.request.POST.get(f'selected_{item.pk}') == 'on' if is_post else False,
                 'condition_value': self.request.POST.get(f'condition_{item.pk}', SalesReturnItem.CONDITION_GOOD),

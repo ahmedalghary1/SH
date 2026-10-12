@@ -1,4 +1,5 @@
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -74,4 +75,5 @@ def shape_arabic(value):
 
 
 def arabic_paragraph(value, style):
-    return Paragraph(shape_arabic(value), style)
+    # Business data is plain text, never ReportLab markup.
+    return Paragraph(escape(shape_arabic(value)), style)

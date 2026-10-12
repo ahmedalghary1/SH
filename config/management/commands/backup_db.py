@@ -24,11 +24,12 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
 from django.conf import settings
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 
 def _get_fernet():
@@ -87,6 +88,8 @@ class Command(BaseCommand):
         output_dir = options['output'] or 'backups'
         do_verify = options['verify']
         do_restore_test = options['restore_test']
+        if keep_count < 1:
+            raise CommandError('--keep must be at least 1; no backups were changed.')
 
         # Create backup directory
         backup_dir = Path(settings.BASE_DIR) / output_dir
@@ -97,7 +100,7 @@ class Command(BaseCommand):
             sys.exit(1)
 
         # Determine engine
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
         db_engine = settings.DATABASES['default']['ENGINE']
 
         try:
@@ -127,9 +130,6 @@ class Command(BaseCommand):
         enc_note = ' (encrypted)' if encrypted else ''
         self.stdout.write(self.style.SUCCESS(f'Backup created: {backup_file}{enc_note}'))
 
-        # Rotate old backups
-        self._rotate_backups(backup_dir, keep_count, db_engine, encrypted)
-
         # --verify
         if do_verify:
             self._verify_backup(backup_file, fernet)
@@ -142,13 +142,15 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(
                     '--restore-test is only supported for SQLite databases.'
                 ))
+        # A failed verification must never remove earlier valid backups.
+        self._rotate_backups(backup_dir, keep_count, db_engine, encrypted)
 
     # ------------------------------------------------------------------ #
     #  Backup methods                                                      #
     # ------------------------------------------------------------------ #
 
     def _backup_sqlite(self, raw_file, fernet, final_file):
-        """Backup SQLite database by copying the file, then optionally encrypting."""
+        """Take a consistent SQLite snapshot, including committed WAL pages."""
         db_name = settings.DATABASES['default']['NAME']
         db_path = Path(db_name) if not isinstance(db_name, Path) else db_name
 
@@ -157,9 +159,11 @@ class Command(BaseCommand):
             return False
 
         try:
-            shutil.copy2(db_path, raw_file)
-        except OSError as exc:
-            self.stderr.write(self.style.ERROR(f'Failed to copy SQLite file: {exc}'))
+            with closing(sqlite3.connect(db_path.resolve().as_uri() + '?mode=ro', uri=True)) as source:
+                with closing(sqlite3.connect(str(raw_file))) as destination:
+                    source.backup(destination)
+        except (OSError, sqlite3.Error) as exc:
+            self.stderr.write(self.style.ERROR(f'Failed to back up SQLite: {exc}'))
             return False
 
         if fernet:

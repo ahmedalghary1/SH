@@ -1,6 +1,6 @@
 import { getAll, STORE_NAMES } from "./db.js";
 
-const PENDING_STATUSES = new Set(["pending", "failed"]);
+const PENDING_STATUSES = new Set(["pending", "failed", "conflict"]);
 let renderScheduled = false;
 
 function text(value, fallback = "-") {
@@ -123,6 +123,7 @@ function paymentLabel(value) {
 }
 
 function statusLabel(item) {
+    if (["conflict", "failed_conflict"].includes(item.status)) return "تحتاج مراجعة";
     return item.status === "failed" ? "تعذر المزامنة" : "قيد المزامنة";
 }
 
