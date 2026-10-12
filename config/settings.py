@@ -13,6 +13,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 def load_dotenv(path):
     if not path.exists():
         return
+    file_values = {}
     for raw_line in path.read_text(encoding='utf-8').splitlines():
         line = raw_line.strip()
         if not line or line.startswith('#') or '=' not in line:
@@ -20,7 +21,18 @@ def load_dotenv(path):
         key, value = line.split('=', 1)
         key = key.strip()
         value = value.strip().strip('"').strip("'")
+        file_values[key] = value
         os.environ.setdefault(key, value)
+    # Linux already exports USER for the SSH/Passenger account. A private
+    # .env USER must remain usable as a legacy database username, without
+    # overwriting that operating-system variable. Modern DB/POSTGRES values
+    # from the process or file keep their existing precedence.
+    for legacy, scoped in {
+        'ENGINE': 'DB_ENGINE', 'NAME': 'DB_NAME', 'USER': 'DB_USER',
+        'PASSWORD': 'DB_PASSWORD', 'HOST': 'DB_HOST', 'PORT': 'DB_PORT',
+    }.items():
+        if file_values.get(legacy, '').strip() and not os.environ.get(scoped, '').strip():
+            os.environ[scoped] = file_values[legacy]
 
 
 def env_bool(name, default=False):

@@ -1,4 +1,5 @@
 import io
+import os
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -26,6 +27,42 @@ from config.exports import export_csv_response, export_xlsx_response
 
 
 class ConfigurationRegressionTests(SimpleTestCase):
+    def test_legacy_database_file_does_not_use_linux_login_user(self):
+        from config.settings import load_dotenv
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'USER': 'ssh-account'}, clear=True):
+            env_file = Path(directory) / '.env'
+            env_file.write_text('ENGINE=django.db.backends.postgresql\nNAME=existing_database\nUSER=database_role\nPASSWORD=private-test-only\nHOST=127.0.0.1\nPORT=5432\n', encoding='utf-8')
+            load_dotenv(env_file)
+            config = database_config(os.environ, directory)
+            self.assertEqual(config['USER'], 'database_role')
+            self.assertEqual(config['NAME'], 'existing_database')
+            self.assertEqual(config['PASSWORD'], 'private-test-only')
+            self.assertEqual(os.environ['USER'], 'ssh-account')
+
+    def test_explicit_modern_process_database_values_override_legacy_file(self):
+        from config.settings import load_dotenv
+        process = {'USER': 'ssh-account', 'DB_ENGINE': 'postgres', 'POSTGRES_DB': 'current_database',
+                   'POSTGRES_USER': 'current_role', 'POSTGRES_PASSWORD': 'current-test-only', 'DB_HOST': 'db.internal'}
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, process, clear=True):
+            env_file = Path(directory) / '.env'
+            env_file.write_text('NAME=file_database\nUSER=file_role\nPASSWORD=file-test-only\nHOST=localhost\n', encoding='utf-8')
+            load_dotenv(env_file)
+            config = database_config(os.environ, directory)
+            self.assertEqual(config['USER'], 'current_role')
+            self.assertEqual(config['NAME'], 'current_database')
+            self.assertEqual(config['PASSWORD'], 'current-test-only')
+            self.assertEqual(config['HOST'], 'db.internal')
+
+    def test_modern_file_database_values_override_legacy_file_aliases(self):
+        from config.settings import load_dotenv
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'USER': 'ssh-account'}, clear=True):
+            env_file = Path(directory) / '.env'
+            env_file.write_text('DB_ENGINE=postgres\nNAME=legacy_database\nUSER=legacy_role\nPOSTGRES_DB=current_database\nPOSTGRES_USER=current_role\nPOSTGRES_PASSWORD=current-test-only\n', encoding='utf-8')
+            load_dotenv(env_file)
+            config = database_config(os.environ, directory)
+            self.assertEqual(config['USER'], 'current_role')
+            self.assertEqual(config['NAME'], 'current_database')
+
     def test_backup_includes_committed_wal_data(self):
         from config.management.commands.backup_db import Command
         with tempfile.TemporaryDirectory() as directory:
