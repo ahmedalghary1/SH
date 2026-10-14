@@ -1,62 +1,124 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
+{% load static %}
 {% block title %}كشف حساب عميل{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/customer-statement.css' %}">{% endblock %}
 {% block content %}
-<div class="page-head"><h1>كشف حساب عميل</h1></div>
-<form class="card filter-form" method="get">
-    <label><span>رقم العميل</span><input type="number" name="customer" value="{{ customer_id }}"></label>
-    <button class="btn btn-primary" type="submit">عرض</button>
-</form>
-{% if customer %}
-<div class="page-actions">
-    <a class="btn btn-primary" href="{% url 'customers:statement_export' customer.pk 'pdf' %}">تصدير PDF</a>
-    <a class="btn btn-primary" href="{% url 'customers:statement_export' customer.pk 'xlsx' %}">تصدير Excel</a>
-</div>
-<section class="card">
-    <h2>بيانات العميل</h2>
-    <div class="detail-grid">
-        <div><span>رقم العميل</span><strong>{{ customer.pk }}</strong></div>
-        <div><span>اسم العميل</span><strong>{{ customer.name }}</strong></div>
-        <div><span>نوع العميل</span><strong>{{ customer.get_customer_type_display }}</strong></div>
-        <div><span>الهاتف</span><strong>{{ customer.phone|default:'-' }}</strong></div>
-        <div><span>الشركة</span><strong>{{ customer.company_name|default:'-' }}</strong></div>
-        <div><span>الرقم الضريبي</span><strong>{{ customer.tax_number|default:'-' }}</strong></div>
-        <div><span>العنوان</span><strong>{{ customer.address|default:'-' }}</strong></div>
-        <div><span>حد الائتمان</span><strong>{{ customer.credit_limit }}</strong></div>
-        <div><span>المسؤول</span><strong>{{ customer.created_by|default:'-' }}</strong></div>
-        <div><span>تاريخ ووقت الإضافة</span><strong>{{ customer.created_at|date:'Y-m-d H:i' }}</strong></div>
-        <div><span>الحالة</span><strong>{% if customer.is_active %}نشط{% else %}متوقف{% endif %}</strong></div>
-    </div>
-</section>
-<div class="stats-grid">
-    <div class="stat-card"><span>رصيد العميل الحالي</span><strong>{{ current_balance }}</strong></div>
-    <div class="stat-card"><span>رصيد فواتير مفتوحة</span><strong>{{ orders_balance }}</strong></div>
-    <div class="stat-card"><span>رصيد افتتاحي متبقٍ</span><strong>{{ remaining_opening_balance }}</strong></div>
-    <div class="stat-card"><span>رصيد سابق في الكشف</span><strong>{{ statement_opening_balance }}</strong></div>
-    <div class="stat-card"><span>إجمالي عليه</span><strong>{{ total_debit }}</strong></div>
-    <div class="stat-card"><span>إجمالي له</span><strong>{{ total_credit }}</strong></div>
-</div>
-{% elif customer_id %}
-<div class="card">
-    <p>لا يوجد عميل بهذا الرقم.</p>
-</div>
-{% endif %}
-<div class="table-wrap card">
-    <table>
-        <thead><tr><th>التاريخ</th><th>نوع الحركة</th><th>البيان</th><th>عليه</th><th>له</th><th>الرصيد</th></tr></thead>
-        <tbody>
-        {% for entry in statement %}
-            <tr>
-                <td>{{ entry.date|date:'Y-m-d' }}</td>
-                <td>{{ entry.type }}</td>
-                <td>{{ entry.description }}</td>
-                <td>{% if entry.debit %}{{ entry.debit }}{% endif %}</td>
-                <td>{% if entry.credit %}{{ entry.credit }}{% endif %}</td>
-                <td>{{ entry.balance }}</td>
-            </tr>
-        {% empty %}
-            <tr><td colspan="6">لا توجد حركات لهذا الاختيار</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
+<div class="customer-statement">
+    <header class="statement-head">
+        <div>
+            <span class="statement-eyebrow">الحسابات · العملاء</span>
+            <h1>كشف حساب العميل</h1>
+            <p>ملخص الرصيد وسجل الحركات المالية للعميل.</p>
+        </div>
+        {% if customer %}
+        <div class="statement-actions no-print">
+            <a class="btn btn-light" href="{% url 'customers:detail' customer.pk %}">ملف العميل</a>
+            <button class="btn btn-light" type="button" onclick="window.print()">طباعة</button>
+            <a class="btn btn-light" href="{% url 'customers:statement_export' customer.pk 'xlsx' %}">Excel</a>
+            <a class="btn btn-primary" href="{% url 'customers:statement_export' customer.pk 'pdf' %}">تحميل PDF</a>
+        </div>
+        {% endif %}
+    </header>
+
+    <form class="card statement-picker no-print" method="get" data-customer-picker data-search-url="{% url 'customers:ajax_search' %}">
+        <div class="statement-picker-copy">
+            <strong>اختيار العميل</strong>
+            <span>ابحث بالاسم أو رقم الهاتف، أو أدخل رقم العميل مباشرة.</span>
+        </div>
+        <div class="statement-picker-fields">
+            <div class="statement-search-field">
+                <label for="statement-customer-search">اسم العميل أو الهاتف</label>
+                <input id="statement-customer-search" type="search" autocomplete="off" placeholder="ابحث عن عميل..." value="{% if customer %}{{ customer.name }}{% endif %}" aria-controls="statement-customer-results" aria-expanded="false">
+                <div id="statement-customer-results" class="statement-search-results" hidden></div>
+            </div>
+            <div class="statement-id-field">
+                <label for="statement-customer-id">رقم العميل</label>
+                <input id="statement-customer-id" type="number" min="1" name="customer" value="{{ customer_id }}" required inputmode="numeric">
+            </div>
+            <button class="btn btn-primary" type="submit">عرض الكشف</button>
+        </div>
+    </form>
+
+    {% if customer %}
+    <section class="statement-identity card" aria-labelledby="statement-customer-name">
+        <div class="statement-identity-main">
+            <div class="statement-avatar" aria-hidden="true">{{ customer.name|slice:':1' }}</div>
+            <div>
+                <span class="statement-eyebrow">كشف حساب العميل #{{ customer.pk }}</span>
+                <h2 id="statement-customer-name">{{ customer.name }}</h2>
+                <div class="statement-tags">
+                    <span>{{ customer.get_customer_type_display }}</span>
+                    <span class="{% if customer.is_active %}is-active{% else %}is-inactive{% endif %}">{% if customer.is_active %}نشط{% else %}متوقف{% endif %}</span>
+                    {% if customer.company_name %}<span>{{ customer.company_name }}</span>{% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="statement-identity-meta">
+            <div><span>الهاتف</span><strong>{{ customer.phone|default:'—' }}</strong></div>
+            <div><span>الرقم الضريبي</span><strong>{{ customer.tax_number|default:'—' }}</strong></div>
+            <div><span>حد الائتمان</span><strong class="statement-number">{{ customer.credit_limit|floatformat:"2u" }}</strong></div>
+        </div>
+    </section>
+
+    <section class="statement-summary" aria-label="ملخص كشف الحساب">
+        <div class="statement-balance card">
+            <span>الرصيد الحالي</span>
+            <strong class="statement-number">{{ current_balance|floatformat:"2u" }}</strong>
+            <small>{% if current_balance > 0 %}مستحق على العميل{% elif current_balance < 0 %}رصيد لصالح العميل{% else %}الحساب مسدد{% endif %}</small>
+        </div>
+        <div class="statement-metrics">
+            <div class="statement-metric card"><span>إجمالي عليه</span><strong class="statement-number">{{ total_debit|floatformat:"2u" }}</strong></div>
+            <div class="statement-metric card"><span>إجمالي له</span><strong class="statement-number">{{ total_credit|floatformat:"2u" }}</strong></div>
+            <div class="statement-metric card"><span>رصيد فواتير مفتوحة</span><strong class="statement-number">{{ orders_balance|floatformat:"2u" }}</strong></div>
+            <div class="statement-metric card"><span>رصيد افتتاحي متبق</span><strong class="statement-number">{{ remaining_opening_balance|floatformat:"2u" }}</strong></div>
+        </div>
+    </section>
+
+    <section class="statement-ledger card" aria-labelledby="statement-ledger-heading">
+        <div class="statement-section-head">
+            <div><span class="statement-eyebrow">سجل مالي</span><h2 id="statement-ledger-heading">حركات الحساب</h2></div>
+            <span class="statement-count">{{ statement|length }} حركة</span>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th scope="col">التاريخ</th><th scope="col">نوع الحركة</th><th scope="col">البيان</th><th scope="col" class="amount">عليه</th><th scope="col" class="amount">له</th><th scope="col" class="amount">الرصيد</th></tr></thead>
+                <tbody>
+                {% for entry in statement %}
+                    <tr>
+                        <td class="statement-date">{{ entry.date|date:'Y-m-d' }}</td>
+                        <td><span class="statement-type">{{ entry.type }}</span></td>
+                        <td class="statement-description">{% if entry.order %}<a href="{% url 'orders:detail' entry.order.pk %}">{{ entry.description }}</a>{% else %}{{ entry.description }}{% endif %}</td>
+                        <td class="amount statement-number">{% if entry.debit %}{{ entry.debit|floatformat:"2u" }}{% else %}—{% endif %}</td>
+                        <td class="amount statement-number">{% if entry.credit %}{{ entry.credit|floatformat:"2u" }}{% else %}—{% endif %}</td>
+                        <td class="amount statement-number statement-running-balance">{{ entry.balance|floatformat:"2u" }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6" class="statement-empty">لا توجد حركات مالية لهذا العميل حتى الآن.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if statement %}
+        <div class="statement-ledger-foot">
+            <span>الرصيد السابق في الكشف: <strong class="statement-number">{{ statement_opening_balance|floatformat:"2u" }}</strong></span>
+            <span>الرصيد الختامي: <strong class="statement-number">{{ current_balance|floatformat:"2u" }}</strong></span>
+        </div>
+        {% endif %}
+    </section>
+
+    <details class="statement-more card">
+        <summary>بيانات العميل الإضافية</summary>
+        <div class="statement-details">
+            <div><span>العنوان</span><strong>{{ customer.address|default:'—' }}</strong></div>
+            <div><span>المسؤول</span><strong>{{ customer.created_by|default:'—' }}</strong></div>
+            <div><span>تاريخ الإضافة</span><strong>{{ customer.created_at|date:'Y-m-d H:i' }}</strong></div>
+        </div>
+    </details>
+    {% elif customer_id %}
+    <div class="statement-placeholder card" role="status"><h2>لم يتم العثور على العميل</h2><p>راجع رقم العميل ثم حاول مرة أخرى.</p></div>
+    {% else %}
+    <div class="statement-placeholder card"><h2>ابدأ باختيار عميل</h2><p>ستظهر هنا أرصدته وجميع حركات حسابه بعد عرض الكشف.</p></div>
+    {% endif %}
 </div>
 {% endblock %}
+{% block extra_js %}<script src="{% static 'js/customer-statement.js' %}" defer></script>{% endblock %}
