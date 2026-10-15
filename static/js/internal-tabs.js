@@ -27,8 +27,10 @@
   let lastLoadedUrl = currentUrl;
   let controller = null;
   let navigationNumber = 0;
+  let openNextInNewTab = false;
   const shellScriptPattern = /\/static\/js\/(?:main|internal-tabs|table-controls)\.js|\/static\/js\/pwa\//;
   const save = () => {
+    state.activeUrl = activeUrl || lastLoadedUrl;
     try { sessionStorage.setItem(storageKey, JSON.stringify(state)); } catch (_error) { /* Private browsing may block storage. */ }
   };
   const titleFor = (doc, url) => doc.querySelector('h1')?.textContent.trim() || doc.title || url;
@@ -86,7 +88,20 @@
   }
 
   function render() {
+    const previousScrollLeft = bar.scrollLeft;
     bar.innerHTML = '';
+    const newTabAction = document.createElement('button');
+    newTabAction.type = 'button';
+    newTabAction.className = 'workspace-open-next' + (openNextInNewTab ? ' is-armed' : '');
+    newTabAction.textContent = openNextInNewTab ? 'اختر الرابط الآن' : '＋ فتح في تبويب جديد';
+    newTabAction.setAttribute('aria-pressed', String(openNextInNewTab));
+    newTabAction.title = 'اضغط هنا ثم اختر الرابط، أو استخدم Alt مع النقر على الرابط';
+    newTabAction.onclick = () => {
+      openNextInNewTab = !openNextInNewTab;
+      render();
+      if (openNextInNewTab) bar.querySelector('.workspace-open-next')?.focus();
+    };
+    bar.append(newTabAction);
     state.tabs.forEach((tab, index) => {
       const item = document.createElement('div');
       item.className = 'workspace-tab' + (tab.url === activeUrl ? ' active' : '');
@@ -128,6 +143,7 @@
       item.append(opener, close);
       bar.append(item);
     });
+    bar.scrollLeft = previousScrollLeft;
   }
 
   async function runPageScripts(doc, thisNavigation) {
@@ -154,15 +170,17 @@
     }
   }
 
-  async function openTab(value, push = true, replace = false) {
+  async function openTab(value, push = true, replace = false, reuse = false) {
     const url = normalizeUrl(value);
     if (url === activeUrl) return;
     const thisNavigation = ++navigationNumber;
     controller?.abort();
 
     const previousUrl = activeUrl || lastLoadedUrl;
-    if (!replace) stashActivePage();
-    if (replace) cache.delete(url);
+    const reuseCurrent = reuse && !state.tabs.some(tab => tab.url === url);
+    const overwriteCurrent = replace || reuseCurrent;
+    if (!overwriteCurrent) stashActivePage();
+    if (overwriteCurrent) cache.delete(url);
     const cached = cache.get(url);
     if (cached) {
       restorePage(url, cached, push);
@@ -172,7 +190,7 @@
 
     controller = new AbortController();
     const requestController = controller;
-    if (!replace) {
+    if (!overwriteCurrent) {
       activeUrl = null;
       content.replaceChildren();
       content.setAttribute('aria-busy', 'true');
@@ -200,7 +218,7 @@
       }
 
       const previousScrollY = window.scrollY;
-      if (replace) stashActivePage();
+      if (overwriteCurrent) stashActivePage();
       content.innerHTML = next.innerHTML;
       const entry = {
         holder: document.createElement('div'),
@@ -211,10 +229,10 @@
       entry.metadata.title = doc.title;
       applyMetadata(entry.metadata);
       content.removeAttribute('aria-busy');
-      if (replace) {
+      if (overwriteCurrent) {
         cache.delete(previousUrl);
         state.tabs = state.tabs.filter(tab => tab.url !== previousUrl);
-        history.replaceState({workspace: true}, '', url);
+        if (replace) history.replaceState({workspace: true}, '', url);
       }
       ensureTab(url, titleFor(doc, url));
       activeUrl = url;
@@ -231,7 +249,7 @@
       if (error.name === 'AbortError' || thisNavigation !== navigationNumber) return;
       cache.delete(url);
       content.removeAttribute('aria-busy');
-      if (replace) throw error;
+      if (overwriteCurrent) throw error;
       activeUrl = null;
       const previous = previousUrl && cache.get(previousUrl);
       if (previous) {
@@ -249,20 +267,28 @@
   }
   window.SHWorkspace = {
     hasUnsavedChanges: () => [...cache.values()].some(entry => entry.holder.querySelector('form[data-unsaved="1"]')),
-    navigate: openTab,
+    navigate: url => openTab(url, true, false, true),
+    openInNewTab: url => openTab(url, true),
     navigateFilter: url => openTab(url, false, true),
   };
 
   document.addEventListener('click', event => {
     const link = event.target.closest('a[href]');
-    if (!link || event.defaultPrevented || event.button !== 0 || link.target || link.hasAttribute('download') || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    if (!link || event.defaultPrevented || event.button !== 0 || link.target || link.hasAttribute('download') || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const url = new URL(link.href, location.origin);
     if (url.hash && normalizeUrl(url.href) === activeUrl) return;
     if (/\.(pdf|xlsx?|csv)$/i.test(url.pathname) || url.pathname.includes('/export/') || url.pathname.includes('/print')) return;
     if (url.pathname.includes('/logout')) { try { sessionStorage.removeItem(storageKey); } catch (_error) { /* Storage unavailable. */ } }
     if (url.origin !== location.origin || url.pathname.startsWith('/accounts/') || url.pathname.startsWith('/admin/')) return;
     event.preventDefault();
-    openTab(url.pathname + url.search).catch(error => {
+    const newTab = openNextInNewTab || event.altKey;
+    if (!newTab && !state.tabs.some(tab => tab.url === normalizeUrl(url.href)) && content.querySelector('form[data-unsaved="1"]') &&
+        !confirm('توجد تغييرات غير محفوظة. هل تريد الانتقال إلى الصفحة الأخرى؟')) return;
+    if (openNextInNewTab) {
+      openNextInNewTab = false;
+      render();
+    }
+    openTab(url.pathname + url.search, true, false, !newTab).catch(error => {
       if (error.name !== 'AbortError') {
         alert('تعذر تحميل الصفحة. سيتم فتحها بالطريقة العادية.');
         location.href = url.href;
@@ -270,13 +296,20 @@
     });
   });
 
-  addEventListener('popstate', () => openTab(location.pathname + location.search, false).catch(handleNavigationError));
+  addEventListener('popstate', () => openTab(location.pathname + location.search, false, false, true).catch(handleNavigationError));
 
   cache.set(currentUrl, {
     holder: document.createElement('div'),
     metadata: pageMetadata(),
     scrollY: window.scrollY,
   });
+  if (!state.tabs.some(tab => tab.url === currentUrl)) {
+    const previousTab = state.tabs.find(tab => tab.url === state.activeUrl);
+    if (previousTab) {
+      previousTab.url = currentUrl;
+      previousTab.title = document.querySelector('h1')?.textContent.trim() || document.title;
+    }
+  }
   ensureTab(currentUrl, document.querySelector('h1')?.textContent.trim() || document.title);
   save();
   render();

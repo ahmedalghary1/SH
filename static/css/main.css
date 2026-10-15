@@ -6247,6 +6247,25 @@ tbody tr:hover {
     }
 }
 .workspace-tabs{display:flex;gap:.35rem;overflow-x:auto;padding:.5rem 1rem;background:#eef3f8;border-bottom:1px solid #d6e0ea;position:sticky;top:0;z-index:20}.workspace-tab{white-space:nowrap;border:1px solid #ccd8e5;background:#fff;border-radius:.5rem;padding:.45rem .7rem;cursor:pointer}.workspace-tab.active{background:#123c69;color:#fff}.table-record-count{font-weight:700;padding:.5rem;color:#334155}
+.workspace-open-next {
+    position: sticky;
+    inset-inline-start: 0;
+    z-index: 1;
+    flex: 0 0 auto;
+    align-self: center;
+    border: 1px solid #b7cbdf;
+    border-radius: .5rem;
+    padding: .4rem .7rem;
+    background: #fff;
+    color: var(--primary-color);
+    font: inherit;
+    font-size: .8rem;
+    font-weight: 700;
+    white-space: nowrap;
+    box-shadow: 0 .1rem .35rem rgba(15, 23, 42, .08);
+}
+.workspace-open-next:hover { background: #e8f0f9; }
+.workspace-open-next.is-armed { background: var(--primary-color); border-color: var(--primary-color); color: #fff; }
 
 /* Unified invoice navigation and compact date/time filters */
 .invoice-navigation {
