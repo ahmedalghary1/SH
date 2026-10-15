@@ -13,7 +13,7 @@ from django.views.generic import CreateView, DetailView, FormView, ListView, Tem
 
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, can_view_costs, SalesRequiredMixin
 from config.delete_views import ManagerDeleteView
-from config.date_ranges import PERIOD_CHOICES, filter_by_split_datetime
+from config.date_ranges import PERIOD_CHOICES, filter_by_split_datetime, resolve_date_period
 from config.exports import ExportListMixin
 from customers.models import Customer
 from customers.services import visible_customers_for_user
@@ -764,6 +764,20 @@ class CustomerStatementView(ManagerRequiredMixin, TemplateView):
                 customer = None
             if customer:
                 statement_data = build_customer_statement(customer)
+        date_filter = resolve_date_period(self.request.GET)
+        context['period_choices'] = PERIOD_CHOICES
+        context['date_filter'] = date_filter
+        if customer and (date_filter['date_from'] or date_filter['date_to']):
+            entries = statement_data['entries']
+            visible = [entry for entry in entries if
+                       (not date_filter['date_from'] or entry['date'] >= date_filter['date_from']) and
+                       (not date_filter['date_to'] or entry['date'] <= date_filter['date_to'])]
+            preceding = [entry for entry in entries if date_filter['date_from'] and entry['date'] < date_filter['date_from']]
+            statement_data['entries'] = visible
+            statement_data['statement_opening_balance'] = preceding[-1]['balance'] if preceding else 0
+            statement_data['total_debit'] = sum((entry['debit'] for entry in visible), 0)
+            statement_data['total_credit'] = sum((entry['credit'] for entry in visible), 0)
+            statement_data['current_balance'] = visible[-1]['balance'] if visible else statement_data['statement_opening_balance']
         context['customer'] = customer
         context['statement'] = statement_data['entries']
         context['total_debit'] = statement_data['total_debit']

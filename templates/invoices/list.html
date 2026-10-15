@@ -7,7 +7,7 @@
     <a class="btn btn-accent" href="{% url 'orders:create' %}">إضافة فاتورة</a>
 </div>
 {% include 'partials/invoice_navigation.html' %}
-<form class="filters invoice-filters" method="get">
+<form class="filters invoice-filters" method="get" data-live-filter>
     {{ filter_form.q }}
     {{ filter_form.payment_method }}
     {{ filter_form.payment_status }}

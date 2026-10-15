@@ -20,7 +20,7 @@
         {% endif %}
     </header>
 
-    <form class="card statement-picker no-print" method="get" data-customer-picker data-search-url="{% url 'customers:ajax_search' %}">
+    <form class="card statement-picker no-print" method="get" data-live-filter data-customer-picker data-search-url="{% url 'customers:ajax_search' %}">
         <div class="statement-picker-copy">
             <strong>اختيار العميل</strong>
             <span>ابحث بالاسم أو رقم الهاتف، أو أدخل رقم العميل مباشرة.</span>
@@ -62,7 +62,7 @@
 
     <section class="statement-summary" aria-label="ملخص كشف الحساب">
         <div class="statement-balance card">
-            <span>الرصيد الحالي</span>
+            <span>{% if date_filter.period %}الرصيد حتى نهاية الفترة{% else %}الرصيد الحالي{% endif %}</span>
             <strong class="statement-number">{{ current_balance|floatformat:"2u" }}</strong>
             <small>{% if current_balance > 0 %}مستحق على العميل{% elif current_balance < 0 %}رصيد لصالح العميل{% else %}الحساب مسدد{% endif %}</small>
         </div>
@@ -79,21 +79,25 @@
             <div><span class="statement-eyebrow">سجل مالي</span><h2 id="statement-ledger-heading">حركات الحساب</h2></div>
             <span class="statement-count">{{ statement|length }} حركة</span>
         </div>
+        <form class="filters invoice-filters no-print" method="get" data-live-filter>
+            <input type="hidden" name="customer" value="{{ customer.pk }}">
+            {% include 'partials/date_period_filter.html' %}
+            <button class="btn btn-primary" type="submit">تصفية</button>
+        </form>
         <div class="table-wrap">
             <table>
-                <thead><tr><th scope="col">التاريخ</th><th scope="col">نوع الحركة</th><th scope="col">البيان</th><th scope="col" class="amount">عليه</th><th scope="col" class="amount">له</th><th scope="col" class="amount">الرصيد</th></tr></thead>
+                <thead><tr><th scope="col">التاريخ</th><th scope="col">نوع الحركة</th><th scope="col" class="amount">عليه</th><th scope="col" class="amount">له</th><th scope="col" class="amount">الرصيد</th></tr></thead>
                 <tbody>
                 {% for entry in statement %}
                     <tr>
                         <td class="statement-date">{{ entry.date|date:'Y-m-d' }}</td>
                         <td><span class="statement-type">{{ entry.type }}</span></td>
-                        <td class="statement-description">{% if entry.order %}<a href="{% url 'orders:detail' entry.order.pk %}">{{ entry.description }}</a>{% else %}{{ entry.description }}{% endif %}</td>
                         <td class="amount statement-number">{% if entry.debit %}{{ entry.debit|floatformat:"2u" }}{% else %}—{% endif %}</td>
                         <td class="amount statement-number">{% if entry.credit %}{{ entry.credit|floatformat:"2u" }}{% else %}—{% endif %}</td>
                         <td class="amount statement-number statement-running-balance">{{ entry.balance|floatformat:"2u" }}</td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="6" class="statement-empty">لا توجد حركات مالية لهذا العميل حتى الآن.</td></tr>
+                    <tr><td colspan="5" class="statement-empty">لا توجد حركات مالية لهذا العميل في الفترة المحددة.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>

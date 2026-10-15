@@ -41,7 +41,7 @@
 .statement-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .statement-metric { display: flex; flex-direction: column; justify-content: center; gap: .25rem; min-width: 0; }
 .statement-metric strong { font-size: clamp(1.15rem, 1.5vw, 1.55rem); color: #0f172a; }
-.statement-ledger { padding: 0 !important; overflow: hidden; }
+.statement-ledger { padding: 0 !important; overflow: visible; }
 .statement-section-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.25rem 1.35rem; }
 .statement-section-head h2 { margin: .1rem 0 0; }
 .statement-ledger .table-wrap { margin: 0; border-radius: 0; }

@@ -377,7 +377,7 @@ def build_customer_statement(customer):
             date_value=order.created_at,
             sort_at=order.created_at,
             sort_order=10,
-            entry_type='فاتورة بيع',
+            entry_type='بيع آجل' if order.payment_method == order.METHOD_CREDIT else 'بيع نقدي',
             description=f'فاتورة {order.order_number}',
             debit=amount,
             order=order,

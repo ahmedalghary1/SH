@@ -63,7 +63,7 @@
                         search.value = customer.name;
                         customerId.value = customer.id;
                         closeResults();
-                        picker.querySelector('button[type="submit"]').focus();
+                        picker.requestSubmit();
                     });
                     results.append(option);
                 });

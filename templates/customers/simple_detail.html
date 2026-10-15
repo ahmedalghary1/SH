@@ -185,7 +185,6 @@
                         <tr>
                             <th>التاريخ</th>
                             <th>نوع الحركة</th>
-                            <th>البيان</th>
                             <th>عليه</th>
                             <th>له</th>
                             <th>الرصيد</th>
@@ -196,13 +195,12 @@
                         <tr>
                             <td>{{ entry.date|arabic_date }}</td>
                             <td>{{ entry.type }}</td>
-                            <td>{{ entry.description }}</td>
                             <td class="debt">{{ entry.debit|default:'' }}</td>
                             <td class="credit">{{ entry.credit|default:'' }}</td>
                             <td class="balance">{{ entry.balance }}</td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="6">لا توجد حركات</td></tr>
+                        <tr><td colspan="5">لا توجد حركات</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>

@@ -459,6 +459,24 @@ class FinanceServiceTests(TestCase):
         self.assertContains(response, 'رصيد فواتير مفتوحة')
         self.assertContains(response, 'رصيد افتتاحي متبق')
 
+    def test_customer_statement_labels_sale_by_payment_method(self):
+        cash_entry = next(entry for entry in build_customer_statement(self.customer)['entries'] if entry.get('order') == self.order)
+        self.assertEqual(cash_entry['type'], 'بيع نقدي')
+
+        self.order.payment_method = Order.METHOD_CREDIT
+        self.order.save(update_fields=['payment_method'])
+        credit_entry = next(entry for entry in build_customer_statement(self.customer)['entries'] if entry.get('order') == self.order)
+        self.assertEqual(credit_entry['type'], 'بيع آجل')
+
+    def test_customer_statement_period_filters_entries(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('finance:customer_statement'), {
+            'customer': self.customer.pk, 'period': 'this_month',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['date_filter']['period'], 'this_month')
+        self.assertTrue(any(entry.get('order') == self.order for entry in response.context['statement']))
+
     def test_record_order_sale_payment_accepts_nullable_customer(self):
         order = Order.objects.create(
             order_number='ORD-FIN-NO-CUSTOMER',

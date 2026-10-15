@@ -2,91 +2,58 @@
 {% block title %}المنتجات{% endblock %}
 {% block content %}
 <div class="simple-products-page">
-<div class="page-head">
-    <h1>المنتجات</h1>
-    {% if request.user.is_manager %}
+    <div class="page-head">
+        <h1>المنتجات</h1>
+        {% if request.user.is_manager %}
         <div class="button-row">
-            <a class="btn btn-secondary" href="{% url 'products:import' %}">
-                <svg class="ui-icon"><use href="#icon-plus"></use></svg>
-                استيراد من Excel
-            </a>
-            <a class="btn btn-secondary" href="{% url 'products:bulk_price_update' %}">
-                <svg class="ui-icon"><use href="#icon-chart"></use></svg>
-                تحديث الأسعار
-            </a>
+            <a class="btn btn-secondary" href="{% url 'products:import' %}">استيراد من Excel</a>
+            <a class="btn btn-secondary" href="{% url 'products:bulk_price_update' %}">تحديث الأسعار</a>
             {% include 'partials/export_buttons.html' %}
-            <a class="btn btn-accent btn-large" href="{% url 'products:create' %}">
-                <svg class="ui-icon"><use href="#icon-plus"></use></svg>
-                إضافة منتج
-            </a>
+            <a class="btn btn-accent btn-large" href="{% url 'products:create' %}">إضافة منتج</a>
         </div>
-    {% endif %}
-</div>
-
-    <form class="simple-filters">
-        <div class="filter-group">
-            <input name="q" placeholder="بحث بالاسم أو الكود..." value="{{ request.GET.q }}">
-        </div>
-        <div class="filter-group">
-            <select name="category">
-                <option value="">كل التصنيفات</option>
-                {% for category in categories %}
-                <option value="{{ category.id }}">{{ category.name }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="filter-group">
-            <select name="status">
-                <option value="">كل الحالات</option>
-                <option value="active">نشط</option>
-                <option value="inactive">متوقف</option>
-            </select>
-        </div>
-        <button class="btn btn-primary">بحث</button>
-    </form>
-
-    <div class="products-grid">
-        {% for product in products %}
-            <div class="product-card">
-                <div class="product-image">
-                    {% if product.image %}
-                        <img src="{{ product.image.url }}" alt="{{ product.name }}">
-                    {% else %}
-                        <span class="no-image">-</span>
-                    {% endif %}
-                </div>
-                <div class="product-info">
-                    <h3>{{ product.name }}</h3>
-                    <div class="product-meta">
-                        <span class="sku">{{ product.sku }}</span>
-                        <span class="category">{{ product.category.name|default:'-' }}</span>
-                    </div>
-                    <div class="product-stats">
-                        <span class="quantity">{{ product.total_quantity|default:0 }} قطعة</span>
-                        <span class="quantity">{{ product.pieces_per_dozen }} قطعة/دستة</span>
-                        <span class="status {% if product.is_active %}active{% else %}inactive{% endif %}">
-                            {% if product.is_active %}نشط{% else %}متوقف{% endif %}
-                        </span>
-                    </div>
-                </div>
-                <div class="product-actions">
-                    <a class="btn btn-primary" href="{% url 'products:detail' product.pk %}">عرض</a>
-                    {% if request.user.is_manager %}
-                        <a class="btn btn-light" href="{% url 'products:update' product.pk %}">تعديل</a>
-                        {% if request.user.can_hard_delete %}
-                            <a class="btn btn-danger" href="{% url 'products:delete' product.pk %}">حذف</a>
-                        {% endif %}
-                    {% endif %}
-                </div>
-            </div>
-        {% empty %}
-            <div class="empty-state">
-                <svg class="ui-icon"><use href="#icon-box"></use></svg>
-                <p>لا توجد منتجات</p>
-            </div>
-        {% endfor %}
+        {% endif %}
     </div>
-
+    <form class="filters" method="get" data-live-filter>
+        <input name="q" type="search" placeholder="بحث بالاسم أو الكود..." value="{{ request.GET.q }}">
+        <select name="category" aria-label="التصنيف">
+            <option value="">كل التصنيفات</option>
+            {% for category in categories %}
+            <option value="{{ category.pk }}" {% if request.GET.category == category.pk|stringformat:'s' %}selected{% endif %}>{{ category.name }}</option>
+            {% endfor %}
+        </select>
+        <select name="status" aria-label="الحالة">
+            <option value="">كل الحالات</option>
+            <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>نشط</option>
+            <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>متوقف</option>
+        </select>
+        <button class="btn btn-primary" type="submit">بحث</button>
+    </form>
+    <div class="table-wrap card sticky-table-wrap">
+        <table>
+            <thead><tr><th>الصورة</th><th>المنتج</th><th>الكود</th><th>التصنيف</th><th>سعر الجملة</th><th>سعر القطاعي</th><th>الكمية المتاحة</th><th>قطع/دستة</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+            <tbody>
+            {% for product in products %}
+                <tr>
+                    <td>{% if product.image %}<img class="product-table-image" src="{{ product.image.url }}" alt="">{% else %}<span class="product-table-image product-table-placeholder">—</span>{% endif %}</td>
+                    <td><strong>{{ product.name }}</strong></td>
+                    <td>{{ product.sku }}</td>
+                    <td>{{ product.category.name|default:'—' }}</td>
+                    <td>{{ product.wholesale_price }}</td>
+                    <td>{{ product.retail_price }}</td>
+                    <td>{{ product.total_quantity|default:0 }}</td>
+                    <td>{{ product.pieces_per_dozen }}</td>
+                    <td><span class="badge {% if product.is_active %}success{% else %}danger{% endif %}">{% if product.is_active %}نشط{% else %}متوقف{% endif %}</span></td>
+                    <td class="actions"><a class="btn btn-light" href="{% url 'products:detail' product.pk %}">عرض</a>
+                        {% if request.user.is_manager %}<a class="btn btn-light" href="{% url 'products:update' product.pk %}">تعديل</a>
+                        {% if request.user.can_hard_delete %}<a class="btn btn-danger" href="{% url 'products:delete' product.pk %}">حذف</a>{% endif %}{% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="10" class="empty-state">لا توجد منتجات</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
     {% include 'partials/pagination.html' %}
 </div>
 {% endblock %}

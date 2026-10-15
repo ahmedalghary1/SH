@@ -27,7 +27,7 @@
   let lastLoadedUrl = currentUrl;
   let controller = null;
   let navigationNumber = 0;
-  const shellScriptPattern = /\/static\/js\/(?:main|internal-tabs)\.js|\/static\/js\/pwa\//;
+  const shellScriptPattern = /\/static\/js\/(?:main|internal-tabs|table-controls)\.js|\/static\/js\/pwa\//;
   const save = () => {
     try { sessionStorage.setItem(storageKey, JSON.stringify(state)); } catch (_error) { /* Private browsing may block storage. */ }
   };
@@ -154,7 +154,7 @@
     }
   }
 
-  async function openTab(value, push = true) {
+  async function openTab(value, push = true, replace = false) {
     const url = normalizeUrl(value);
     if (url === activeUrl) return;
     const thisNavigation = ++navigationNumber;
@@ -162,6 +162,7 @@
 
     const previousUrl = activeUrl || lastLoadedUrl;
     stashActivePage();
+    if (replace) cache.delete(url);
     const cached = cache.get(url);
     if (cached) {
       restorePage(url, cached, push);
@@ -206,6 +207,11 @@
       entry.metadata.title = doc.title;
       applyMetadata(entry.metadata);
       content.removeAttribute('aria-busy');
+      if (replace) {
+        cache.delete(previousUrl);
+        state.tabs = state.tabs.filter(tab => tab.url !== previousUrl);
+        history.replaceState({workspace: true}, '', url);
+      }
       ensureTab(url, titleFor(doc, url));
       activeUrl = url;
       lastLoadedUrl = url;
@@ -238,6 +244,8 @@
   }
   window.SHWorkspace = {
     hasUnsavedChanges: () => [...cache.values()].some(entry => entry.holder.querySelector('form[data-unsaved="1"]')),
+    navigate: openTab,
+    navigateFilter: url => openTab(url, false, true),
   };
 
   document.addEventListener('click', event => {

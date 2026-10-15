@@ -13,6 +13,7 @@ from django.views.generic import DetailView, FormView, ListView, TemplateView, V
 from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, SalesRequiredMixin
 from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
+from config.date_ranges import PERIOD_CHOICES, filter_by_date_period
 from products.models import ProductVariant
 
 from .forms import CompleteReturnForm, ExchangeItemForm, ReturnItemForm, SalesReturnCreateForm
@@ -66,7 +67,14 @@ class SalesReturnListView(RoleRequiredMixin, ExportListMixin, ListView):
                 Q(order__order_number__icontains=q) |
                 Q(customer__name__icontains=q)
             )
+        qs, self.date_filter = filter_by_date_period(qs, self.request.GET, 'created_at__date')
         return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['period_choices'] = PERIOD_CHOICES
+        context['date_filter'] = getattr(self, 'date_filter', {})
+        return context
 
 
 class SimpleReturnCreateView(SalesRequiredMixin, FormView):

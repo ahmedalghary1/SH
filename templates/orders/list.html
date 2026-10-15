@@ -18,7 +18,7 @@
 </div>
 {% include 'partials/invoice_navigation.html' %}
 {% include 'partials/export_buttons.html' %}
-<form class="filters invoice-filters" method="get">
+<form class="filters invoice-filters" method="get" data-live-filter>
     <input name="q" placeholder="رقم الفاتورة أو اسم العميل" value="{{ request.GET.q }}">
     {% include 'partials/date_period_filter.html' %}
     <button class="btn btn-primary">تصفية</button>
