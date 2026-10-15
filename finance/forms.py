@@ -75,7 +75,7 @@ class CustomerCollectionForm(forms.Form):
         required=False,
     )
     amount = forms.DecimalField(label='القبض', widget=forms.NumberInput(attrs={'step': '0.01'}))
-    transaction_date = forms.DateTimeField(label='تاريخ ووقت التحصيل', initial=timezone.now, input_formats=['%Y-%m-%dT%H:%M'], widget=forms.DateTimeInput(format='%Y-%m-%dT%H:%M', attrs={'type': 'datetime-local'}))
+    transaction_date = forms.DateTimeField(label='تاريخ ووقت القبض', initial=timezone.now, input_formats=['%Y-%m-%dT%H:%M'], widget=forms.DateTimeInput(format='%Y-%m-%dT%H:%M', attrs={'type': 'datetime-local'}))
     notes = forms.CharField(widget=forms.Textarea, required=False, label='ملاحظات')
 
     def __init__(self, *args, user=None, **kwargs):

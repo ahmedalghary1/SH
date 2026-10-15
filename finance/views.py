@@ -565,7 +565,7 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
                         notes=form.cleaned_data.get('notes') or '',
                         transaction_date=form.cleaned_data.get('transaction_date'),
                     )
-            messages.success(self.request, 'تم تسجيل التحصيل')
+            messages.success(self.request, 'تم تسجيل القبض')
             return redirect(self.success_url)
         except ValidationError as exc:
             form.add_error(None, _validation_error_message(exc))

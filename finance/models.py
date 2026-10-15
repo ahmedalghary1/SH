@@ -114,7 +114,7 @@ class PaymentTransaction(BranchOwnedModel):
     TYPE_ADJUSTMENT = 'adjustment'
     TYPE_CUSTOMER_ALLOWED_DISCOUNT = 'customer_allowed_discount'
     TRANSACTION_TYPE_CHOICES = [
-        (TYPE_CUSTOMER_PAYMENT, 'تحصيل من عميل'),
+        (TYPE_CUSTOMER_PAYMENT, 'قبض'),
         (TYPE_SUPPLIER_PAYMENT, 'دفع لمورد'),
         (TYPE_EXPENSE, 'مصروف'),
         (TYPE_REFUND, 'استرداد للعميل'),

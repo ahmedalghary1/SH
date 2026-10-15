@@ -468,6 +468,15 @@ class FinanceServiceTests(TestCase):
         credit_entry = next(entry for entry in build_customer_statement(self.customer)['entries'] if entry.get('order') == self.order)
         self.assertEqual(credit_entry['type'], 'بيع آجل')
 
+    def test_customer_receipt_type_is_qabd_in_customer_statement(self):
+        payment = collect_order_payment(
+            order=self.order, amount=Decimal('100.00'), cash_account=self.cash, user=self.user,
+        )
+        self.assertEqual(payment.get_transaction_type_display(), 'قبض')
+        statement = build_customer_statement(self.customer)
+        receipt = next(entry for entry in statement['entries'] if entry.get('payment') == payment)
+        self.assertEqual(receipt['type'], 'قبض')
+
     def test_customer_statement_period_filters_entries(self):
         self.client.force_login(self.user)
         response = self.client.get(reverse('finance:customer_statement'), {
@@ -597,7 +606,7 @@ class FinanceServiceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'الحركات المالية الداخلة والخارجة')
-        self.assertContains(response, 'تحصيل من عميل')
+        self.assertContains(response, 'قبض')
         self.assertContains(response, 'مصروف')
         self.assertContains(response, 'إجمالي الداخل')
         self.assertContains(response, 'إجمالي الخارج')
