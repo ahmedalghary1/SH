@@ -78,7 +78,7 @@
 
         <form class="filters invoice-filters customer-history-filter" method="get" data-live-filter>
             <input type="hidden" name="tab" value="{{ active_tab }}" data-active-tab-input>
-            {% include 'partials/date_period_filter.html' %}
+            {% include 'partials/date_period_filter.html' with native_select=True %}
             <button class="btn btn-primary" type="submit">تصفية</button>
         </form>
 
@@ -176,7 +176,7 @@
                 </table>
             </div>
             <div class="form-actions">
-                <a href="{% url 'finance:collection_create' %}?customer={{ customer.pk }}" class="btn btn-primary btn-large">تحصيل من العميل</a>
+                <a href="{% url 'finance:collection_create' %}?customer={{ customer.pk }}" class="btn btn-primary btn-large">قبض</a>
             </div>
         </div>
 

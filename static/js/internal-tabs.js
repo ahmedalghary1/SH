@@ -161,7 +161,7 @@
     controller?.abort();
 
     const previousUrl = activeUrl || lastLoadedUrl;
-    stashActivePage();
+    if (!replace) stashActivePage();
     if (replace) cache.delete(url);
     const cached = cache.get(url);
     if (cached) {
@@ -172,14 +172,16 @@
 
     controller = new AbortController();
     const requestController = controller;
-    activeUrl = null;
-    content.replaceChildren();
-    content.setAttribute('aria-busy', 'true');
-    const loading = document.createElement('div');
-    loading.className = 'card';
-    loading.setAttribute('role', 'status');
-    loading.textContent = 'جارٍ تحميل التبويب...';
-    content.append(loading);
+    if (!replace) {
+      activeUrl = null;
+      content.replaceChildren();
+      content.setAttribute('aria-busy', 'true');
+      const loading = document.createElement('div');
+      loading.className = 'card';
+      loading.setAttribute('role', 'status');
+      loading.textContent = 'جارٍ تحميل التبويب...';
+      content.append(loading);
+    }
 
     try {
       const response = await fetch(url, {headers: {'X-Workspace-Tab': '1'}, signal: requestController.signal});
@@ -197,6 +199,8 @@
         return;
       }
 
+      const previousScrollY = window.scrollY;
+      if (replace) stashActivePage();
       content.innerHTML = next.innerHTML;
       const entry = {
         holder: document.createElement('div'),
@@ -222,11 +226,12 @@
       save();
       render();
       document.dispatchEvent(new CustomEvent('sh:page-loaded'));
-      window.scrollTo(0, 0);
+      window.scrollTo(0, replace ? previousScrollY : 0);
     } catch (error) {
       if (error.name === 'AbortError' || thisNavigation !== navigationNumber) return;
       cache.delete(url);
       content.removeAttribute('aria-busy');
+      if (replace) throw error;
       activeUrl = null;
       const previous = previousUrl && cache.get(previousUrl);
       if (previous) {

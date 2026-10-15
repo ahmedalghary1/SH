@@ -1,7 +1,7 @@
 <div class="period-filter" data-period-filter>
     <label class="period-filter__select">
         <span>الفترة</span>
-        <select name="period" data-period-select aria-label="اختيار الفترة">
+        <select name="period" data-period-select {% if native_select %}data-native-select{% endif %} aria-label="اختيار الفترة">
             <option value="">كل الفترات</option>
             {% for value, label in period_choices %}<option value="{{ value }}"{% if date_filter.period == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
         </select>
