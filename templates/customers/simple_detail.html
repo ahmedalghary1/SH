@@ -70,13 +70,19 @@
     <!-- التبويبات -->
     <div class="tabs-container">
         <div class="tabs">
-            <button class="tab-btn active" data-tab="invoices">الفواتير</button>
-            <button class="tab-btn" data-tab="returns">المرتجعات</button>
-            <button class="tab-btn" data-tab="payments">التحصيلات</button>
-            <button class="tab-btn" data-tab="statement">كشف الحساب</button>
+            <button class="tab-btn{% if active_tab == 'invoices' %} active{% endif %}" data-tab="invoices" aria-selected="{% if active_tab == 'invoices' %}true{% else %}false{% endif %}">الفواتير</button>
+            <button class="tab-btn{% if active_tab == 'returns' %} active{% endif %}" data-tab="returns" aria-selected="{% if active_tab == 'returns' %}true{% else %}false{% endif %}">المرتجعات</button>
+            <button class="tab-btn{% if active_tab == 'payments' %} active{% endif %}" data-tab="payments" aria-selected="{% if active_tab == 'payments' %}true{% else %}false{% endif %}">التحصيلات</button>
+            <button class="tab-btn{% if active_tab == 'statement' %} active{% endif %}" data-tab="statement" aria-selected="{% if active_tab == 'statement' %}true{% else %}false{% endif %}">كشف الحساب</button>
         </div>
 
-        <div class="tab-content active" id="invoices">
+        <form class="filters invoice-filters customer-history-filter" method="get" data-live-filter>
+            <input type="hidden" name="tab" value="{{ active_tab }}" data-active-tab-input>
+            {% include 'partials/date_period_filter.html' %}
+            <button class="btn btn-primary" type="submit">تصفية</button>
+        </form>
+
+        <div class="tab-content{% if active_tab == 'invoices' %} active{% endif %}" id="invoices">
             <div class="table-wrap">
                 <table>
                     <thead>
@@ -113,7 +119,7 @@
             </div>
         </div>
 
-        <div class="tab-content" id="returns">
+        <div class="tab-content{% if active_tab == 'returns' %} active{% endif %}" id="returns">
             <div class="table-wrap">
                 <table>
                     <thead>
@@ -142,7 +148,7 @@
             </div>
         </div>
 
-        <div class="tab-content" id="payments">
+        <div class="tab-content{% if active_tab == 'payments' %} active{% endif %}" id="payments">
             <div class="table-wrap">
                 <table>
                     <thead>
@@ -174,7 +180,7 @@
             </div>
         </div>
 
-        <div class="tab-content" id="statement">
+        <div class="tab-content{% if active_tab == 'statement' %} active{% endif %}" id="statement">
             <div class="page-actions">
                 <a class="btn btn-primary" href="{% url 'customers:statement_export' customer.pk 'pdf' %}">تصدير PDF</a>
                 <a class="btn btn-primary" href="{% url 'customers:statement_export' customer.pk 'xlsx' %}">تصدير Excel</a>

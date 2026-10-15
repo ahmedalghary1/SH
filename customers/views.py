@@ -26,6 +26,7 @@ from django.views.generic import CreateView, DetailView, ListView, TemplateView,
 
 from accounts.permissions import ManagerRequiredMixin, SalesRequiredMixin, sales_required
 from config.delete_views import ManagerDeleteView
+from config.date_ranges import PERIOD_CHOICES, filter_by_date_period, filter_by_split_datetime, resolve_date_period
 from config.exports import ExportListMixin, export_pdf_response, export_xlsx_response
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
@@ -312,6 +313,10 @@ class SimpleCustomerDetailView(CustomerVisibilityMixin, SalesRequiredMixin, Deta
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         customer = self.object
+        date_filter = resolve_date_period(self.request.GET)
+        active_tab = self.request.GET.get('tab', 'invoices')
+        if active_tab not in {'invoices', 'returns', 'payments', 'statement'}:
+            active_tab = 'invoices'
         
         # Get summary
         summary = get_customer_summary(customer)
@@ -320,9 +325,11 @@ class SimpleCustomerDetailView(CustomerVisibilityMixin, SalesRequiredMixin, Deta
         orders = Order.objects.filter(customer=customer).exclude(
             status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED],
         ).select_related('created_by').order_by('-created_at')
+        orders, _ = filter_by_date_period(orders, self.request.GET, 'created_at__date')
         
         # Get returns
         returns = SalesReturn.objects.filter(customer=customer).select_related('created_by').order_by('-created_at')
+        returns, _ = filter_by_date_period(returns, self.request.GET, 'created_at__date')
         
         # Get payments
         payments = PaymentTransaction.objects.filter(
@@ -331,15 +338,21 @@ class SimpleCustomerDetailView(CustomerVisibilityMixin, SalesRequiredMixin, Deta
             affects_cash=True,
             transaction_type__in=[PaymentTransaction.TYPE_CUSTOMER_PAYMENT, PaymentTransaction.TYPE_SALES_REP_COLLECTION],
         ).select_related('cash_account', 'created_by').order_by('-created_at')
+        payments, _ = filter_by_split_datetime(payments, self.request.GET, 'transaction_date', 'transaction_time')
         
         # Calculate total returns
-        total_returns = returns.filter(status=SalesReturn.STATUS_COMPLETED).aggregate(v=Sum('refund_amount'))['v'] or 0
+        total_returns = SalesReturn.objects.filter(customer=customer, status=SalesReturn.STATUS_COMPLETED).aggregate(v=Sum('refund_amount'))['v'] or 0
         
         # Use the business date/time so backdated receipts are ordered correctly.
         last_payment = summary['last_payment']
         
         # Generate statement
         statement_data = build_customer_statement(customer)
+        statement_entries = statement_data['entries']
+        if date_filter['date_from']:
+            statement_entries = [entry for entry in statement_entries if entry['date'] >= date_filter['date_from']]
+        if date_filter['date_to']:
+            statement_entries = [entry for entry in statement_entries if entry['date'] <= date_filter['date_to']]
         
         context.update({
             'summary': {
@@ -350,10 +363,13 @@ class SimpleCustomerDetailView(CustomerVisibilityMixin, SalesRequiredMixin, Deta
                 'last_order': summary['last_order'],
                 'last_payment': last_payment,
             },
-            'orders': orders[:20],
-            'returns': returns[:20],
-            'payments': payments[:20],
-            'statement': statement_data['entries'],
+            'orders': orders,
+            'returns': returns,
+            'payments': payments,
+            'statement': statement_entries,
+            'period_choices': PERIOD_CHOICES,
+            'date_filter': date_filter,
+            'active_tab': active_tab,
         })
         return context
 

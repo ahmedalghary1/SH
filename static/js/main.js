@@ -1033,6 +1033,8 @@ document.addEventListener("click", (event) => {
     container.querySelectorAll(".tab-content").forEach(panel => {
         panel.classList.toggle("active", panel === target);
     });
+    const activeTabInput = container.querySelector('[data-active-tab-input]');
+    if (activeTabInput) activeTabInput.value = contentTab.dataset.tab;
 });
 
 // Advanced Options Toggle

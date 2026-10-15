@@ -156,6 +156,53 @@ class CustomerCRMViewTests(TestCase):
         self.assertContains(response, order_with_invoice.order_number)
         self.assertContains(response, reverse('finance:collection_create'))
 
+    def test_customer_history_period_filters_every_tab_and_preserves_tab(self):
+        recent = Order.objects.create(
+            order_number='ORD-CUST-RECENT', order_type=Order.TYPE_B2C,
+            customer=self.customer, status=Order.STATUS_COMPLETED,
+            total=Decimal('100.00'), remaining_amount=Decimal('100.00'), created_by=self.user,
+        )
+        old = Order.objects.create(
+            order_number='ORD-CUST-OLD', order_type=Order.TYPE_B2C,
+            customer=self.customer, status=Order.STATUS_COMPLETED,
+            total=Decimal('80.00'), remaining_amount=Decimal('80.00'), created_by=self.user,
+        )
+        old_at = timezone.now() - timedelta(days=400)
+        Order.objects.filter(pk=old.pk).update(created_at=old_at)
+        recent_return = SalesReturn.objects.create(order=recent, customer=self.customer, status=SalesReturn.STATUS_COMPLETED, refund_amount=10)
+        old_return = SalesReturn.objects.create(order=old, customer=self.customer, status=SalesReturn.STATUS_COMPLETED, refund_amount=10)
+        SalesReturn.objects.filter(pk=old_return.pk).update(created_at=old_at)
+        cash = CashAccount.get_default()
+        recent_payment = PaymentTransaction.objects.create(
+            transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+            direction=PaymentTransaction.DIRECTION_IN, amount=10, cash_account=cash,
+            related_customer=self.customer, related_order=recent,
+        )
+        old_payment = PaymentTransaction.objects.create(
+            transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+            direction=PaymentTransaction.DIRECTION_IN, amount=10, cash_account=cash,
+            related_customer=self.customer, related_order=old,
+            transaction_date=timezone.localdate() - timedelta(days=400),
+        )
+
+        response = self.client.get(reverse('customers:simple_detail', args=[self.customer.pk]), {
+            'period': 'this_month', 'tab': 'payments',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['active_tab'], 'payments')
+        self.assertEqual(list(response.context['orders']), [recent])
+        self.assertEqual(list(response.context['returns']), [recent_return])
+        self.assertEqual(list(response.context['payments']), [recent_payment])
+        self.assertTrue(any(entry.get('order') == recent for entry in response.context['statement']))
+        self.assertFalse(any(entry.get('order') == old for entry in response.context['statement']))
+        self.assertContains(response, 'value="this_month" selected')
+
+        all_response = self.client.get(reverse('customers:simple_detail', args=[self.customer.pk]))
+        self.assertIn(old, all_response.context['orders'])
+        self.assertIn(old_return, all_response.context['returns'])
+        self.assertIn(old_payment, all_response.context['payments'])
+
     def test_create_edit_and_complete_interaction_flow(self):
         create_url = reverse('customers:interaction_create', kwargs={'pk': self.customer.pk})
         response = self.client.post(create_url, {
