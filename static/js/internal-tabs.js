@@ -265,12 +265,98 @@
     if (typeof showPwaNotice === 'function') showPwaNotice('تعذر تحميل الصفحة. تحقق من الاتصال وحاول مرة أخرى.', true);
     else alert('تعذر تحميل الصفحة. تحقق من الاتصال وحاول مرة أخرى.');
   }
+
+  function formRequest(form, submitter) {
+    const method = (submitter?.getAttribute('formmethod') || form.getAttribute('method') || 'get').toUpperCase();
+    const target = submitter?.getAttribute('formtarget') || form.getAttribute('target');
+    const action = submitter?.getAttribute('formaction') || form.getAttribute('action') || location.href;
+    const url = new URL(action, location.href);
+    if (target && target !== '_self' || url.origin !== location.origin ||
+        url.pathname.startsWith('/accounts/') || url.pathname.startsWith('/admin/') ||
+        /\.(pdf|xlsx?|csv)$/i.test(url.pathname) || /\/(export[^/]*|print|report-print|download)(\/|$)/.test(url.pathname) ||
+        !['GET', 'POST'].includes(method)) return null;
+    return {method, url};
+  }
+
+  async function submitForm(form, submitter) {
+    const request = formRequest(form, submitter);
+    if (!request) return false;
+    const sourceUrl = activeUrl;
+    const thisNavigation = ++navigationNumber;
+    controller?.abort();
+    const fields = new FormData(form);
+    if (submitter?.name) fields.append(submitter.name, submitter.value || '');
+    // A POST may already have committed on the server. Switching tabs must
+    // never abort it and leave the user unsure whether to submit again.
+    const options = {method: request.method, headers: {'X-Workspace-Tab': '1'}};
+    if (request.method === 'GET') {
+      const search = new URLSearchParams(fields);
+      request.url.search = search.toString();
+    } else {
+      options.body = fields;
+    }
+    form.setAttribute('aria-busy', 'true');
+    try {
+      const response = await fetch(request.url.href, options);
+      if (thisNavigation !== navigationNumber) {
+        cache.delete(sourceUrl);
+        return true;
+      }
+      const responseUrl = new URL(response.url || request.url.href);
+      if (responseUrl.origin !== location.origin || responseUrl.pathname.startsWith('/accounts/')) {
+        location.href = responseUrl.href;
+        return true;
+      }
+      if (!response.headers?.get('content-type')?.includes('text/html')) throw new Error('تعذر عرض نتيجة العملية داخل التبويب');
+      const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const next = doc.querySelector('[data-page-content]');
+      if (!next) throw new Error('تعذر عرض نتيجة العملية داخل التبويب');
+      if (thisNavigation !== navigationNumber) return true;
+      if (activeUrl !== sourceUrl) {
+        cache.delete(sourceUrl);
+        return true;
+      }
+      const url = normalizeUrl(responseUrl.href);
+      cache.delete(sourceUrl);
+      if (url !== sourceUrl) state.tabs = state.tabs.filter(tab => tab.url !== sourceUrl);
+      content.innerHTML = next.innerHTML;
+      const metadata = pageMetadata(next);
+      metadata.title = doc.title;
+      cache.set(url, {holder: document.createElement('div'), metadata, scrollY: 0});
+      applyMetadata(metadata);
+      ensureTab(url, titleFor(doc, url));
+      activeUrl = url;
+      lastLoadedUrl = url;
+      history.replaceState({workspace: true}, '', url);
+      document.title = doc.title || document.title;
+      await runPageScripts(doc, thisNavigation);
+      if (thisNavigation !== navigationNumber) return true;
+      save();
+      render();
+      document.dispatchEvent(new CustomEvent('sh:page-loaded'));
+      window.scrollTo(0, 0);
+    } catch (error) {
+      if (error.name !== 'AbortError' && thisNavigation === navigationNumber) handleNavigationError(error);
+    } finally {
+      form.removeAttribute('aria-busy');
+      window.SHUi?.resetFormSubmission?.(form);
+    }
+    return true;
+  }
   window.SHWorkspace = {
     hasUnsavedChanges: () => [...cache.values()].some(entry => entry.holder.querySelector('form[data-unsaved="1"]')),
     navigate: url => openTab(url, true, false, true),
     openInNewTab: url => openTab(url, true),
     navigateFilter: url => openTab(url, false, true),
+    canSubmitForm: (form, submitter) => Boolean(formRequest(form, submitter)),
+    submitForm,
   };
+
+  document.addEventListener('submit', event => {
+    if (event.defaultPrevented || !formRequest(event.target, event.submitter)) return;
+    event.preventDefault();
+    submitForm(event.target, event.submitter);
+  });
 
   document.addEventListener('click', event => {
     const link = event.target.closest('a[href]');

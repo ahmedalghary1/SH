@@ -547,6 +547,10 @@ async function handleCapturedSubmit(form, submitter = null) {
             // Never queue a financial write while the browser reports online:
             // the server may already have committed it when a response is lost.
             if (navigator.onLine) {
+                if (window.SHWorkspace?.canSubmitForm?.(form, submitter)) {
+                    await window.SHWorkspace.submitForm(form, submitter);
+                    return;
+                }
                 window.SHUnsavedForms?.markSaved?.(form);
                 submitNormally(form, submitter);
                 return;
