@@ -47,7 +47,11 @@ class ProductionLoginRegressionTests(TestCase):
         self.assertEqual(AuditLog.all_objects.get(model_name='User', object_id=str(user.pk)).branch_id, branch.pk)
 
     def test_superuser_password_hash_upgrade_does_not_break_login(self):
-        user = User.objects.create_superuser(username='upgrade-admin', password='login-test-only')
+        with override_settings(PASSWORD_HASHERS=[
+            'django.contrib.auth.hashers.MD5PasswordHasher',
+        ]):
+            user = User.objects.create_superuser(username='upgrade-admin', password='login-test-only')
+        self.assertTrue(user.password.startswith('md5$'))
         with override_settings(PASSWORD_HASHERS=[
             'django.contrib.auth.hashers.PBKDF2PasswordHasher',
             'django.contrib.auth.hashers.MD5PasswordHasher',

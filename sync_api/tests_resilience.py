@@ -113,6 +113,31 @@ class SyncResilienceTests(TestCase):
         operation.update(entity_type='payment', payload={'payment': {'amount': '100'}})
         result = process_operation(operation, self.warehouse)
         self.assertEqual(result['status'], 'failed_conflict')
+
+    def test_offline_customer_receipt_syncs_form_datetime_to_selected_cash_account_once(self):
+        customer = Customer.objects.create(name='Receipt customer', branch=self.branch)
+        cash = CashAccount.objects.create(name='Receipt drawer', branch=self.branch)
+        operation = customer_operation('receipt-from-form')
+        operation.update(
+            entity_type='payment',
+            payload={
+                'original_url': '/finance/transactions/collection/',
+                'payment': {
+                    'customer': str(customer.pk), 'cash_account': str(cash.pk),
+                    'amount': '75.00', 'transaction_date': '2026-10-19T09:25',
+                    'notes': 'customer receipt', 'allowed_discount': '0',
+                },
+            },
+        )
+        first = process_operation(operation, self.manager)
+        self.assertEqual(first['status'], 'success', first)
+        self.assertEqual(process_operation(operation, self.manager), first)
+        receipt = PaymentTransaction.all_objects.get(pk=first['server_id'])
+        self.assertEqual(receipt.transaction_date.isoformat(), '2026-10-19')
+        self.assertEqual(receipt.transaction_time.strftime('%H:%M'), '09:25')
+        self.assertEqual(receipt.cash_account_id, cash.pk)
+        cash.refresh_from_db()
+        self.assertEqual(cash.balance, Decimal('75.00'))
         self.assertFalse(SyncOperation.all_objects.exists())
 
     def test_invalid_customer_money_and_missing_reference_have_no_side_effect(self):

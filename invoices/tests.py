@@ -137,6 +137,22 @@ class InvoicePDFExportTests(TestCase):
         self.assertContains(response, 'sticky-table-wrap')
         self.assertContains(response, 'الإجمالي (1 فاتورة)')
 
+    def test_invoice_list_renders_cash_customer_without_customer_record(self):
+        cash_order = Order.objects.create(
+            order_number='ORD-CASH-NO-CUSTOMER',
+            order_type=Order.TYPE_B2C,
+            warehouse=self.order.warehouse,
+            status=Order.STATUS_COMPLETED,
+            created_by=self.user,
+        )
+        Invoice.objects.create(order=cash_order, invoice_number='INV-CASH-NO-CUSTOMER')
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('invoices:list'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'INV-CASH-NO-CUSTOMER')
+
     def test_generate_invoice_records_sale_in_default_cash_once(self):
         default_cash = CashAccount.get_default()
 
