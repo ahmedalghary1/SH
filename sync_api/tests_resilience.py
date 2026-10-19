@@ -113,6 +113,7 @@ class SyncResilienceTests(TestCase):
         operation.update(entity_type='payment', payload={'payment': {'amount': '100'}})
         result = process_operation(operation, self.warehouse)
         self.assertEqual(result['status'], 'failed_conflict')
+        self.assertFalse(SyncOperation.all_objects.exists())
 
     def test_offline_customer_receipt_syncs_form_datetime_to_selected_cash_account_once(self):
         customer = Customer.objects.create(name='Receipt customer', branch=self.branch)
@@ -138,7 +139,84 @@ class SyncResilienceTests(TestCase):
         self.assertEqual(receipt.cash_account_id, cash.pk)
         cash.refresh_from_db()
         self.assertEqual(cash.balance, Decimal('75.00'))
-        self.assertFalse(SyncOperation.all_objects.exists())
+
+    def test_sales_receipt_sync_accepts_branch_drawer_without_assignment(self):
+        sales = User.objects.create_user(username='receipt-sales', role='sales', branch=self.branch)
+        customer = Customer.objects.create(name='Sales receipt customer', branch=self.branch)
+        cash = CashAccount.objects.create(name='Shared branch drawer', branch=self.branch)
+        operation = customer_operation('sales-receipt')
+        operation.update(entity_type='payment', payload={
+            'original_url': '/finance/transactions/collection/',
+            'payment': {
+                'customer': str(customer.pk), 'cash_account': str(cash.pk),
+                'amount': '50.00', 'transaction_date': '2026-10-19T10:30',
+            },
+        })
+        result = process_operation(operation, sales)
+        self.assertEqual(result['status'], 'success', result)
+        self.assertEqual(PaymentTransaction.all_objects.get(pk=result['server_id']).cash_account_id, cash.pk)
+
+    def test_invalid_receipt_datetime_keeps_cash_unchanged(self):
+        customer = Customer.objects.create(name='Invalid date customer', branch=self.branch)
+        cash = CashAccount.objects.create(name='Invalid date drawer', branch=self.branch)
+        operation = customer_operation('bad-date-receipt')
+        operation.update(entity_type='payment', payload={
+            'original_url': '/finance/transactions/collection/',
+            'payment': {
+                'customer': str(customer.pk), 'cash_account': str(cash.pk),
+                'amount': '50.00', 'transaction_date': 'invalid-date',
+            },
+        })
+        self.assertEqual(process_operation(operation, self.manager)['status'], 'failed_conflict')
+        cash.refresh_from_db()
+        self.assertEqual(cash.balance, Decimal('0'))
+
+    def test_sales_receipt_cannot_use_another_branch_drawer(self):
+        other_branch = Branch.objects.create(name='Other receipt branch', code='SYNC-CASH-OTHER')
+        sales = User.objects.create_user(username='isolated-receipt-sales', role='sales', branch=self.branch)
+        customer = Customer.objects.create(name='Isolated receipt customer', branch=self.branch)
+        foreign_cash = CashAccount.objects.create(name='Foreign drawer', branch=other_branch)
+        operation = customer_operation('cross-branch-receipt')
+        operation.update(entity_type='payment', payload={
+            'original_url': '/finance/transactions/collection/',
+            'payment': {
+                'customer': str(customer.pk), 'cash_account': str(foreign_cash.pk),
+                'amount': '50.00', 'transaction_date': '2026-10-19T10:30',
+            },
+        })
+        self.assertEqual(process_operation(operation, sales)['status'], 'failed_conflict')
+        foreign_cash.refresh_from_db()
+        self.assertEqual(foreign_cash.balance, Decimal('0'))
+
+    def test_offline_order_receipt_applies_discount_without_double_cash(self):
+        customer = Customer.objects.create(name='Discount receipt customer', branch=self.branch)
+        cash = CashAccount.objects.create(name='Discount receipt drawer', branch=self.branch)
+        order = Order.objects.create(
+            branch=self.branch, order_number='OFFLINE-DISCOUNT-1',
+            customer=customer, order_type=Order.TYPE_B2C,
+            status=Order.STATUS_CONFIRMED, total=Decimal('100.00'),
+            remaining_amount=Decimal('100.00'), created_by=self.manager,
+        )
+        operation = customer_operation('discount-receipt')
+        operation.update(entity_type='payment', payload={
+            'original_url': '/finance/transactions/collection/',
+            'payment': {
+                'customer': str(customer.pk), 'order': str(order.pk),
+                'cash_account': str(cash.pk), 'amount': '40.00',
+                'allowed_discount': '10.00', 'transaction_date': '2026-10-19T10:30',
+            },
+        })
+        result = process_operation(operation, self.manager)
+        self.assertEqual(result['status'], 'success', result)
+        self.assertEqual(process_operation(operation, self.manager), result)
+        order.refresh_from_db()
+        cash.refresh_from_db()
+        self.assertEqual(order.remaining_amount, Decimal('50.00'))
+        self.assertEqual(cash.balance, Decimal('40.00'))
+        self.assertEqual(PaymentTransaction.all_objects.filter(
+            branch=self.branch, related_order=order,
+            transaction_type=PaymentTransaction.TYPE_CUSTOMER_ALLOWED_DISCOUNT,
+        ).count(), 1)
 
     def test_invalid_customer_money_and_missing_reference_have_no_side_effect(self):
         operation = customer_operation()

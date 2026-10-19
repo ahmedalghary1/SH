@@ -30,3 +30,27 @@ test('relative form actions and explicit submit overrides use the intended route
     assert.equal(context.formPath(form, submitter), '/invoices/1/delete/');
     assert.equal(context.classifyPath(context.formPath(form, submitter)), null);
 });
+
+test('an online collection submits to the server without a connectivity probe or local queue', async () => {
+    const declaration = source.match(/async function handleCapturedSubmit\([^]*?\n\}/);
+    assert.ok(declaration);
+    const scheduled = [];
+    let serverSubmits = 0;
+    let queued = 0;
+    const context = vm.createContext({
+        navigator: { onLine: true },
+        window: {
+            setTimeout(callback) { scheduled.push(callback); },
+            SHUnsavedForms: { markSaved() {} },
+        },
+        pendingSubmissions: new WeakSet(),
+        submitNormally() { serverSubmits += 1; },
+        queueFormSubmission() { queued += 1; },
+    });
+    vm.runInContext(declaration[0], context);
+    const form = { isConnected: true, reportValidity() { return true; } };
+    await context.handleCapturedSubmit(form);
+    await scheduled.shift()();
+    assert.equal(serverSubmits, 1);
+    assert.equal(queued, 0);
+});

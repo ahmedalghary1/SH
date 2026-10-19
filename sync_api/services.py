@@ -23,6 +23,7 @@ from finance.services import (
     collect_customer_balance_payment,
     collect_order_payment,
     record_customer_refund_payment,
+    record_customer_allowed_discount,
     record_supplier_payment,
     record_transaction,
     transfer_between_accounts,
@@ -122,6 +123,19 @@ def _date_value(value):
     if parsed is None:
         raise ValidationError('التاريخ المدخل غير صالح.')
     return parsed
+
+
+def _transaction_datetime_value(value):
+    """Accept the datetime-local value sent by browser finance forms."""
+    if not value:
+        return None
+    try:
+        parsed = parse_datetime(str(value))
+    except (TypeError, ValueError, OverflowError):
+        parsed = None
+    if parsed is not None:
+        return parsed
+    return _date_value(value)
 
 
 def _find_synced_object_id(*, device_id, entity_type, local_uuid):
@@ -532,8 +546,11 @@ def process_payment(operation, user):
         return _process_cash_account(operation, payment)
 
     amount = Decimal(str(payment.get('amount') or 0))
-    cash_account = _model_by_pk(CashAccount, payment.get('cash_account')) or CashAccount.get_default()
-    transaction_date = _date_value(payment.get('transaction_date'))
+    cash_account = _model_by_pk(CashAccount, payment.get('cash_account'))
+    if path == '/finance/transactions/collection/' and (cash_account is None or not cash_account.is_active):
+        raise ValidationError('اختر خزنة نشطة متاحة لهذا المعرض.')
+    cash_account = cash_account or CashAccount.get_default()
+    transaction_date = _transaction_datetime_value(payment.get('transaction_date'))
 
     if 'expense' in path:
         tx = add_expense(
@@ -582,8 +599,13 @@ def process_payment(operation, user):
     if not _is_int(order_id) and payment.get('order_local_uuid'):
         order_id = _find_synced_object_id(device_id=operation.get('device_id') or '', entity_type='order', local_uuid=payment['order_local_uuid'])
     customer = _customer_from_payload(payment, operation.get('device_id') or '')
+    allowed_discount = decimal_value(payment.get('allowed_discount') or 0)
+    if allowed_discount < 0:
+        raise ValidationError('الخصم المسموح به لا يمكن أن يكون سالبًا')
     if order_id:
         order = Order.objects.get(pk=order_id)
+        if customer and order.customer_id != customer.pk:
+            raise ValidationError('الفاتورة لا تخص العميل المحدد')
         tx = collect_order_payment(
             order=order,
             amount=amount,
@@ -592,6 +614,18 @@ def process_payment(operation, user):
             notes=payment.get('notes') or '',
             transaction_date=transaction_date,
         )
+        if allowed_discount:
+            if amount <= 0 or not order.customer_id:
+                raise ValidationError('لا يمكن إضافة خصم على عملية رد أو فاتورة دون عميل')
+            record_customer_allowed_discount(
+                order=order, customer=order.customer, amount=allowed_discount,
+                user=user, cash_account=cash_account,
+                notes=payment.get('notes') or '', transaction_date=transaction_date,
+            )
+            order.refresh_from_db(fields=['remaining_amount', 'payment_status'])
+            order.remaining_amount = max(order.remaining_amount - allowed_discount, 0)
+            order.payment_status = order.PAYMENT_PAID if order.remaining_amount == 0 else order.PAYMENT_PARTIAL
+            order.save(update_fields=['remaining_amount', 'payment_status'])
     elif amount < 0:
         tx = record_customer_refund_payment(
             customer=customer,
@@ -613,6 +647,12 @@ def process_payment(operation, user):
             transaction_date=transaction_date,
         )
         tx = transactions[-1]
+    if allowed_discount and not order_id:
+        record_customer_allowed_discount(
+            customer=customer, amount=allowed_discount, user=user,
+            cash_account=cash_account, notes=payment.get('notes') or '',
+            transaction_date=transaction_date,
+        )
     return response_success(operation['local_uuid'], tx.pk, 'PaymentTransaction', resolution='local_applied')
 
 
@@ -1548,7 +1588,10 @@ def _validate_operation(operation, user, branch_id):
             if not TransferForm(form_data, user=user).is_valid():
                 raise ValidationError('راجع الخزن والمبلغ وتاريخ التحويل المسموح لهذا الحساب.')
         for name in ('cash_account',):
-            if data.get(name) and not CashAccount.objects.filter(pk=positive_id(data[name]), assigned_user=user, is_active=True).exists():
+            account_query = CashAccount.objects.filter(pk=positive_id(data.get(name)), is_active=True)
+            if path != '/finance/transactions/collection/':
+                account_query = account_query.filter(assigned_user=user)
+            if data.get(name) and not account_query.exists():
                 raise ValidationError('الخزنة غير متاحة لهذا الحساب.')
         customer = _customer_from_payload(data, operation.get('device_id') or '')
         if customer and not visible_customers_for_user(user).filter(pk=customer.pk).exists():

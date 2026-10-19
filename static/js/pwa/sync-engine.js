@@ -6,9 +6,11 @@ import {
     markLocalEntitySynced,
     markQueueItemFailed,
     nowIso,
+    putRecord,
     removeQueueItem,
     setMetadata,
     STORE_NAMES,
+    uuid,
 } from "./db.js";
 import { getOfflineScope } from "./identity.js";
 
@@ -229,6 +231,28 @@ async function applyServerResult(item, result) {
     await markLocalEntitySynced(item.entity_name, item.local_record_id, result || {});
 }
 
+async function repairLegacyCollectionConflicts() {
+    // Both legacy failures occurred before any receipt could be committed.
+    // Give only these known conflicts a new idempotency key for one safe retry.
+    const retryableErrors = new Set([
+        'التاريخ المدخل غير صالح.',
+        'الخزنة غير متاحة لهذا الحساب.',
+    ]);
+    for (const item of await getAll(STORE_NAMES.syncQueue)) {
+        if (item.status !== 'conflict' || item.entity_name !== 'cash'
+            || item.payload?.original_url !== '/finance/transactions/collection/'
+            || !retryableErrors.has(item.error)) continue;
+        await putRecord(STORE_NAMES.syncQueue, {
+            ...item,
+            idempotency_key: uuid(),
+            status: 'pending',
+            sync_status: 'pending',
+            error: '',
+            next_attempt_at: nowIso(),
+        });
+    }
+}
+
 async function pushQueueItem(item) {
     const operation = await operationForServer(item);
     const payload = await jsonFetch(endpointFor(item), {
@@ -275,6 +299,7 @@ async function processQueueUnlocked() {
         const session = await jsonFetch("/api/sync/session/");
         if (session.scope !== getOfflineScope()) throw new Error("تغير الحساب أو المعرض. افتح الصفحة من جديد.");
         csrfToken = session.csrf_token;
+        await repairLegacyCollectionConflicts();
         const items = await getDueQueueItems();
         let synced = 0;
         let failed = 0;

@@ -13,9 +13,6 @@ import {
 } from "./db.js";
 import { processQueue } from "./sync-engine.js";
 
-const SERVER_PING_URL = "/api/sync/ping/";
-const SERVER_REACHABLE_TTL = 5000;
-const SERVER_PING_TIMEOUT = 2500;
 const MAX_OFFLINE_FILE_BYTES = 5 * 1024 * 1024;
 const SERVER_ENTITY_PREFIX = {
     sales: "order",
@@ -28,7 +25,6 @@ const SERVER_ENTITY_PREFIX = {
     purchases: "purchase",
 };
 
-let serverReachableUntil = 0;
 const pendingSubmissions = new WeakSet();
 
 function appendValue(target, key, value) {
@@ -461,29 +457,6 @@ async function handleQuickCustomer(options = {}) {
     };
 }
 
-async function isServerReachable() {
-    if (!navigator.onLine) return false;
-    if (Date.now() < serverReachableUntil) return true;
-
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), SERVER_PING_TIMEOUT);
-    try {
-        const response = await fetch(`${SERVER_PING_URL}?t=${Date.now()}`, {
-            cache: "no-store",
-            credentials: "same-origin",
-            headers: { Accept: "application/json" },
-            signal: controller.signal,
-        });
-        const reachable = response.ok;
-        if (reachable) serverReachableUntil = Date.now() + SERVER_REACHABLE_TTL;
-        return reachable;
-    } catch (error) {
-        return false;
-    } finally {
-        window.clearTimeout(timeout);
-    }
-}
-
 function submitNormally(form, submitter = null) {
     const original = {
         action: form.getAttribute("action"),
@@ -570,7 +543,10 @@ async function handleCapturedSubmit(form, submitter = null) {
             if (!form.isConnected) return;
             if (!submitter?.formNoValidate && typeof form.reportValidity === "function" && !form.reportValidity()) return;
 
-            if (await isServerReachable()) {
+            // A timed-out probe does not prove the POST cannot reach the server.
+            // Never queue a financial write while the browser reports online:
+            // the server may already have committed it when a response is lost.
+            if (navigator.onLine) {
                 window.SHUnsavedForms?.markSaved?.(form);
                 submitNormally(form, submitter);
                 return;

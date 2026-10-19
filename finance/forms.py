@@ -99,6 +99,8 @@ class CustomerCollectionForm(forms.Form):
             self.add_error('amount', 'مبلغ القبض لا يمكن أن يساوي صفر')
         if order and not customer:
             cleaned['customer'] = order.customer
+        if order and customer and order.customer_id != customer.pk:
+            self.add_error('order', 'الفاتورة لا تخص العميل المحدد')
         return cleaned
 
 

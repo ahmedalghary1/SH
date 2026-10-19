@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
@@ -189,6 +190,40 @@ class FinanceServiceTests(TestCase):
         )
         self.assertEqual(str(receipt.transaction_date), '2026-06-13')
         self.assertEqual(receipt.transaction_time.strftime('%H:%M'), '09:25')
+
+    def test_collection_failure_after_receipt_rolls_back_cash_and_receipt(self):
+        self.client.force_login(self.user)
+        with patch('finance.views.record_customer_allowed_discount', side_effect=ValidationError('discount failed')):
+            response = self.client.post(reverse('finance:collection_create'), {
+                'cash_account': self.cash.pk,
+                'customer': self.customer.pk,
+                'amount': '75.00',
+                'allowed_discount': '10.00',
+                'transaction_date': '2026-10-19T09:25',
+            })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'discount failed')
+        self.cash.refresh_from_db()
+        self.assertEqual(self.cash.balance, Decimal('1000.00'))
+        self.assertFalse(PaymentTransaction.objects.filter(
+            related_customer=self.customer,
+            amount=Decimal('75.00'),
+        ).exists())
+
+    def test_collection_with_order_discount_uses_updated_remaining_amount(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse('finance:collection_create'), {
+            'cash_account': self.cash.pk,
+            'customer': self.customer.pk,
+            'order': self.order.pk,
+            'amount': '75.00',
+            'allowed_discount': '10.00',
+            'transaction_date': '2026-10-19T09:25',
+        })
+        self.assertRedirects(response, reverse('finance:collection_create'))
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.paid_amount, Decimal('175.00'))
+        self.assertEqual(self.order.remaining_amount, Decimal('315.00'))
 
     def test_collect_order_payment_updates_order_and_cash(self):
         collect_order_payment(order=self.order, amount=Decimal('200.00'), cash_account=self.cash, user=self.user)

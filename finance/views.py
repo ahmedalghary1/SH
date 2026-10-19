@@ -1,4 +1,5 @@
 from django.contrib import messages
+from django.db import transaction
 from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
 from datetime import datetime
@@ -510,66 +511,71 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
 
     def form_valid(self, form):
         try:
-            order = form.cleaned_data.get('order')
-            cash_account = form.cleaned_data.get('cash_account')
-            allowed_discount = form.cleaned_data.get('allowed_discount') or 0
-            if order:
-                amount = form.cleaned_data['amount']
-                collect_order_payment(
+            self.save_collection(form)
+            messages.success(self.request, 'تم تسجيل القبض')
+            return redirect(self.success_url)
+        except ValidationError as exc:
+            form.add_error(None, _validation_error_message(exc))
+            return self.form_invalid(form)
+
+    @transaction.atomic
+    def save_collection(self, form):
+        order = form.cleaned_data.get('order')
+        cash_account = form.cleaned_data.get('cash_account')
+        allowed_discount = form.cleaned_data.get('allowed_discount') or 0
+        if order:
+            amount = form.cleaned_data['amount']
+            collect_order_payment(
+                order=order,
+                amount=amount,
+                user=self.request.user,
+                cash_account=cash_account,
+                notes=form.cleaned_data.get('notes') or '',
+                transaction_date=form.cleaned_data.get('transaction_date'),
+            )
+            if allowed_discount and amount > 0:
+                record_customer_allowed_discount(
                     order=order,
+                    customer=order.customer,
+                    amount=allowed_discount,
+                    user=self.request.user,
+                    cash_account=cash_account,
+                    notes=form.cleaned_data.get('notes') or '',
+                    transaction_date=form.cleaned_data.get('transaction_date'),
+                )
+                order.refresh_from_db(fields=['remaining_amount', 'payment_status'])
+                order.remaining_amount = max(order.remaining_amount - allowed_discount, 0)
+                order.payment_status = order.PAYMENT_PAID if order.remaining_amount == 0 else order.PAYMENT_PARTIAL
+                order.save(update_fields=['remaining_amount', 'payment_status'])
+        else:
+            amount = form.cleaned_data['amount']
+            if amount < 0:
+                record_customer_refund_payment(
+                    customer=form.cleaned_data.get('customer'),
+                    amount=abs(amount),
+                    user=self.request.user,
+                    cash_account=cash_account,
+                    notes=form.cleaned_data.get('notes') or '',
+                    transaction_date=form.cleaned_data.get('transaction_date'),
+                )
+            else:
+                collect_customer_balance_payment(
+                    customer=form.cleaned_data.get('customer'),
                     amount=amount,
                     user=self.request.user,
                     cash_account=cash_account,
                     notes=form.cleaned_data.get('notes') or '',
                     transaction_date=form.cleaned_data.get('transaction_date'),
                 )
-                if allowed_discount and amount > 0:
-                    record_customer_allowed_discount(
-                        order=order,
-                        customer=order.customer,
-                        amount=allowed_discount,
-                        user=self.request.user,
-                        cash_account=cash_account,
-                        notes=form.cleaned_data.get('notes') or '',
-                        transaction_date=form.cleaned_data.get('transaction_date'),
-                    )
-                    order.remaining_amount = max(order.remaining_amount - allowed_discount, 0)
-                    order.payment_status = order.PAYMENT_PAID if order.remaining_amount == 0 else order.PAYMENT_PARTIAL
-                    order.save(update_fields=['remaining_amount', 'payment_status'])
-            else:
-                amount = form.cleaned_data['amount']
-                if amount < 0:
-                    record_customer_refund_payment(
-                        customer=form.cleaned_data.get('customer'),
-                        amount=abs(amount),
-                        user=self.request.user,
-                        cash_account=cash_account,
-                        notes=form.cleaned_data.get('notes') or '',
-                        transaction_date=form.cleaned_data.get('transaction_date'),
-                    )
-                else:
-                    collect_customer_balance_payment(
-                        customer=form.cleaned_data.get('customer'),
-                        amount=amount,
-                        user=self.request.user,
-                        cash_account=cash_account,
-                        notes=form.cleaned_data.get('notes') or '',
-                        transaction_date=form.cleaned_data.get('transaction_date'),
-                    )
-                if allowed_discount:
-                    record_customer_allowed_discount(
-                        customer=form.cleaned_data.get('customer'),
-                        amount=allowed_discount,
-                        user=self.request.user,
-                        cash_account=cash_account,
-                        notes=form.cleaned_data.get('notes') or '',
-                        transaction_date=form.cleaned_data.get('transaction_date'),
-                    )
-            messages.success(self.request, 'تم تسجيل القبض')
-            return redirect(self.success_url)
-        except ValidationError as exc:
-            form.add_error(None, _validation_error_message(exc))
-            return self.form_invalid(form)
+            if allowed_discount:
+                record_customer_allowed_discount(
+                    customer=form.cleaned_data.get('customer'),
+                    amount=allowed_discount,
+                    user=self.request.user,
+                    cash_account=cash_account,
+                    notes=form.cleaned_data.get('notes') or '',
+                    transaction_date=form.cleaned_data.get('transaction_date'),
+                )
 
 
 class ExpenseUpdateView(ManagerRequiredMixin, FormView):
