@@ -298,6 +298,21 @@ PDF_ARABIC_FONT_PATH = os.environ.get('PDF_ARABIC_FONT_PATH', '').strip()
 
 
 
+# Error alerts use the site's mailbox. Keep its app password in the private .env.
+EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = env_int('EMAIL_PORT', 587)
+EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', True)
+EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', False)
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '').strip()
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_TIMEOUT = env_int('EMAIL_TIMEOUT', 10)
+SERVER_EMAIL = os.environ.get('SERVER_EMAIL') or EMAIL_HOST_USER
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL') or EMAIL_HOST_USER
+ADMINS = [(address, address) for address in env_list('ERROR_EMAIL_TO', EMAIL_HOST_USER)]
+EMAIL_SUBJECT_PREFIX = os.environ.get('EMAIL_SUBJECT_PREFIX', '[SH ERP] ')
+
+
 LOG_DIR = Path(os.environ.get('LOG_DIR', BASE_DIR / 'logs'))
 LOG_TO_FILE = env_bool('LOG_TO_FILE', not DEBUG)
 if LOG_TO_FILE:
@@ -401,6 +416,17 @@ if LOG_TO_FILE:
     LOGGING['loggers']['business']['handlers'].append('business_file')
     LOGGING['loggers']['security']['handlers'].append('security_file')
     LOGGING['root']['handlers'].append('django_file')
+
+if not DEBUG and EMAIL_HOST_USER and EMAIL_HOST_PASSWORD and ADMINS:
+    LOGGING['handlers']['mail_admins'] = {
+        'class': 'django.utils.log.AdminEmailHandler',
+        'level': 'ERROR',
+        'filters': ['sanitize'],
+        'include_html': False,
+    }
+    for logger_name in ('django', 'business', 'security'):
+        LOGGING['loggers'][logger_name]['handlers'].append('mail_admins')
+    LOGGING['root']['handlers'].append('mail_admins')
 
 
 # ------------------------------------------------------------------ #

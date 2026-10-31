@@ -422,6 +422,8 @@ def pay_supplier(*, purchase_order, amount, cash_account, user, notes='', transa
 def cancel_purchase_order(*, purchase_order, user=None):
     purchase_order = PurchaseOrder.objects.select_for_update().select_related('supplier').get(pk=purchase_order.pk)
     old_status = purchase_order.status
+    if purchase_order.status == PurchaseOrder.STATUS_CANCELLED:
+        raise ValidationError('أمر الشراء ملغى بالفعل')
     if purchase_order.items.filter(received_quantity__gt=0).exists():
         raise ValidationError('لا يمكن إلغاء أمر شراء تم استلام بضاعة منه')
     if purchase_order.paid_amount > 0:

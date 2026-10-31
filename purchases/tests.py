@@ -13,7 +13,7 @@ from products.models import Category, Color, Product, ProductVariant, Size
 
 from .models import PurchaseOrder, Supplier
 from .raw_material import record_raw_material_purchase
-from .services import create_purchase_order, pay_supplier, receive_purchase_order_items
+from .services import cancel_purchase_order, create_purchase_order, pay_supplier, receive_purchase_order_items
 
 
 class PurchaseServiceTests(TestCase):
@@ -52,6 +52,71 @@ class PurchaseServiceTests(TestCase):
         self.assertEqual(po.total_amount, Decimal('1250.00'))
         self.assertEqual(po.remaining_amount, Decimal('1250.00'))
         self.assertEqual(self.supplier.current_balance, Decimal('1250.00'))
+
+    def test_cancelling_purchase_twice_does_not_deduct_supplier_twice(self):
+        purchase_order = self.create_order()
+
+        cancel_purchase_order(purchase_order=purchase_order, user=self.manager)
+        with self.assertRaises(ValidationError):
+            cancel_purchase_order(purchase_order=purchase_order, user=self.manager)
+
+        purchase_order.refresh_from_db()
+        self.supplier.refresh_from_db()
+        self.assertEqual(purchase_order.status, PurchaseOrder.STATUS_CANCELLED)
+        self.assertEqual(self.supplier.current_balance, Decimal('0.00'))
+
+    def test_cancelling_draft_purchase_keeps_supplier_balance_unchanged(self):
+        purchase_order = create_purchase_order(
+            supplier=self.supplier,
+            items=[{
+                'product_variant': self.variant,
+                'quantity': 2,
+                'unit_cost': Decimal('125.00'),
+            }],
+            status=PurchaseOrder.STATUS_DRAFT,
+            user=self.manager,
+        )
+
+        cancel_purchase_order(purchase_order=purchase_order, user=self.manager)
+
+        purchase_order.refresh_from_db()
+        self.supplier.refresh_from_db()
+        self.assertEqual(purchase_order.status, PurchaseOrder.STATUS_CANCELLED)
+        self.assertEqual(self.supplier.current_balance, Decimal('0.00'))
+
+    def test_repeated_purchase_cancel_post_does_not_change_supplier_balance(self):
+        purchase_order = self.create_order()
+        self.client.force_login(self.manager)
+        url = reverse('purchases:order_cancel', kwargs={'pk': purchase_order.pk})
+
+        self.client.post(url)
+        self.client.post(url)
+
+        self.supplier.refresh_from_db()
+        self.assertEqual(self.supplier.current_balance, Decimal('0.00'))
+
+    def test_separate_sync_keys_cannot_cancel_purchase_twice(self):
+        from sync_api.services import process_operation
+
+        purchase_order = self.create_order()
+        operation = {
+            'device_id': 'purchase-cancel-device',
+            'entity_type': 'purchase',
+            'operation_type': 'delete',
+            'local_uuid': 'purchase-cancel-local',
+            'payload': {
+                'purchase': {'server_id': purchase_order.pk},
+                'original_url': f'/purchases/orders/{purchase_order.pk}/cancel/',
+            },
+        }
+
+        first = process_operation({**operation, 'idempotency_key': 'purchase-cancel-1'}, self.manager)
+        second = process_operation({**operation, 'idempotency_key': 'purchase-cancel-2'}, self.manager)
+
+        self.supplier.refresh_from_db()
+        self.assertEqual(first['status'], 'success')
+        self.assertEqual(second['status'], 'failed_conflict')
+        self.assertEqual(self.supplier.current_balance, Decimal('0.00'))
 
     def test_purchase_list_totals_follow_status_filter(self):
         included_order = self.create_order()
