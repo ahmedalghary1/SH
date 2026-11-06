@@ -750,8 +750,9 @@ class SalesReturnCompleteView(ManagerRequiredMixin, FormView):
 
 
 class SalesReturnRejectView(ManagerRequiredMixin, View):
+    @transaction.atomic
     def post(self, request, pk):
-        sales_return = get_object_or_404(SalesReturn, pk=pk)
+        sales_return = get_object_or_404(SalesReturn.objects.select_for_update(), pk=pk)
         if sales_return.status == SalesReturn.STATUS_DRAFT:
             sales_return.status = SalesReturn.STATUS_REJECTED
             sales_return.revision += 1

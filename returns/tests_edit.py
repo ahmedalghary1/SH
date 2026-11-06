@@ -55,8 +55,8 @@ class SalesReturnEditTests(TestCase):
 
     def edit(self, sales_return, quantity=1, **kwargs):
         item = sales_return.items.get()
-        row = dict(item_id=item.pk, original_order_item=item.original_order_item,
-                   quantity=quantity, condition=item.condition, return_to_stock=item.return_to_stock)
+        row = {'item_id': item.pk, 'original_order_item': item.original_order_item,
+                   'quantity': quantity, 'condition': item.condition, 'return_to_stock': item.return_to_stock}
         row.update(kwargs.pop('item_changes', {}))
         return update_sales_return(
             sales_return=sales_return, user=self.user, revision=sales_return.revision,
@@ -182,10 +182,10 @@ class SalesReturnEditTests(TestCase):
     def test_exchange_edit_adjusts_replacement_stock_and_cash_difference(self):
         sales_return = self.make_return(exchange=True, paid=900)
         exchange = sales_return.exchange_items.get()
-        self.edit(sales_return, exchanges=[dict(
-            item_id=exchange.pk, old_order_item=self.order_item, new_product_variant=self.exchange_variant,
-            quantity=1, new_unit_price=400,
-        )])
+        self.edit(sales_return, exchanges=[{
+            'item_id': exchange.pk, 'old_order_item': self.order_item, 'new_product_variant': self.exchange_variant,
+            'quantity': 1, 'new_unit_price': 400,
+        }])
         self.cash.refresh_from_db()
         self.assertEqual(self.cash.balance, Decimal(3000))
         self.assertEqual(Stock.objects.get(warehouse=self.warehouse, variant=self.exchange_variant).quantity, 4)
@@ -257,6 +257,21 @@ class SalesReturnEditTests(TestCase):
         self.assertEqual(sales_return.financial_transactions.count(), 1)
         self.edit(sales_return, quantity=1)
         self.balance('0')
+
+    def test_synced_return_preserves_selected_warehouse_and_date(self):
+        from sync_api.services import process_return
+
+        response = process_return({
+            'local_uuid': 'return-warehouse-sync',
+            'payload': {
+                'return': {'order_server_id': self.order.pk, 'return_warehouse': self.target.pk,
+                           'return_datetime': '2026-10-10T14:35'},
+                'items': [{'original_order_item': self.order_item.pk, 'quantity': 1}],
+            },
+        }, self.user)
+        sales_return = SalesReturn.objects.get(pk=response['server_id'])
+        self.assertEqual(sales_return.return_warehouse, self.target)
+        self.assertEqual(timezone.localtime(sales_return.created_at).strftime('%Y-%m-%dT%H:%M'), '2026-10-10T14:35')
 
     def test_sales_user_can_only_edit_own_drafts(self):
         sales_return = self.make_return(completed=False)

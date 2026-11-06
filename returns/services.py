@@ -504,7 +504,7 @@ def _recalculate_refund_amount(sales_return):
     return total
 
 
-def _return_stock_positions(sales_return, order, items, exchanges, warehouse):
+def _return_stock_positions(order, items, exchanges, warehouse):
     positions = {}
     for item in items:
         target = warehouse or get_order_item_warehouse(item.original_order_item, order=order)
@@ -610,7 +610,8 @@ def update_sales_return(*, sales_return, user, revision, items, exchanges=None,
         old = old_by_id.get(item_id)
         if item_id and (not old or item_id in used_ids or old.original_order_item_id != original.pk):
             raise ValidationError('بيانات صنف المرتجع غير صحيحة')
-        used_ids.add(item_id) if item_id else None
+        if item_id:
+            used_ids.add(item_id)
         quantity = integer_value(row['quantity'], minimum=0)
         if not quantity:
             continue
@@ -641,7 +642,8 @@ def update_sales_return(*, sales_return, user, revision, items, exchanges=None,
             exchange_id = row.get('item_id')
             if exchange_id and (exchange_id not in old_exchange_ids or exchange_id in exchange_ids):
                 raise ValidationError('بيانات الاستبدال غير صحيحة')
-            exchange_ids.add(exchange_id) if exchange_id else None
+            if exchange_id:
+                exchange_ids.add(exchange_id)
             quantity = integer_value(row['quantity'], minimum=0)
             if not quantity:
                 continue
@@ -660,7 +662,8 @@ def update_sales_return(*, sales_return, user, revision, items, exchanges=None,
                 old_unit_price=old_price, new_unit_price=price,
                 price_difference=(price - old_price) * quantity, notes=row.get('notes', ''),
             ))
-        if not new_exchanges or any(qty > quantities[key] for key, qty in exchanged.items()):
+        if ((not new_exchanges and sales_return.status == SalesReturn.STATUS_COMPLETED)
+                or any(qty > quantities[key] for key, qty in exchanged.items())):
             raise ValidationError('كميات الاستبدال يجب ألا تتجاوز كميات الأصناف المرتجعة')
     was_completed = sales_return.status == SalesReturn.STATUS_COMPLETED
     old_amount = sales_return.refund_amount
@@ -670,8 +673,8 @@ def update_sales_return(*, sales_return, user, revision, items, exchanges=None,
               'items': [{'id': item.pk, 'quantity': item.quantity, 'condition': item.condition,
                          'return_to_stock': item.return_to_stock} for item in old_items]}
     if was_completed:
-        old_positions = _return_stock_positions(sales_return, order, old_items, old_exchanges, sales_return.return_warehouse)
-        new_positions = _return_stock_positions(sales_return, order, new_items, new_exchanges, return_warehouse)
+        old_positions = _return_stock_positions(order, old_items, old_exchanges, sales_return.return_warehouse)
+        new_positions = _return_stock_positions(order, new_items, new_exchanges, return_warehouse)
         _apply_return_stock_changes(sales_return=sales_return, before=old_positions, after=new_positions, user=user)
         _record_damaged_changes(sales_return, order, old_items, new_items,
                                 sales_return.return_warehouse, return_warehouse, user)

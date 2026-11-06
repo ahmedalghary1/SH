@@ -677,11 +677,21 @@ def process_return(operation, user):
     if order is None:
         raise ValidationError('Cannot sync return without a synced invoice')
 
+    warehouse_id = _first_value(data.get('return_warehouse'))
+    return_warehouse = _model_by_pk(Warehouse, warehouse_id)
+    if warehouse_id and return_warehouse is None:
+        raise ValidationError('مخزن استلام المرتجع غير موجود')
+    raw_datetime = _first_value(data.get('return_datetime'))
+    return_datetime = parse_datetime(raw_datetime) if raw_datetime else None
+    if raw_datetime and return_datetime is None:
+        raise ValidationError('تاريخ المرتجع غير صحيح')
     sales_return = create_sales_return(
         order=order,
         return_type=data.get('return_type') or SalesReturn.TYPE_PARTIAL_RETURN,
         reason=data.get('reason') or '',
         user=user,
+        return_warehouse=return_warehouse,
+        return_datetime=return_datetime,
     )
 
     selected_items = payload.get('items') or []
