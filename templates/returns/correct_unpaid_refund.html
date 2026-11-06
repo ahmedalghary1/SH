@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}تصحيح استرداد غير منفذ{% endblock %}
 {% block content %}
-<div class="page-head"><h1>تصحيح استرداد لم يُصرف</h1><a class="btn btn-light" href="{% url 'customers:reconcile_returns' sales_return.customer_id %}">رجوع لمراجعة العميل</a></div>
+<div class="page-head"><h1>تصحيح استرداد لم يُصرف</h1>{% if sales_return.customer_id %}<a class="btn btn-light" href="{% url 'customers:reconcile_returns' sales_return.customer_id %}">رجوع لمراجعة العميل</a>{% else %}<a class="btn btn-light" href="{% url 'returns:detail' sales_return.pk %}">رجوع للمرتجع</a>{% endif %}</div>
 <section class="card">
     <h2>{{ sales_return.customer.name }} — مرتجع #{{ sales_return.pk }}</h2>
     <p>هذه المعالجة مخصصة لمبلغ سُجّل كاسترداد نقدي ولم يُدفع للعميل فعليًا. إذا تسلم العميل المبلغ، فلا تستخدم هذه المعالجة.</p>

@@ -776,6 +776,8 @@ class CorrectUnpaidRefundView(ManagerRequiredMixin, View):
 
     def post(self, request, *args, **kwargs):
         sales_return = self.get_return()
+        if not sales_return.customer_id:
+            return self.page(request, sales_return, error='تسوية المرتجع تتطلب حساب عميل مسجل')
         if ReturnAccountSettlement.objects.filter(sales_return=sales_return).exists():
             messages.info(request, 'تمت تسوية هذا المرتجع على حساب العميل بالفعل')
             return redirect('customers:reconcile_returns', pk=sales_return.customer_id)

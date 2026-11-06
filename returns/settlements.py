@@ -130,6 +130,8 @@ def convert_unpaid_refund_to_account(*, sales_return, user, fingerprint, reason)
     sales_return = SalesReturn.objects.select_for_update().get(pk=sales_return.pk)
     if ReturnAccountSettlement.objects.filter(sales_return=sales_return).exists():
         return sales_return
+    if not sales_return.customer_id:
+        raise ValidationError('تسوية المرتجع تتطلب حساب عميل مسجل')
     list(Order.objects.select_for_update().filter(customer_id=sales_return.customer_id).order_by('pk'))
     review = refund_account_review(sales_return)
     if review['fingerprint'] != fingerprint:
