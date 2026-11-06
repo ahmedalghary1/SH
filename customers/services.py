@@ -94,7 +94,9 @@ def get_customer_summary(customer):
         direction=PaymentTransaction.DIRECTION_IN,
         affects_cash=True,
         transaction_type__in=[PaymentTransaction.TYPE_CUSTOMER_PAYMENT, PaymentTransaction.TYPE_SALES_REP_COLLECTION],
-    ).exclude(sales_returns__status=SalesReturn.STATUS_CANCELLED).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    ).exclude(sales_returns__status=SalesReturn.STATUS_CANCELLED).exclude(
+        sales_returns__account_settlement__isnull=False,
+    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
     last_order = _customer_orders(customer).order_by('-created_at').first()
     last_payment = PaymentTransaction.objects.filter(
@@ -105,7 +107,9 @@ def get_customer_summary(customer):
             PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
             PaymentTransaction.TYPE_SALES_REP_COLLECTION,
         ],
-    ).exclude(sales_returns__status=SalesReturn.STATUS_CANCELLED).order_by('-transaction_date', '-transaction_time', '-pk').first()
+    ).exclude(sales_returns__status=SalesReturn.STATUS_CANCELLED).exclude(
+        sales_returns__account_settlement__isnull=False,
+    ).order_by('-transaction_date', '-transaction_time', '-pk').first()
 
     interactions = customer.interactions.order_by('-created_at')
     last_interaction = interactions.first()

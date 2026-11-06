@@ -74,6 +74,19 @@ class SalesReturn(BranchOwnedModel):
         return self.order.branch_id if self.order_id else None
 
 
+class ReturnAccountSettlement(BranchOwnedModel):
+    branch_relations = ('sales_return',)
+    sales_return = models.OneToOneField(SalesReturn, on_delete=models.PROTECT, related_name='account_settlement')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    allocations = models.ManyToManyField('finance.PaymentTransaction', related_name='return_account_settlements', blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    reason = models.TextField(blank=True, default='')
+
+    def infer_branch_id(self):
+        return self.sales_return.branch_id
+
+
 class SalesReturnItem(BranchOwnedModel):
     branch_relations = ('sales_return', 'original_order_item', 'product_variant')
     CONDITION_GOOD = 'good'

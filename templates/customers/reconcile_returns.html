@@ -42,6 +42,16 @@
     <label class="inline-check">{{ form.confirm }}<span>{{ form.confirm.label }}</span></label>
     {{ form.confirm.errors }}
     <div class="form-actions"><button class="btn btn-primary" type="submit">تصحيح الفواتير المحددة</button></div>
-    {% elif has_blocked %}<p>لا توجد فواتير متاحة للتصحيح التلقائي. راجع الحركات الموضحة أعلاه.</p>{% elif review_rows %}<p>أرصدة الفواتير متطابقة، ولا يوجد تصحيح مطلوب.</p>{% endif %}
+    {% elif has_blocked %}<p>لا توجد فواتير متاحة للتصحيح التلقائي. راجع الحركات الموضحة أعلاه.</p>{% elif review_rows %}<p>أرصدة الفواتير متطابقة مع الحركات المسجلة. إذا وُجد استرداد لم يُصرف فعلًا، استخدم المعالجة المخصصة أدناه.</p>{% endif %}
 </form>
+{% if refund_candidates %}
+<section class="card">
+    <h2>استرداد سُجّل ولم يُصرف</h2>
+    <p>تطابق الأرقام لا يثبت أن الاسترداد دُفع فعليًا. استخدم المعالجة التالية فقط إذا أكد المحاسب أن العميل لم يتسلم المبلغ.</p>
+    {% for candidate in refund_candidates %}
+    <p>مرتجع #{{ candidate.sales_return.pk }} — {{ candidate.sales_return.order.order_number }} — مبلغ {{ candidate.amount|floatformat:'2u' }}</p>
+    <a class="btn btn-light" href="{% url 'returns:correct_unpaid_refund' candidate.sales_return.pk %}">مراجعة تحويل الاسترداد إلى حساب العميل</a>
+    {% endfor %}
+</section>
+{% endif %}
 {% endblock %}

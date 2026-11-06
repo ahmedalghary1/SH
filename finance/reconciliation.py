@@ -35,7 +35,7 @@ def assert_order_return_balance(order):
 
 def inspect_order_return_balance(order):
     from orders.models import Order
-    from returns.models import SalesReturn
+    from returns.models import ReturnAccountSettlement, SalesReturn
 
     problems = []
     returns = list(SalesReturn.all_objects.filter(order_id=order.pk).order_by('pk').prefetch_related(
@@ -46,6 +46,7 @@ def inspect_order_return_balance(order):
     return_data = []
     debt = Decimal(0)
     for sales_return in returns:
+        settlement = ReturnAccountSettlement.objects.filter(sales_return=sales_return).prefetch_related('allocations').first()
         linked = sorted(sales_return.financial_transactions.all(), key=lambda payment: payment.pk)
         linked_ids.update(payment.pk for payment in linked)
         items = sorted(sales_return.items.all(), key=lambda item: item.pk)
@@ -73,9 +74,16 @@ def inspect_order_return_balance(order):
                     expected_cash = sum((item.price_difference for item in exchanges), Decimal(0))
                 else:
                     debt += sales_return.debt_reduction
-                    expected_cash = sales_return.debt_reduction - sales_return.refund_amount
+                    expected_cash = sales_return.debt_reduction - sales_return.refund_amount + (
+                        settlement.amount if settlement else Decimal(0))
             if cash_net != expected_cash:
                 problems.append(f'return_{sales_return.pk}:cash_links_mismatch')
+            if settlement:
+                allocated = sum((payment.amount if payment.direction == PaymentTransaction.DIRECTION_IN else -payment.amount
+                                 for payment in settlement.allocations.all()), Decimal(0))
+                expected_allocated = settlement.amount if sales_return.status == SalesReturn.STATUS_COMPLETED else Decimal(0)
+                if allocated != expected_allocated:
+                    problems.append(f'return_{sales_return.pk}:account_settlement_mismatch')
         return_data.append({
             'id': sales_return.pk, 'branch': sales_return.branch_id, 'status': sales_return.status,
             'type': sales_return.return_type, 'revision': sales_return.revision,
@@ -85,6 +93,11 @@ def inspect_order_return_balance(order):
                           sorted(item.pk for item in p.sales_returns.all())) for p in linked],
             'items': [(item.pk, item.quantity, item.refund_amount) for item in items],
             'exchanges': [(item.pk, item.quantity, item.price_difference) for item in exchanges],
+            'settlement': None if not settlement else {
+                'amount': settlement.amount,
+                'allocations': sorted((payment.pk, payment.related_order_id or 0, payment.amount, payment.direction)
+                                      for payment in settlement.allocations.all()),
+            },
         })
 
     paid_from_ledger = Decimal(0)

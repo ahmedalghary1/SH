@@ -16,12 +16,16 @@ from .models import Invoice
 
 
 def invoice_deletion_block_reason(order):
+    from returns.settlements import has_active_return_settlement
+
     if order.status == Order.STATUS_CANCELLED:
         return 'هذه الفاتورة محذوفة بالفعل'
     if order.status not in {Order.STATUS_CONFIRMED, Order.STATUS_PREPARING, Order.STATUS_READY, Order.STATUS_COMPLETED}:
         return 'حالة الفاتورة الحالية لا تسمح بالحذف'
     if order.sales_returns.exclude(status__in=['rejected', 'cancelled']).exists():
         return 'الفاتورة مرتبطة بمرتجع؛ راجع المرتجع أولًا قبل الحذف'
+    if has_active_return_settlement(order):
+        return 'الفاتورة مرتبطة بتسوية مرتجع على حساب العميل؛ راجع التسوية قبل الحذف'
     if order.sales_rep_collections.filter(handed_over_amount__gt=0).exists():
         return 'تم تسليم تحصيلات هذه الفاتورة من عهدة المندوب؛ يجب تسوية العهدة أولًا'
     if order.sales_rep_collections.filter(amount__lt=0).exists():

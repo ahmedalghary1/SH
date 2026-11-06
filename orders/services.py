@@ -530,6 +530,8 @@ def confirm_order(*, order, user, auto_collect=True):
 
 @transaction.atomic
 def cancel_order(*, order, user):
+    from returns.settlements import has_active_return_settlement
+
     order = Order.objects.select_for_update().get(pk=order.pk)
     old_status = order.status
     if order.status == Order.STATUS_DRAFT:
@@ -552,6 +554,8 @@ def cancel_order(*, order, user):
         raise ValidationError('لا يمكن إلغاء هذا الطلب')
     if order.sales_returns.exclude(status__in=['rejected', 'cancelled']).exists():
         raise ValidationError('لا يمكن حذف أو إلغاء فاتورة مرتبطة بمرتجع؛ راجع المرتجع أولًا')
+    if has_active_return_settlement(order):
+        raise ValidationError('الفاتورة مرتبطة بتسوية مرتجع على حساب العميل؛ راجع التسوية قبل إلغاء الفاتورة')
     if order.items.filter(variant__isnull=True).exists():
         raise ValidationError('تعذر عكس المخزون لأن أحد أصناف الفاتورة لم يعد موجودًا')
     for item in order.items.select_related('variant', 'warehouse'):
@@ -649,6 +653,10 @@ def revise_order(*, order, order_data, items, user):
         raise ValidationError('يمكن تعديل فواتير البيع المعتمدة والنشطة فقط')
     if order.sales_returns.exists():
         raise ValidationError('لا يمكن تعديل فاتورة مرتبطة بمرتجع؛ ألغِ المرتجع أولًا أو أنشئ مستند تصحيح جديدًا')
+    from returns.settlements import has_active_return_settlement
+
+    if has_active_return_settlement(order):
+        raise ValidationError('الفاتورة مرتبطة بتسوية مرتجع؛ راجع التسوية قبل تعديلها')
 
     previous_status = order.status
     previous_total = Decimal(str(order.total or 0))

@@ -1,6 +1,7 @@
 from functools import cached_property
 
 from django import forms
+from django.core import signing
 from django.db.models import Q
 from django.utils import timezone
 
@@ -127,6 +128,11 @@ class ExchangeItemForm(forms.Form):
 
 
 class CompleteReturnForm(forms.Form):
+    settlement_method = forms.ChoiceField(
+        choices=[('account', 'خصم من حساب العميل دون صرف نقدي'), ('cash', 'صرف باقي قيمة المرتجع نقدًا')],
+        initial='account', required=False, label='طريقة تسوية المرتجع',
+    )
+    confirm_cash_refund = forms.BooleanField(required=False, label='أؤكد صرف المبلغ النقدي المتبقي للعميل فعليًا')
     return_warehouse = forms.ModelChoiceField(
         queryset=Warehouse.objects.none(), required=False, label='مخزن استلام المرتجع',
         empty_label='مخزن الصنف في الفاتورة',
@@ -135,9 +141,46 @@ class CompleteReturnForm(forms.Form):
 
     def __init__(self, *args, sales_return, **kwargs):
         super().__init__(*args, **kwargs)
+        self.is_exchange = sales_return.return_type == SalesReturn.TYPE_EXCHANGE
+        if self.is_exchange:
+            del self.fields['settlement_method']
+            del self.fields['confirm_cash_refund']
         self.fields['return_warehouse'].queryset = Warehouse.objects.filter(branch_id=sales_return.branch_id, is_active=True)
         self.fields['return_warehouse'].initial = sales_return.return_warehouse_id
         self.fields['cash_account'].queryset = CashAccount.objects.filter(branch_id=sales_return.branch_id, is_active=True)
+
+    def clean(self):
+        cleaned = super().clean()
+        if not self.is_exchange:
+            cleaned['settlement_method'] = cleaned.get('settlement_method') or 'account'
+            if cleaned['settlement_method'] == 'cash' and not cleaned.get('confirm_cash_refund'):
+                self.add_error('confirm_cash_refund', 'أكد أن المبلغ سيُصرف للعميل فعليًا، أو اختر الخصم من حسابه')
+        return cleaned
+
+
+class CorrectUnpaidRefundForm(forms.Form):
+    review_token = forms.CharField(widget=forms.HiddenInput, max_length=10000)
+    reason = forms.CharField(label='سبب التصحيح', max_length=500,
+                            initial='استرداد مسجل بالخطأ ولم يصرف للعميل؛ يُسوّى على حسابه',
+                            widget=forms.Textarea(attrs={'rows': 3}))
+    confirm_not_paid = forms.BooleanField(label='أؤكد أن مبلغ الاسترداد المعروض لم يُدفع للعميل فعليًا')
+
+    def __init__(self, *args, review, user, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.review, self.user = review, user
+        self.initial['review_token'] = signing.dumps({'review': review, 'actor_id': user.pk},
+                                                     salt='unpaid-return-refund-v1', compress=True)
+
+    def clean_review_token(self):
+        try:
+            payload = signing.loads(self.cleaned_data['review_token'], salt='unpaid-return-refund-v1', max_age=1800)
+            reviewed = payload['review']
+            if (payload['actor_id'] != self.user.pk or reviewed['return_id'] != self.review['return_id']
+                    or reviewed['branch_id'] != self.review['branch_id']):
+                raise signing.BadSignature
+        except (signing.BadSignature, KeyError, TypeError, ValueError):
+            raise forms.ValidationError('انتهت المراجعة أو تعذر التحقق منها؛ أعد فتح الصفحة قبل التصحيح') from None
+        return reviewed
 
 
 class SalesReturnEditForm(ReturnDateTimeForm):

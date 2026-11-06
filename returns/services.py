@@ -23,7 +23,7 @@ from inventory.services import return_stock, sale_stock
 from orders.models import Order, OrderItem
 from orders.services import get_order_item_warehouse
 
-from .models import ExchangeItem, SalesReturn, SalesReturnItem
+from .models import ExchangeItem, ReturnAccountSettlement, SalesReturn, SalesReturnItem
 
 
 def _in_return_branch(function):
@@ -325,7 +325,9 @@ def approve_sales_return(*, sales_return, user):
 
 @transaction.atomic
 @_in_return_branch
-def complete_sales_return(*, sales_return, user, cash_account=None, return_warehouse=Ellipsis):
+def complete_sales_return(*, sales_return, user, cash_account=None, return_warehouse=Ellipsis, settlement_method='cash'):
+    if settlement_method not in {'cash', 'account'}:
+        raise ValidationError('طريقة تسوية المرتجع غير صحيحة')
     sales_return = SalesReturn.objects.select_for_update().get(pk=sales_return.pk)
     old_status = sales_return.status
     if sales_return.status != SalesReturn.STATUS_APPROVED:
@@ -334,6 +336,8 @@ def complete_sales_return(*, sales_return, user, cash_account=None, return_wareh
         sales_return.return_warehouse = return_warehouse
         sales_return.save(update_fields=['return_warehouse'])
 
+    if settlement_method == 'account' and sales_return.customer_id:
+        list(Order.objects.select_for_update().filter(customer_id=sales_return.customer_id).order_by('pk'))
     order = Order.objects.select_for_update().get(pk=sales_return.order_id)
     _validate_return_warehouse(sales_return.return_warehouse, order.branch_id)
     if order.status in {Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED}:
@@ -361,7 +365,8 @@ def complete_sales_return(*, sales_return, user, cash_account=None, return_wareh
             )
 
     _process_exchange_stock_and_money(sales_return=sales_return, order=order, user=user, cash_account=cash_account)
-    _process_refund(sales_return=sales_return, order=order, user=user, cash_account=cash_account)
+    _process_refund(sales_return=sales_return, order=order, user=user, cash_account=cash_account,
+                    settlement_method=settlement_method)
 
     sales_return.status = SalesReturn.STATUS_COMPLETED
     sales_return.revision += 1
@@ -414,7 +419,7 @@ def _increase_stock_for_return(*, order, item, user, warehouse=None):
         )
 
 
-def _process_refund(*, sales_return, order, user, cash_account):
+def _process_refund(*, sales_return, order, user, cash_account, settlement_method='cash'):
     if sales_return.return_type == SalesReturn.TYPE_EXCHANGE:
         return None
     refund_amount = sales_return.items.aggregate(v=Sum('refund_amount'))['v'] or Decimal('0')
@@ -436,6 +441,17 @@ def _process_refund(*, sales_return, order, user, cash_account):
         order.save(update_fields=['remaining_amount', 'payment_status'])
     if cash_refund <= 0:
         return None
+    if settlement_method == 'account':
+        settlement = ReturnAccountSettlement.objects.create(
+            branch_id=sales_return.branch_id, sales_return=sales_return, amount=cash_refund, created_by=user,
+            reason='تسوية المرتجع على حساب العميل دون صرف نقدي',
+        )
+        from .settlements import allocate_return_credit
+
+        allocate_return_credit(settlement, user=user, cash_account=_return_cash_account(sales_return, cash_account))
+        return None
+    if settlement_method != 'cash':
+        raise ValidationError('طريقة تسوية المرتجع غير صحيحة')
     payment = record_transaction(
         transaction_type=PaymentTransaction.TYPE_REFUND,
         direction=PaymentTransaction.DIRECTION_OUT,
@@ -673,6 +689,8 @@ def update_sales_return(*, sales_return, user, revision, items, exchanges=None,
     was_completed = sales_return.status == SalesReturn.STATUS_COMPLETED
     old_amount = sales_return.refund_amount
     new_amount = decimal_value(sum((item.refund_amount for item in new_items), Decimal(0)), max_digits=12)
+    if new_amount != old_amount and ReturnAccountSettlement.objects.filter(sales_return=sales_return).exists():
+        raise ValidationError('هذا المرتجع تمت تسويته على حساب العميل. لإعادة تحديد قيمته ألغِه ثم أنشئ مرتجعًا جديدًا')
     before = {'refund_amount': str(old_amount), 'warehouse': sales_return.return_warehouse_id,
               'created_at': sales_return.created_at.isoformat(), 'status': sales_return.status,
               'items': [{'id': item.pk, 'quantity': item.quantity, 'condition': item.condition,
@@ -757,6 +775,9 @@ def cancel_sales_return(*, sales_return, user, revision=None, reason=''):
         return sales_return
     if revision is not None and sales_return.revision != revision:
         raise ValidationError('تم تغيير المرتجع. أعد تحميل الصفحة قبل الإلغاء')
+    settlement = ReturnAccountSettlement.objects.filter(sales_return=sales_return).first()
+    if settlement and sales_return.customer_id:
+        list(Order.objects.select_for_update().filter(customer_id=sales_return.customer_id).order_by('pk'))
     order = Order.objects.select_for_update().get(pk=sales_return.order_id)
     old_status = sales_return.status
     restore_status = sales_return.order_status_before_return or _order_status_before_returns(order)
@@ -774,9 +795,14 @@ def cancel_sales_return(*, sales_return, user, revision=None, reason=''):
             )
         expected_effect = (sum((item.price_difference for item in exchanges), Decimal(0))
                            if sales_return.return_type == SalesReturn.TYPE_EXCHANGE
-                           else sales_return.debt_reduction - sales_return.refund_amount)
+                           else sales_return.debt_reduction - sales_return.refund_amount
+                           + (settlement.amount if settlement else Decimal(0)))
         if sum(cash_effects.values(), Decimal(0)) != expected_effect:
             raise ValidationError('تعذر مطابقة الحركات المالية للمرتجع. يجب مراجعتها قبل الإلغاء')
+        if settlement:
+            from .settlements import reverse_return_credit
+
+            reverse_return_credit(settlement, user=user)
         positions = _return_stock_positions(order, items, exchanges, sales_return.return_warehouse)
         _apply_return_stock_changes(sales_return=sales_return, before=positions, after={}, user=user)
         _record_damaged_changes(sales_return, order, items, [],

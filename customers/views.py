@@ -370,6 +370,15 @@ class CustomerReturnReconciliationView(ManagerRequiredMixin, FormView):
         context.update(customer=self.get_customer(), report=report, review_rows=rows,
                        has_repairs=any(row['needs_repair'] and not row['problems'] for row in rows),
                        has_blocked=any(row['problems'] for row in rows))
+        refund_candidates = []
+        for sales_return in SalesReturn.objects.filter(
+            customer=self.customer, status=SalesReturn.STATUS_COMPLETED, account_settlement__isnull=True,
+        ).exclude(return_type=SalesReturn.TYPE_EXCHANGE).select_related('order').prefetch_related('financial_transactions'):
+            amount = sum((payment.amount if payment.direction == PaymentTransaction.DIRECTION_OUT else -payment.amount
+                          for payment in sales_return.financial_transactions.all() if payment.affects_cash), Decimal(0))
+            if amount > 0:
+                refund_candidates.append({'sales_return': sales_return, 'amount': amount})
+        context['refund_candidates'] = refund_candidates
         return context
 
     def form_valid(self, form):

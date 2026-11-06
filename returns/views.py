@@ -4,7 +4,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Count, Q, Sum
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -23,6 +23,7 @@ from products.models import ProductVariant
 from .forms import (
     CancelReturnForm,
     CompleteReturnForm,
+    CorrectUnpaidRefundForm,
     CustomerReturnCreateForm,
     ExchangeItemForm,
     ReturnEditExchangeFormSet,
@@ -31,7 +32,7 @@ from .forms import (
     SalesReturnCreateForm,
     SalesReturnEditForm,
 )
-from .models import SalesReturn, SalesReturnItem
+from .models import ReturnAccountSettlement, SalesReturn, SalesReturnItem
 from .services import (
     _line_refund_unit_price,
     add_exchange_item,
@@ -45,6 +46,7 @@ from .services import (
     customer_purchase_rows,
     update_sales_return,
 )
+from .settlements import convert_unpaid_refund_to_account, refund_account_review
 
 
 def _validation_error_message(exc):
@@ -736,6 +738,7 @@ class SalesReturnCompleteView(ManagerRequiredMixin, FormView):
                 sales_return=self.sales_return,
                 user=self.request.user,
                 cash_account=form.cleaned_data.get('cash_account'),
+                settlement_method=form.cleaned_data.get('settlement_method', 'cash'),
                 return_warehouse=(form.cleaned_data.get('return_warehouse') if 'return_warehouse' in self.request.POST
                                   else self.sales_return.return_warehouse),
             )
@@ -749,6 +752,50 @@ class SalesReturnCompleteView(ManagerRequiredMixin, FormView):
         kwargs = super().get_form_kwargs()
         kwargs['sales_return'] = self.sales_return
         return kwargs
+
+
+class CorrectUnpaidRefundView(ManagerRequiredMixin, View):
+    def get_return(self):
+        return get_object_or_404(SalesReturn.objects.select_related('customer', 'order'), pk=self.kwargs['pk'])
+
+    def page(self, request, sales_return, review=None, form=None, error=None):
+        response = render(request, 'returns/correct_unpaid_refund.html', {
+            'sales_return': sales_return, 'review': review, 'form': form, 'review_error': error,
+        })
+        response['Cache-Control'] = 'no-store, private'
+        return response
+
+    def get(self, request, *args, **kwargs):
+        sales_return = self.get_return()
+        try:
+            review = refund_account_review(sales_return)
+        except ValidationError as exc:
+            return self.page(request, sales_return, error=_validation_error_message(exc))
+        form = CorrectUnpaidRefundForm(review=review, user=request.user)
+        return self.page(request, sales_return, review=review, form=form)
+
+    def post(self, request, *args, **kwargs):
+        sales_return = self.get_return()
+        if ReturnAccountSettlement.objects.filter(sales_return=sales_return).exists():
+            messages.info(request, 'تمت تسوية هذا المرتجع على حساب العميل بالفعل')
+            return redirect('customers:reconcile_returns', pk=sales_return.customer_id)
+        try:
+            review = refund_account_review(sales_return)
+        except ValidationError as exc:
+            return self.page(request, sales_return, error=_validation_error_message(exc))
+        form = CorrectUnpaidRefundForm(request.POST, review=review, user=request.user)
+        if form.is_valid():
+            try:
+                convert_unpaid_refund_to_account(
+                    sales_return=sales_return, user=request.user,
+                    fingerprint=form.cleaned_data['review_token']['fingerprint'], reason=form.cleaned_data['reason'],
+                )
+            except ValidationError as exc:
+                form.add_error(None, _validation_error_message(exc))
+            else:
+                messages.success(request, 'تم تصحيح الاسترداد غير المنفذ وخصمه من حساب العميل وتحديث كشف الحساب')
+                return redirect('customers:reconcile_returns', pk=sales_return.customer_id)
+        return self.page(request, sales_return, review=review, form=form)
 
 
 class SalesReturnCancelView(ManagerRequiredMixin, FormView):

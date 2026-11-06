@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block title %}تصحيح استرداد غير منفذ{% endblock %}
+{% block content %}
+<div class="page-head"><h1>تصحيح استرداد لم يُصرف</h1><a class="btn btn-light" href="{% url 'customers:reconcile_returns' sales_return.customer_id %}">رجوع لمراجعة العميل</a></div>
+<section class="card">
+    <h2>{{ sales_return.customer.name }} — مرتجع #{{ sales_return.pk }}</h2>
+    <p>هذه المعالجة مخصصة لمبلغ سُجّل كاسترداد نقدي ولم يُدفع للعميل فعليًا. إذا تسلم العميل المبلغ، فلا تستخدم هذه المعالجة.</p>
+    {% if review_error %}<p class="form-errors" role="alert">{{ review_error }}</p>{% endif %}
+    {% if review %}
+    <p>سيُعكس القيد النقدي الخاطئ في الخزنة الأصلية وتُسوّى قيمته على فواتير العميل المستحقة. ويُحفظ أي فائض رصيدًا لصالحه. تبقى أصناف المرتجع والمخزون كما هي.</p>
+    {% endif %}
+</section>
+{% if form %}
+<div class="stats-grid">
+    <div class="stat-card"><span>الاسترداد المسجل ولم يُصرف</span><strong>{{ review.amount|floatformat:'2u' }}</strong></div>
+    <div class="stat-card"><span>رصيد العميل قبل التصحيح</span><strong>{{ review.balance_before|floatformat:'2u' }}</strong></div>
+    <div class="stat-card"><span>رصيد العميل بعد التصحيح</span><strong>{{ review.balance_after|floatformat:'2u' }}</strong></div>
+</div>
+<form class="card form-grid" method="post" data-auto-date-time-ready="1">
+    {% csrf_token %}{{ form.review_token }}{{ form.review_token.errors }}{{ form.non_field_errors }}
+    <label><span>{{ form.reason.label }}</span>{{ form.reason }}{{ form.reason.errors }}</label>
+    <label class="inline-check">{{ form.confirm_not_paid }}<span>{{ form.confirm_not_paid.label }}</span></label>{{ form.confirm_not_paid.errors }}
+    <div class="form-actions"><button class="btn btn-primary" type="submit">تأكيد التصحيح والخصم من حساب العميل</button></div>
+</form>
+{% endif %}
+{% endblock %}

@@ -387,6 +387,10 @@ def build_customer_statement(customer):
         Q(related_order__isnull=False) | Q(affects_customer_balance=True),
     ).exclude(
         sales_returns__status=SalesReturn.STATUS_CANCELLED,
+    ).exclude(
+        sales_returns__account_settlement__isnull=False,
+    ).exclude(
+        return_account_settlements__isnull=False,
     ).select_related('cash_account', 'related_order', 'created_by').order_by('transaction_date', 'created_at', 'pk')
     returns = SalesReturn.objects.filter(
         customer=customer,
@@ -840,7 +844,7 @@ def add_expense(*, amount, cash_account, user, notes='', transaction_date=None):
 @transaction.atomic
 def delete_transaction(*, payment_transaction, user=None):
     tx = PaymentTransaction.objects.select_for_update().select_related('cash_account').get(pk=payment_transaction.pk)
-    if tx.sales_returns.exists():
+    if tx.sales_returns.exists() or tx.return_account_settlements.exists():
         raise ValidationError('هذه الحركة مرتبطة بمرتجع. عدّل المرتجع لتحديث أثره المالي')
     account = CashAccount.objects.select_for_update().get(pk=tx.cash_account_id)
     old_balance = account.balance
