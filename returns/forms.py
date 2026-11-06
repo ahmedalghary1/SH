@@ -4,9 +4,22 @@ from django.db.models import Q
 
 from orders.models import Order, OrderItem
 from products.models import ProductVariant
+from customers.models import Customer
 
 from .models import SalesReturn, SalesReturnItem
 from .services import calculate_available_return_quantity
+
+
+class CustomerReturnCreateForm(forms.Form):
+    customer = forms.ModelChoiceField(queryset=Customer.objects.none(), label='حساب العميل')
+    reason = forms.CharField(required=False, label='سبب المرتجع')
+
+    def __init__(self, *args, user, **kwargs):
+        super().__init__(*args, **kwargs)
+        customers = Customer.objects.all()
+        if user.role == 'sales' and not user.is_superuser:
+            customers = customers.filter(order__created_by=user).distinct()
+        self.fields['customer'].queryset = customers.order_by('name', 'pk')
 
 
 class SalesReturnCreateForm(forms.Form):

@@ -8,6 +8,10 @@
 
     <!-- أزرار سريعة -->
     <div class="quick-actions">
+        <a href="{% url 'returns:customer_create' %}" class="quick-action-btn action-purchase">
+            <span class="quick-action-icon"><svg class="ui-icon"><use href="#icon-arrow"></use></svg></span>
+            <span>إضافة مرتجع</span>
+        </a>
         <a href="{% url 'orders:create' %}" class="quick-action-btn action-sale primary">
             <span class="quick-action-icon"><svg class="ui-icon"><use href="#icon-receipt"></use></svg></span>
             <span>فاتورة بيع جديدة</span>

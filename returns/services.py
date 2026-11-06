@@ -11,7 +11,7 @@ from finance.services import record_transaction
 from finance.validation import decimal_value, integer_value
 from inventory.models import Stock, StockMovement
 from inventory.services import return_stock, sale_stock
-from orders.models import Order
+from orders.models import Order, OrderItem
 from orders.services import get_order_item_warehouse
 
 from .models import ExchangeItem, SalesReturn, SalesReturnItem
@@ -29,6 +29,78 @@ def calculate_available_return_quantity(order_item):
         sales_return__status=SalesReturn.STATUS_COMPLETED,
     ).aggregate(v=Sum('quantity'))['v'] or 0
     return max(order_item.quantity - returned, 0)
+
+
+def customer_purchase_orders(*, customer, user):
+    orders = Order.objects.filter(customer=customer, document_type=Order.DOCUMENT_SALE).exclude(
+        status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED],
+    )
+    if user.role == 'sales' and not user.is_superuser:
+        orders = orders.filter(created_by=user)
+    return orders
+
+
+def customer_purchase_rows(*, customer, user):
+    """One row per variant, priced by its newest purchase, including returned sales."""
+    items = OrderItem.objects.filter(
+        order__in=customer_purchase_orders(customer=customer, user=user),
+        variant__isnull=False,
+    ).select_related('order', 'variant__product', 'variant__color', 'variant__size').order_by(
+        '-order__created_at', '-order_id', '-pk',
+    )
+    returned = dict(SalesReturnItem.objects.filter(
+        original_order_item__in=items,
+        sales_return__status=SalesReturn.STATUS_COMPLETED,
+    ).values('original_order_item_id').annotate(qty=Sum('quantity')).values_list('original_order_item_id', 'qty'))
+    rows = {}
+    for item in items:
+        row = rows.setdefault(item.variant_id, {
+            'variant': item.variant, 'unit_price': _line_refund_unit_price(item),
+            'latest_order': item.order, 'purchased_quantity': 0,
+            'available_quantity': 0, 'allocations': [],
+        })
+        row['purchased_quantity'] += item.quantity
+        available = max(item.quantity - returned.get(item.pk, 0), 0)
+        if item.order.status == Order.STATUS_RETURNED:
+            available = 0
+        row['available_quantity'] += available
+        if available:
+            row['allocations'].append((item, available))
+    return list(rows.values())
+
+
+@transaction.atomic
+def create_customer_returns(*, customer, user, selections, reason=''):
+    # Use the same order locks as completion before rebuilding available quantities.
+    list(customer_purchase_orders(customer=customer, user=user).order_by('pk').select_for_update())
+    rows = {row['variant'].pk: row for row in customer_purchase_rows(customer=customer, user=user)}
+    if not selections:
+        raise ValidationError('اختر صنفًا واحدًا على الأقل للإرجاع')
+    drafts = {}
+    for selection in selections:
+        row = rows.get(selection['variant_id'])
+        quantity = integer_value(selection['quantity'])
+        if not row or quantity <= 0 or quantity > row['available_quantity']:
+            raise ValidationError('كمية المرتجع غير صحيحة أو أكبر من المتاح في مشتريات العميل')
+        remaining = quantity
+        for item, available in row['allocations']:
+            if not remaining:
+                break
+            if item.order_id not in drafts:
+                drafts[item.order_id] = create_sales_return(
+                    order=item.order, return_type=SalesReturn.TYPE_PARTIAL_RETURN,
+                    reason=reason, user=user,
+                )
+            allocated = min(remaining, available)
+            add_return_item(
+                sales_return=drafts[item.order_id], original_order_item=item,
+                quantity=allocated, condition=selection['condition'],
+                return_to_stock=selection['return_to_stock'],
+                refund_unit_price=row['unit_price'],
+                notes='مرتجع من حساب العميل بآخر سعر شراء',
+            )
+            remaining -= allocated
+    return list(drafts.values())
 
 
 @transaction.atomic
@@ -61,7 +133,7 @@ def create_sales_return(*, order, return_type, reason='', user):
     return sales_return
 
 @transaction.atomic
-def add_return_item(*, sales_return, original_order_item, quantity, condition='good', return_to_stock=True, notes=''):
+def add_return_item(*, sales_return, original_order_item, quantity, condition='good', return_to_stock=True, notes='', refund_unit_price=None):
     sales_return = SalesReturn.objects.select_for_update().get(pk=sales_return.pk)
     if sales_return.status != SalesReturn.STATUS_DRAFT:
         raise ValidationError('يمكن تعديل المرتجع في حالة المسودة فقط')
@@ -79,7 +151,12 @@ def add_return_item(*, sales_return, original_order_item, quantity, condition='g
     if condition not in dict(SalesReturnItem.CONDITION_CHOICES):
         raise ValidationError('حالة الصنف المرتجع غير صحيحة')
 
-    refund_amount = _line_refund_unit_price(original_order_item) * quantity
+    unit_price = _line_refund_unit_price(original_order_item)
+    if refund_unit_price is not None:
+        unit_price = decimal_value(refund_unit_price, max_digits=12)
+        if unit_price < 0:
+            raise ValidationError('سعر المرتجع لا يمكن أن يكون سالبًا')
+    refund_amount = unit_price * quantity
     item = SalesReturnItem.objects.create(
         sales_return=sales_return,
         original_order_item=original_order_item,

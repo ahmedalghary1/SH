@@ -2,7 +2,7 @@ from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import IntegrityError, models, transaction
 from config.django_compat import check_constraint
-from config.branching import BranchOwnedModel
+from config.branching import BranchOwnedModel, get_current_branch_id, get_default_branch_id
 from django.utils import timezone
 
 from customers.models import Customer
@@ -62,6 +62,15 @@ class CashAccount(BranchOwnedModel):
 
     @classmethod
     def _get_or_create_single(cls, defaults=None, **lookup):
+        # Names are unique within a branch, not across all branches. An
+        # unscoped request (such as a superuser viewing all branches) must use
+        # the same explicit branch for lookup, creation, and race recovery.
+        assigned_user = lookup.get('assigned_user')
+        lookup.setdefault('branch_id', (
+            get_current_branch_id()
+            or getattr(assigned_user, 'branch_id', None)
+            or get_default_branch_id()
+        ))
         try:
             with transaction.atomic():
                 account, _ = cls.objects.get_or_create(

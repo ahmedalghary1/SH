@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% load l10n %}
+{% block title %}إضافة مرتجع من حساب العميل{% endblock %}
+{% block content %}
+<div class="simple-return-page">
+    <div class="page-head">
+        <h1>إضافة مرتجع من حساب العميل</h1>
+        <a class="btn btn-light" href="{% url 'returns:simple_create' %}">مرتجع برقم الفاتورة</a>
+    </div>
+    <div class="search-section">
+        <form method="get" class="search-form" data-customer-return-picker>
+            <label for="id_customer">حساب العميل</label>
+            {{ form.customer }}
+            <button class="btn btn-primary" type="submit">عرض المشتريات</button>
+        </form>
+    </div>
+    {% if form.errors %}<div class="card" role="alert">{{ form.errors }}</div>{% endif %}
+    {% if form.customer.value and not form.customer.errors %}
+    <div class="items-section">
+        <h2>مشتريات العميل</h2>
+        <p>كل صنف يظهر مرة واحدة بآخر سعر شراء بعد خصم الصنف. الكمية المتاحة تجمع مشتريات العميل بعد استبعاد المرتجع المكتمل. تُحفظ مسودة لكل فاتورة أصلية وتحتاج إلى الاعتماد والإكمال.</p>
+        <label for="purchase-search">البحث في المشتريات باسم المنتج أو الكود</label>
+        <input id="purchase-search" type="search" placeholder="اسم المنتج أو كود المنتج أو الصنف" autocomplete="off">
+        <form method="post" data-customer-return-form>
+            {% csrf_token %}
+            <input type="hidden" name="customer" value="{{ form.customer.value }}">
+            <div class="items-table-wrap">
+                <table>
+                    <thead><tr><th>اختيار</th><th>المنتج</th><th>الكود</th><th>اللون / المقاس</th><th>إجمالي المشتريات</th><th>المتاح للإرجاع</th><th>آخر سعر شراء</th><th>آخر فاتورة / طلب</th><th>كمية المرتجع</th><th>الحالة</th><th>يعود للمخزون</th><th>قيمة المرتجع</th></tr></thead>
+                    <tbody>
+                        {% for row in item_rows %}
+                        <tr data-purchase-row data-search="{{ row.variant.product.name }} {{ row.variant.product.sku }} {{ row.variant.variant_sku }}" data-price="{{ row.unit_price|unlocalize }}">
+                            <td><input aria-label="اختيار {{ row.variant }}" type="checkbox" name="selected_{{ row.variant.pk }}" {% if row.selected %}checked{% endif %} {% if not row.available_quantity %}disabled{% endif %}></td>
+                            <td>{{ row.variant.product.name }}</td>
+                            <td>{{ row.variant.variant_sku }}<br>{{ row.variant.product.sku }}</td>
+                            <td>{{ row.variant.color|default:'-' }} / {{ row.variant.size|default:'-' }}</td>
+                            <td>{{ row.purchased_quantity }}</td><td>{{ row.available_quantity }}</td>
+                            <td>{{ row.unit_price }}</td><td>{{ row.latest_order.order_number }}<br>{{ row.latest_order.created_at|date:'Y-m-d H:i' }}</td>
+                            <td><input aria-label="كمية {{ row.variant }}" class="quantity-input" type="number" name="quantity_{{ row.variant.pk }}" value="{{ row.quantity_value }}" min="1" max="{{ row.available_quantity }}" step="1" {% if not row.available_quantity %}disabled{% endif %} data-quantity></td>
+                            <td><select aria-label="حالة {{ row.variant }}" class="condition-select" name="condition_{{ row.variant.pk }}">{% for value, label in condition_choices %}<option value="{{ value }}" {% if row.condition_value == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></td>
+                            <td><input aria-label="إعادة {{ row.variant }} للمخزون" type="checkbox" name="return_to_stock_{{ row.variant.pk }}" {% if row.return_to_stock %}checked{% endif %}></td>
+                            <td data-refund>0.00</td>
+                        </tr>
+                        {% empty %}<tr><td colspan="12">لا توجد مشتريات لهذا العميل</td></tr>{% endfor %}
+                        <tr data-no-match hidden><td colspan="12">لا توجد منتجات تطابق البحث</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="return-summary" aria-live="polite">إجمالي المرتجع: <strong data-total-refund>0.00</strong></div>
+            <label for="id_reason">سبب المرتجع</label>
+            <input id="id_reason" name="reason" value="{{ form.reason.value|default:'' }}">
+            <div class="form-actions">
+                <button class="btn btn-primary btn-large" type="submit">حفظ مسودة المرتجع</button>
+                <a class="btn btn-light" href="{% url 'returns:list' %}">إلغاء</a>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+</div>
+<script>
+(function () {
+    const picker = document.querySelector('[data-customer-return-picker]');
+    picker?.querySelector('select')?.addEventListener('change', () => picker.requestSubmit());
+    const form = document.querySelector('[data-customer-return-form]');
+    if (!form || form.dataset.ready) return;
+    form.dataset.ready = '1';
+    const rows = [...form.querySelectorAll('[data-purchase-row]')];
+    const number = value => Number(window.SHNumbers?.normalize(value) ?? value) || 0;
+    function update() {
+        let total = 0;
+        rows.forEach(row => {
+            const selected = row.querySelector('input[name^="selected_"]').checked;
+            const amount = selected ? number(row.dataset.price) * number(row.querySelector('[data-quantity]').value) : 0;
+            row.querySelector('[data-refund]').textContent = amount.toFixed(2);
+            total += amount;
+        });
+        form.querySelector('[data-total-refund]').textContent = total.toFixed(2);
+    }
+    document.getElementById('purchase-search').addEventListener('input', event => {
+        const query = event.target.value.trim().toLocaleLowerCase();
+        rows.forEach(row => { row.hidden = !row.dataset.search.toLocaleLowerCase().includes(query); });
+        form.querySelector('[data-no-match]').hidden = !rows.length || rows.some(row => !row.hidden);
+    });
+    form.addEventListener('input', update);
+    form.addEventListener('change', update);
+    update();
+})();
+</script>
+{% endblock %}

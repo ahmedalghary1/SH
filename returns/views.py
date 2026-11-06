@@ -16,7 +16,7 @@ from config.exports import ExportListMixin
 from config.date_ranges import PERIOD_CHOICES, filter_by_date_period
 from products.models import ProductVariant
 
-from .forms import CompleteReturnForm, ExchangeItemForm, ReturnItemForm, SalesReturnCreateForm
+from .forms import CompleteReturnForm, CustomerReturnCreateForm, ExchangeItemForm, ReturnItemForm, SalesReturnCreateForm
 from .models import SalesReturn, SalesReturnItem
 from .services import (
     _line_refund_unit_price,
@@ -26,6 +26,8 @@ from .services import (
     calculate_available_return_quantity,
     complete_sales_return,
     create_sales_return,
+    create_customer_returns,
+    customer_purchase_rows,
 )
 
 
@@ -75,6 +77,61 @@ class SalesReturnListView(RoleRequiredMixin, ExportListMixin, ListView):
         context['period_choices'] = PERIOD_CHOICES
         context['date_filter'] = getattr(self, 'date_filter', {})
         return context
+
+
+class CustomerReturnCreateView(SalesRequiredMixin, FormView):
+    template_name = 'returns/customer_create.html'
+    form_class = CustomerReturnCreateForm
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        if self.request.method == 'GET' and self.request.GET.get('customer'):
+            kwargs['data'] = self.request.GET
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        form = context['form']
+        rows = []
+        if form.is_bound:
+            form.is_valid()
+            customer = form.cleaned_data.get('customer')
+            if customer:
+                rows = customer_purchase_rows(customer=customer, user=self.request.user)
+        for row in rows:
+            pk = row['variant'].pk
+            row['selected'] = self.request.POST.get(f'selected_{pk}') == 'on'
+            row['quantity_value'] = self.request.POST.get(f'quantity_{pk}', '1')
+            row['condition_value'] = self.request.POST.get(f'condition_{pk}', 'good')
+            row['return_to_stock'] = self.request.method != 'POST' or self.request.POST.get(f'return_to_stock_{pk}') == 'on'
+        context['item_rows'] = rows
+        context['condition_choices'] = SalesReturnItem.CONDITION_CHOICES
+        return context
+
+    def form_valid(self, form):
+        selections = []
+        try:
+            for key in self.request.POST:
+                if key.startswith('selected_') and self.request.POST[key] == 'on':
+                    pk = int(key.removeprefix('selected_'))
+                    selections.append({
+                        'variant_id': pk,
+                        'quantity': self.request.POST.get(f'quantity_{pk}', ''),
+                        'condition': self.request.POST.get(f'condition_{pk}', 'good'),
+                        'return_to_stock': self.request.POST.get(f'return_to_stock_{pk}') == 'on',
+                    })
+            drafts = create_customer_returns(
+                customer=form.cleaned_data['customer'], user=self.request.user,
+                selections=selections, reason=form.cleaned_data['reason'],
+            )
+        except (ValidationError, ValueError) as exc:
+            form.add_error(None, _validation_error_message(exc))
+            return self.form_invalid(form)
+        messages.success(self.request, 'تم حفظ مسودات المرتجع: ' + '، '.join(f'#{draft.pk}' for draft in drafts))
+        if len(drafts) == 1:
+            return redirect('returns:detail', pk=drafts[0].pk)
+        return redirect('returns:list')
 
 
 class SimpleReturnCreateView(SalesRequiredMixin, FormView):

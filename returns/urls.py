@@ -7,6 +7,7 @@ app_name = 'returns'
 urlpatterns = [
     path('', views.SalesReturnListView.as_view(), name='list'),
     path('simple/', views.SimpleReturnCreateView.as_view(), name='simple_create'),
+    path('customer/', views.CustomerReturnCreateView.as_view(), name='customer_create'),
     path('exchange/', views.SimpleExchangeCreateView.as_view(), name='simple_exchange'),
     path('create/', views.SalesReturnCreateView.as_view(), name='create'),
     path('<int:pk>/', views.SalesReturnDetailView.as_view(), name='detail'),

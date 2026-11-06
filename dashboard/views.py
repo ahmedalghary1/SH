@@ -34,6 +34,7 @@ class DashboardView(RoleRequiredMixin, TemplateView):
                 {'label': 'إضافة منتج', 'href': reverse('products:create'), 'icon': 'icon-box'},
                 {'label': 'إدخال مخزون', 'href': reverse('inventory:stock_in'), 'icon': 'icon-warehouse'},
                 {'label': 'فاتورة بيع', 'href': reverse('orders:create'), 'icon': 'icon-sale'},
+                {'label': 'إضافة مرتجع', 'href': reverse('returns:customer_create'), 'icon': 'icon-arrow'},
                 {'label': 'الفواتير', 'href': reverse('invoices:list'), 'icon': 'icon-invoice'},
             ]
             kpis = manager_dashboard_kpis()
@@ -68,6 +69,7 @@ class DashboardView(RoleRequiredMixin, TemplateView):
             context['workflow_title'] = 'بيع سريع'
             context['workflow_actions'] = [
                 {'label': 'فاتورة جديدة', 'href': reverse('orders:create'), 'icon': 'icon-sale'},
+                {'label': 'إضافة مرتجع', 'href': reverse('returns:customer_create'), 'icon': 'icon-arrow'},
                 {'label': 'عميل جديد', 'href': reverse('customers:create'), 'icon': 'icon-users'},
                 {'label': 'الفواتير', 'href': reverse('invoices:list'), 'icon': 'icon-invoice'},
                 {'label': 'العملاء', 'href': reverse('customers:list'), 'icon': 'icon-users'},
