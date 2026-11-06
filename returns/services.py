@@ -15,6 +15,7 @@ from config.branching import (
     set_current_branch,
 )
 from finance.models import CashAccount, PaymentTransaction
+from finance.reconciliation import assert_order_return_balance
 from finance.services import record_transaction
 from finance.validation import decimal_value, integer_value
 from inventory.models import StockMovement, Warehouse
@@ -600,6 +601,7 @@ def update_sales_return(*, sales_return, user, revision, items, exchanges=None,
     order = Order.objects.select_for_update().get(pk=sales_return.order_id)
     if order.status in {Order.STATUS_CANCELLED, Order.STATUS_DRAFT}:
         raise ValidationError('لا يمكن تعديل مرتجع لفاتورة ملغاة أو مسودة')
+    assert_order_return_balance(order)
     _validate_return_warehouse(return_warehouse, order.branch_id)
     old_items = list(sales_return.items.select_related('original_order_item__warehouse', 'product_variant'))
     old_exchanges = list(sales_return.exchange_items.select_related('old_order_item__warehouse', 'new_product_variant'))
@@ -761,6 +763,7 @@ def cancel_sales_return(*, sales_return, user, revision=None, reason=''):
     if old_status == SalesReturn.STATUS_COMPLETED:
         if order.status in {Order.STATUS_DRAFT, Order.STATUS_CANCELLED}:
             raise ValidationError('لا يمكن إلغاء مرتجع مكتمل لفاتورة ملغاة أو مسودة')
+        assert_order_return_balance(order)
         items = list(sales_return.items.select_related('original_order_item__warehouse', 'product_variant'))
         exchanges = list(sales_return.exchange_items.select_related('old_order_item__warehouse', 'new_product_variant'))
         payments = list(sales_return.financial_transactions.select_for_update().filter(affects_cash=True))

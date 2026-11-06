@@ -1554,6 +1554,7 @@ def _validate_operation(operation, user, branch_id):
             or re.match(r'^/finance/transactions/.*(?:update|delete)/$', path)
             or re.match(r'^/purchases/orders/\d+/(?:edit|discount|receive)/$', path)
             or re.match(r'^/returns/\d+/', path)
+            or re.match(r'^/customers/\d+/reconcile-returns/$', path)
             or path == '/products/import/'):
         raise ValidationError('هذه العملية تحتاج إلى اتصال بالإنترنت للتحقق من أثرها بأمان.')
     if user.is_manager:

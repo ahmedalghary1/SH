@@ -134,6 +134,7 @@ function classifyPath(path) {
         || /^\/finance\/transactions\/.*(?:update|delete)\/$/.test(path)
         || /^\/purchases\/orders\/\d+\/(?:edit|discount|receive)\/$/.test(path)
         || /^\/returns\/\d+\//.test(path)
+        || /^\/customers\/\d+\/reconcile-returns\/$/.test(path)
         || path === "/products/import/") return null;
     if (path.startsWith("/orders/")) return { entity_name: "sales", entity_type: "order", action_type: "create_invoice" };
     if (path.startsWith("/invoices/") && path.includes("/payments/add/")) return { entity_name: "cash", entity_type: "payment", action_type: "cash_transaction" };

@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}مراجعة رصيد المرتجعات — {{ customer.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>مراجعة رصيد المرتجعات</h1>
+    <div class="button-row">
+        <a class="btn btn-light" href="{% url 'customers:simple_detail' customer.pk %}">ملف العميل</a>
+        <a class="btn btn-light" href="{% url 'finance:customer_statement' %}?customer={{ customer.pk }}">كشف الحساب</a>
+        <a class="btn btn-light" href="{% url 'customers:reconcile_returns' customer.pk %}">إعادة المراجعة</a>
+    </div>
+</div>
+<section class="card">
+    <h2>{{ customer.name }}</h2>
+    <p>مطابقة أرصدة الفواتير مع الدفعات والمرتجعات القديمة. عرض هذه الصفحة لا يغيّر بيانات العميل.</p>
+    <p>التصحيح يضبط المتبقي وحالة السداد للفواتير التي تحددها، مع حفظ سجل التعديل. تبقى حركات الخزنة والمخزون والرصيد الافتتاحي كما هي.</p>
+</section>
+<div class="stats-grid">
+    <div class="stat-card"><span>الرصيد الحالي</span><strong>{{ report.balance_before|floatformat:'2u' }}</strong></div>
+    <div class="stat-card"><span>الرصيد عند تصحيح جميع الفواتير المتاحة</span><strong>{{ report.balance_after_verified_repairs|floatformat:'2u' }}</strong></div>
+</div>
+<form method="post" class="card" data-auto-date-time-ready="1">
+    {% csrf_token %}
+    {{ form.review_token }}
+    {{ form.non_field_errors }}{{ form.review_token.errors }}{{ form.orders.errors }}
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>اختيار</th><th>الفاتورة</th><th>المتبقي المسجل</th><th>المتبقي بعد المطابقة</th><th>نتيجة المراجعة</th></tr></thead>
+            <tbody>
+                {% for row in review_rows %}
+                <tr>
+                    <td>{% if row.needs_repair and not row.problems %}<input type="checkbox" name="orders" value="{{ row.order_id }}" aria-label="اختيار الفاتورة {{ row.order_number }}" {% if row.selected %}checked{% endif %}>{% else %}—{% endif %}</td>
+                    <td><a href="{% url 'orders:detail' row.order_id %}">{{ row.order_number }}</a></td>
+                    <td>{{ row.remaining_before|floatformat:'2u' }}</td>
+                    <td>{{ row.remaining_expected|floatformat:'2u' }}</td>
+                    <td>{% if row.problems %}<strong>تحتاج مراجعة مستقلة</strong>{% for problem in row.problem_messages %}<p>{{ problem }}</p>{% endfor %}{% elif row.needs_repair %}<strong>متاحة للتصحيح</strong>{% else %}الرصيد متطابق{% endif %}</td>
+                </tr>
+                {% empty %}<tr><td colspan="5">لا توجد فواتير مرتبطة بمرتجعات لهذا العميل تحتاج إلى المطابقة.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if has_repairs %}
+    <label class="inline-check">{{ form.confirm }}<span>{{ form.confirm.label }}</span></label>
+    {{ form.confirm.errors }}
+    <div class="form-actions"><button class="btn btn-primary" type="submit">تصحيح الفواتير المحددة</button></div>
+    {% elif has_blocked %}<p>لا توجد فواتير متاحة للتصحيح التلقائي. راجع الحركات الموضحة أعلاه.</p>{% elif review_rows %}<p>أرصدة الفواتير متطابقة، ولا يوجد تصحيح مطلوب.</p>{% endif %}
+</form>
+{% endblock %}

@@ -4,6 +4,10 @@ const vm = require('node:vm');
 const { test } = require('node:test');
 const source = fs.readFileSync('static/js/pwa/offline-forms.js', 'utf8');
 
+test('customer return reconciliation cannot be queued as a customer save', () => {
+    assert.equal(routing().classifyPath('/customers/42/reconcile-returns/'), null);
+});
+
 function routing() {
     const context = vm.createContext({ URL, window: { location: { origin: 'https://erp.test', href: 'https://erp.test/orders/create/' } } });
     for (const name of ['pathFromAction', 'formPath', 'classifyPath', 'shouldCaptureForm']) {

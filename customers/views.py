@@ -1,6 +1,7 @@
-from django.contrib import messages
 from decimal import Decimal
-from finance.validation import report_days
+
+from django.contrib import messages
+from django.core.exceptions import ValidationError
 from django.db.models import (
     Count,
     DateField,
@@ -17,26 +18,53 @@ from django.db.models import (
 )
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
-from django.utils import timezone
-from django.utils.text import slugify
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
+from django.utils.text import slugify
 from django.views.decorators.http import require_GET, require_POST
-from django.views.generic import CreateView, DetailView, ListView, TemplateView, UpdateView
+from django.views.generic import (
+    CreateView,
+    DetailView,
+    FormView,
+    ListView,
+    TemplateView,
+    UpdateView,
+)
 
-from accounts.permissions import ManagerRequiredMixin, SalesRequiredMixin, sales_required
+from accounts.permissions import (
+    ManagerRequiredMixin,
+    SalesRequiredMixin,
+    sales_required,
+)
+from config.date_ranges import (
+    PERIOD_CHOICES,
+    filter_by_date_period,
+    filter_by_split_datetime,
+    resolve_date_period,
+)
 from config.delete_views import ManagerDeleteView
-from config.date_ranges import PERIOD_CHOICES, filter_by_date_period, filter_by_split_datetime, resolve_date_period
 from config.exports import ExportListMixin, export_pdf_response, export_xlsx_response
 from config.search import arabic_search_q
 from finance.models import PaymentTransaction
+from finance.reconciliation import (
+    apply_customer_return_review,
+    build_customer_return_review,
+)
 from finance.services import build_customer_statement
+from finance.validation import report_days
 from orders.models import Order, OrderItem
 from returns.models import SalesReturn
 
-from .forms import CustomerForm, CustomerInteractionForm, SimpleCustomerForm
+from .forms import (
+    CustomerForm,
+    CustomerInteractionForm,
+    CustomerReturnReconciliationForm,
+    SimpleCustomerForm,
+)
 from .models import Customer, CustomerInteraction
 from .services import (
+    annotate_customer_balances,
     get_crm_dashboard_context,
     get_customer_summary,
     get_customers_with_debt,
@@ -44,7 +72,6 @@ from .services import (
     get_inactive_customers,
     get_open_complaints,
     get_top_customers,
-    annotate_customer_balances,
     visible_customers_for_user,
 )
 
@@ -303,6 +330,70 @@ class CustomerDeleteView(ManagerDeleteView):
     model = Customer
     success_url = reverse_lazy('customers:simple_list')
     success_message = 'تم حذف العميل'
+
+
+class CustomerReturnReconciliationView(ManagerRequiredMixin, FormView):
+    template_name = 'customers/reconcile_returns.html'
+    form_class = CustomerReturnReconciliationForm
+
+    def get_customer(self):
+        if not hasattr(self, 'customer'):
+            self.customer = get_object_or_404(Customer.objects.all(), pk=self.kwargs['pk'])
+        return self.customer
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        if not hasattr(self, 'review_report'):
+            self.review_report = build_customer_return_review(self.get_customer())
+        kwargs.update(customer=self.get_customer(), user=self.request.user, report=self.review_report)
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        report = context['form'].review
+        labels = {
+            'wrong_branch': 'بيانات مرتبطة بفرع مختلف',
+            'wrong_customer': 'حركة سداد مرتبطة بعميل مختلف',
+            'unexpected_payment_links': 'حركات مالية مرتبطة بمرتجع غير مكتمل',
+            'item_total_mismatch': 'قيمة المرتجع لا تطابق إجمالي أصنافه',
+            'invalid_debt_reduction': 'قيمة تخفيض الدين في المرتجع تحتاج مراجعة',
+            'invalid_payment_link': 'ربط الحركات المالية بالمرتجع يحتاج مراجعة',
+            'cash_links_mismatch': 'المبالغ النقدية لا تطابق أثر المرتجع',
+            'unclassified_invoice_movement': 'توجد حركة مالية تحتاج مراجعة مستقلة',
+            'paid_amount_does_not_match_receipts': 'المدفوع المسجل لا يطابق الدفعات المتاحة',
+            'paid_and_return_credit_exceed_invoice_total': 'المدفوع وتخفيض المرتجعات يتجاوزان إجمالي الفاتورة',
+        }
+        selected = set(self.request.POST.getlist('orders'))
+        rows = [{**row, 'selected': str(row['order_id']) in selected,
+                 'problem_messages': [labels.get(code.rsplit(':', 1)[-1], 'هذه الفاتورة تحتاج مراجعة مستقلة')
+                                      for code in row['problems']]} for row in report['orders']]
+        context.update(customer=self.get_customer(), report=report, review_rows=rows,
+                       has_repairs=any(row['needs_repair'] and not row['problems'] for row in rows),
+                       has_blocked=any(row['problems'] for row in rows))
+        return context
+
+    def form_valid(self, form):
+        try:
+            repaired = apply_customer_return_review(
+                customer=self.get_customer(), actor=self.request.user, report=form.review,
+                order_ids=[int(value) for value in form.cleaned_data['orders']],
+            )
+        except ValidationError as exc:
+            explanations = {
+                'stale_review': 'تغيرت بيانات إحدى الفواتير بعد المراجعة. لم يُنفذ أي تصحيح؛ راجع النتائج الجديدة ثم اختر الفواتير مجددًا',
+                'manual_review': 'إحدى الفواتير تحتاج مراجعة مستقلة. لم يُنفذ أي تصحيح',
+                'invalid_actor': 'ليس لديك صلاحية التصحيح في هذا الفرع',
+                'invalid_selection': 'الفواتير المحددة لا تطابق مراجعة هذا العميل. لم يُنفذ أي تصحيح',
+            }
+            messages.error(self.request, explanations.get(exc.code, 'تعذر التحقق من المراجعة. أعد المراجعة قبل التصحيح'))
+        else:
+            messages.success(self.request, f'تم تصحيح رصيد {repaired} فاتورة وتحديث كشف حساب العميل')
+        return redirect('customers:reconcile_returns', pk=self.customer.pk)
+
+    def render_to_response(self, context, **response_kwargs):
+        response = super().render_to_response(context, **response_kwargs)
+        response['Cache-Control'] = 'no-store, private'
+        return response
 
 
 class SimpleCustomerDetailView(CustomerVisibilityMixin, SalesRequiredMixin, DetailView):
