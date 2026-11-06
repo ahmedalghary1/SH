@@ -51,6 +51,7 @@
             <input type="hidden" name="invoice_number" value="{{ searched_invoice_number }}">
             <input type="hidden" name="return_type" value="{{ SalesReturn.TYPE_EXCHANGE }}">
             {% include 'returns/partials/datetime_field.html' %}
+            {% include 'returns/partials/warehouse_field.html' %}
             
             <div class="items-table-wrap">
                 <table>

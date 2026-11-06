@@ -4,6 +4,9 @@
 <div class="page-head">
     <h1>مرتجع #{{ sales_return.pk }}</h1>
     <div class="actions">
+        {% if request.user.is_manager or sales_return.status == 'draft' and request.user == sales_return.created_by %}
+            <a class="btn btn-light" href="{% url 'returns:edit' sales_return.pk %}">تعديل المرتجع</a>
+        {% endif %}
         {% if sales_return.status == 'draft' %}
             <a class="btn btn-primary" href="{% url 'returns:add_item' sales_return.pk %}">إضافة صنف</a>
             {% if sales_return.return_type == 'exchange' %}
@@ -20,6 +23,7 @@
     <div class="stat-card"><span>النوع</span><strong>{{ sales_return.get_return_type_display }}</strong></div>
     <div class="stat-card"><span>الحالة</span><strong>{{ sales_return.get_status_display }}</strong></div>
     <div class="stat-card"><span>مبلغ الاسترداد</span><strong>{{ sales_return.refund_amount }}</strong></div>
+    <div class="stat-card"><span>مخزن استلام المرتجع</span><strong>{{ sales_return.return_warehouse|default:'مخزن الصنف في الفاتورة' }}</strong></div>
 </div>
 <section class="card">
     <h2>الأصناف المرتجعة</h2>

@@ -193,7 +193,7 @@ def _field_label(model, field_name):
         field = model._meta.get_field(field_name)
     except Exception:
         return field_name
-    return str(field.verbose_name or field_name)
+    return str(getattr(field, 'verbose_name', None) or field_name)
 
 
 def _format_value(value):

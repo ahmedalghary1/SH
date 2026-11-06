@@ -9,7 +9,7 @@ from config.branching import BranchOwnedModel
 
 
 class SalesReturn(BranchOwnedModel):
-    branch_relations = ('order', 'customer')
+    branch_relations = ('order', 'customer', 'return_warehouse')
     TYPE_REFUND = 'refund'
     TYPE_EXCHANGE = 'exchange'
     TYPE_PARTIAL_RETURN = 'partial_return'
@@ -36,6 +36,15 @@ class SalesReturn(BranchOwnedModel):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True)
     reason = models.TextField(blank=True, null=True)
     refund_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    return_warehouse = models.ForeignKey(
+        'inventory.Warehouse', on_delete=models.PROTECT, null=True, blank=True,
+        related_name='sales_returns',
+    )
+    debt_reduction = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    financial_transactions = models.ManyToManyField(
+        'finance.PaymentTransaction', blank=True, related_name='sales_returns',
+    )
+    revision = models.PositiveIntegerField(default=0)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_sales_returns')
     approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_sales_returns')
     completed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='completed_sales_returns')

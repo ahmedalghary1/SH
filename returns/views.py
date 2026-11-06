@@ -10,13 +10,26 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.generic import DetailView, FormView, ListView, TemplateView, View
 
-from accounts.permissions import ManagerRequiredMixin, RoleRequiredMixin, SalesRequiredMixin
+from accounts.permissions import (
+    ManagerRequiredMixin,
+    RoleRequiredMixin,
+    SalesRequiredMixin,
+)
+from config.date_ranges import PERIOD_CHOICES, filter_by_date_period
 from config.delete_views import ManagerDeleteView
 from config.exports import ExportListMixin
-from config.date_ranges import PERIOD_CHOICES, filter_by_date_period
 from products.models import ProductVariant
 
-from .forms import CompleteReturnForm, CustomerReturnCreateForm, ExchangeItemForm, ReturnItemForm, SalesReturnCreateForm
+from .forms import (
+    CompleteReturnForm,
+    CustomerReturnCreateForm,
+    ExchangeItemForm,
+    ReturnEditExchangeFormSet,
+    ReturnEditItemFormSet,
+    ReturnItemForm,
+    SalesReturnCreateForm,
+    SalesReturnEditForm,
+)
 from .models import SalesReturn, SalesReturnItem
 from .services import (
     _line_refund_unit_price,
@@ -25,9 +38,10 @@ from .services import (
     approve_sales_return,
     calculate_available_return_quantity,
     complete_sales_return,
-    create_sales_return,
     create_customer_returns,
+    create_sales_return,
     customer_purchase_rows,
+    update_sales_return,
 )
 
 
@@ -125,6 +139,7 @@ class CustomerReturnCreateView(SalesRequiredMixin, FormView):
                 customer=form.cleaned_data['customer'], user=self.request.user,
                 selections=selections, reason=form.cleaned_data['reason'],
                 return_datetime=form.cleaned_data.get('return_datetime'),
+                return_warehouse=form.cleaned_data.get('return_warehouse'),
             )
         except (ValidationError, ValueError) as exc:
             form.add_error(None, _validation_error_message(exc))
@@ -255,6 +270,7 @@ class SimpleReturnCreateView(SalesRequiredMixin, FormView):
                     return_type=form.cleaned_data['return_type'],
                     reason=form.cleaned_data.get('reason') or '',
                     return_datetime=form.cleaned_data.get('return_datetime'),
+                    return_warehouse=form.cleaned_data.get('return_warehouse'),
                     user=self.request.user,
                 )
                 for item_data in selected_items:
@@ -336,6 +352,7 @@ class SimpleExchangeCreateView(SalesRequiredMixin, FormView):
                     return_type=SalesReturn.TYPE_EXCHANGE,
                     reason=form.cleaned_data.get('reason') or '',
                     return_datetime=form.cleaned_data.get('return_datetime'),
+                    return_warehouse=form.cleaned_data.get('return_warehouse'),
                     user=self.request.user,
                 )
                 for item_data in selected_items:
@@ -548,6 +565,7 @@ class SalesReturnCreateView(SalesRequiredMixin, FormView):
                     return_type=form.cleaned_data['return_type'],
                     reason=form.cleaned_data.get('reason') or '',
                     return_datetime=form.cleaned_data.get('return_datetime'),
+                    return_warehouse=form.cleaned_data.get('return_warehouse'),
                     user=self.request.user,
                 )
                 for item_data in selected_items:
@@ -575,12 +593,79 @@ class SalesReturnDetailView(RoleRequiredMixin, DetailView):
         return qs
 
 
+class SalesReturnEditView(SalesRequiredMixin, FormView):
+    template_name = 'returns/edit.html'
+    form_class = SalesReturnEditForm
+
+    def get_sales_return(self):
+        if not hasattr(self, 'sales_return'):
+            queryset = SalesReturn.objects.select_related('order', 'return_warehouse')
+            if not self.request.user.is_manager:
+                queryset = queryset.filter(created_by=self.request.user, status=SalesReturn.STATUS_DRAFT)
+            self.sales_return = get_object_or_404(queryset, pk=self.kwargs['pk'])
+        return self.sales_return
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['sales_return'] = self.get_sales_return()
+        return kwargs
+
+    def get_formsets(self):
+        if not hasattr(self, 'item_formset'):
+            sales_return = self.get_sales_return()
+            data = self.request.POST if self.request.method == 'POST' else None
+            kwargs = {'sales_return': sales_return}
+            self.item_formset = ReturnEditItemFormSet(
+                data, prefix='items', form_kwargs=kwargs,
+                initial=[{'item_id': item.pk, 'original_order_item': item.original_order_item_id,
+                          'quantity': item.quantity, 'condition': item.condition,
+                          'return_to_stock': item.return_to_stock, 'notes': item.notes}
+                         for item in sales_return.items.all()],
+            )
+            self.exchange_formset = ReturnEditExchangeFormSet(
+                data, prefix='exchanges', form_kwargs=kwargs,
+                initial=[{'item_id': item.pk, 'old_order_item': item.old_order_item_id,
+                          'new_product_variant': item.new_product_variant_id, 'quantity': item.quantity,
+                          'new_unit_price': item.new_unit_price, 'notes': item.notes}
+                         for item in sales_return.exchange_items.all()],
+            ) if sales_return.return_type == SalesReturn.TYPE_EXCHANGE else None
+        return self.item_formset, self.exchange_formset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['sales_return'] = self.get_sales_return()
+        context['item_formset'], context['exchange_formset'] = self.get_formsets()
+        return context
+
+    def form_valid(self, form):
+        items, exchanges = self.get_formsets()
+        valid_items = items.is_valid()
+        valid_exchanges = exchanges.is_valid() if exchanges is not None else True
+        if not valid_items or not valid_exchanges:
+            return self.form_invalid(form)
+        try:
+            update_sales_return(
+                sales_return=self.get_sales_return(), user=self.request.user,
+                items=[row for row in items.cleaned_data if row and not row.get('DELETE')],
+                exchanges=[row for row in exchanges.cleaned_data if row and not row.get('DELETE')] if exchanges is not None else [],
+                **form.cleaned_data,
+            )
+        except ValidationError as exc:
+            form.add_error(None, _validation_error_message(exc))
+            return self.form_invalid(form)
+        messages.success(self.request, 'تم تعديل المرتجع وتحديث المخزون والحساب بنجاح')
+        return redirect('returns:detail', pk=self.sales_return.pk)
+
+
 class ReturnItemAddView(SalesRequiredMixin, FormView):
     template_name = 'returns/item_form.html'
     form_class = ReturnItemForm
 
     def dispatch(self, request, *args, **kwargs):
-        self.sales_return = get_object_or_404(SalesReturn, pk=kwargs['pk'])
+        queryset = SalesReturn.objects.all()
+        if not getattr(request.user, 'is_manager', False):
+            queryset = queryset.filter(created_by_id=request.user.pk, status=SalesReturn.STATUS_DRAFT)
+        self.sales_return = get_object_or_404(queryset, pk=kwargs['pk'])
         return super().dispatch(request, *args, **kwargs)
 
     def get_form_kwargs(self):
@@ -603,7 +688,10 @@ class ExchangeItemAddView(SalesRequiredMixin, FormView):
     form_class = ExchangeItemForm
 
     def dispatch(self, request, *args, **kwargs):
-        self.sales_return = get_object_or_404(SalesReturn, pk=kwargs['pk'], return_type=SalesReturn.TYPE_EXCHANGE)
+        queryset = SalesReturn.objects.all()
+        if not getattr(request.user, 'is_manager', False):
+            queryset = queryset.filter(created_by_id=request.user.pk, status=SalesReturn.STATUS_DRAFT)
+        self.sales_return = get_object_or_404(queryset, pk=kwargs['pk'], return_type=SalesReturn.TYPE_EXCHANGE)
         return super().dispatch(request, *args, **kwargs)
 
     def get_form_kwargs(self):
@@ -645,6 +733,9 @@ class SalesReturnCompleteView(ManagerRequiredMixin, FormView):
             complete_sales_return(
                 sales_return=self.sales_return,
                 user=self.request.user,
+                cash_account=form.cleaned_data.get('cash_account'),
+                return_warehouse=(form.cleaned_data.get('return_warehouse') if 'return_warehouse' in self.request.POST
+                                  else self.sales_return.return_warehouse),
             )
             messages.success(self.request, 'تم إكمال المرتجع وتسجيل آثاره')
             return redirect('returns:detail', pk=self.sales_return.pk)
@@ -652,13 +743,19 @@ class SalesReturnCompleteView(ManagerRequiredMixin, FormView):
             form.add_error(None, _validation_error_message(exc))
             return self.form_invalid(form)
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['sales_return'] = self.sales_return
+        return kwargs
+
 
 class SalesReturnRejectView(ManagerRequiredMixin, View):
     def post(self, request, pk):
         sales_return = get_object_or_404(SalesReturn, pk=pk)
         if sales_return.status == SalesReturn.STATUS_DRAFT:
             sales_return.status = SalesReturn.STATUS_REJECTED
-            sales_return.save(update_fields=['status'])
+            sales_return.revision += 1
+            sales_return.save(update_fields=['status', 'revision'])
             messages.success(request, 'تم رفض المرتجع')
         else:
             messages.error(request, 'يمكن رفض المرتجع من حالة المسودة فقط')

@@ -1,17 +1,23 @@
 from django import forms
-
 from django.db.models import Q
 from django.utils import timezone
 
+from customers.models import Customer
+from finance.models import CashAccount
+from inventory.models import Warehouse
 from orders.models import Order, OrderItem
 from products.models import ProductVariant
-from customers.models import Customer
 
 from .models import SalesReturn, SalesReturnItem
 from .services import calculate_available_return_quantity
 
 
 class ReturnDateTimeForm(forms.Form):
+    return_warehouse = forms.ModelChoiceField(
+        queryset=Warehouse.objects.none(), required=False, label='مخزن استلام المرتجع',
+        empty_label='مخزن الصنف في الفاتورة',
+        help_text='يُستخدم للأصناف السليمة التي تعود للمخزون. أصناف الاستبدال الجديدة تُصرف من مخزن الفاتورة.',
+    )
     return_datetime = forms.DateTimeField(
         required=False,
         label='تاريخ ووقت المرتجع',
@@ -22,6 +28,7 @@ class ReturnDateTimeForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['return_warehouse'].queryset = Warehouse.objects.filter(is_active=True).order_by('name', 'pk')
         # Invoice/customer searches bind the form before the date is entered.
         if self.is_bound and 'return_datetime' not in self.data:
             self.data = self.data.copy()
@@ -118,4 +125,60 @@ class ExchangeItemForm(forms.Form):
 
 
 class CompleteReturnForm(forms.Form):
-    pass
+    return_warehouse = forms.ModelChoiceField(
+        queryset=Warehouse.objects.none(), required=False, label='مخزن استلام المرتجع',
+        empty_label='مخزن الصنف في الفاتورة',
+    )
+    cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.none(), required=False, label='خزنة رد المبلغ')
+
+    def __init__(self, *args, sales_return, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['return_warehouse'].queryset = Warehouse.objects.filter(branch_id=sales_return.branch_id, is_active=True)
+        self.fields['return_warehouse'].initial = sales_return.return_warehouse_id
+        self.fields['cash_account'].queryset = CashAccount.objects.filter(branch_id=sales_return.branch_id, is_active=True)
+
+
+class SalesReturnEditForm(ReturnDateTimeForm):
+    revision = forms.IntegerField(widget=forms.HiddenInput)
+    reason = forms.CharField(required=False, label='سبب المرتجع', widget=forms.Textarea(attrs={'rows': 2}))
+    cash_account = forms.ModelChoiceField(queryset=CashAccount.objects.none(), required=False, label='خزنة فرق التعديل')
+
+    def __init__(self, *args, sales_return, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['return_warehouse'].queryset = Warehouse.objects.filter(branch_id=sales_return.branch_id, is_active=True)
+        self.fields['cash_account'].queryset = CashAccount.objects.filter(branch_id=sales_return.branch_id, is_active=True)
+        self.initial.update(reason=sales_return.reason, return_datetime=sales_return.created_at,
+                            return_warehouse=sales_return.return_warehouse_id, revision=sales_return.revision)
+
+
+class ReturnEditItemForm(forms.Form):
+    item_id = forms.IntegerField(required=False, widget=forms.HiddenInput)
+    original_order_item = forms.ModelChoiceField(queryset=OrderItem.objects.none(), label='الصنف المرتجع')
+    quantity = forms.IntegerField(min_value=0, label='الكمية')
+    condition = forms.ChoiceField(choices=SalesReturnItem.CONDITION_CHOICES, label='الحالة', initial=SalesReturnItem.CONDITION_GOOD)
+    return_to_stock = forms.BooleanField(required=False, label='يعود للمخزون', initial=True)
+    notes = forms.CharField(required=False, label='ملاحظات')
+
+    def __init__(self, *args, sales_return, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['original_order_item'].queryset = sales_return.order.items.filter(variant__isnull=False).select_related('variant__product')
+
+
+class ReturnEditExchangeForm(forms.Form):
+    item_id = forms.IntegerField(required=False, widget=forms.HiddenInput)
+    old_order_item = forms.ModelChoiceField(queryset=OrderItem.objects.none(), label='الصنف المرتجع')
+    new_product_variant = forms.ModelChoiceField(queryset=ProductVariant.objects.none(), label='الصنف البديل')
+    quantity = forms.IntegerField(min_value=0, label='الكمية')
+    new_unit_price = forms.DecimalField(min_value=0, max_digits=10, decimal_places=2, label='سعر البديل')
+    notes = forms.CharField(required=False, label='ملاحظات')
+
+    def __init__(self, *args, sales_return, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['old_order_item'].queryset = sales_return.order.items.select_related('variant__product')
+        self.fields['new_product_variant'].queryset = ProductVariant.objects.filter(
+            branch_id=sales_return.branch_id, is_active=True,
+        ).select_related('product', 'color', 'size')
+
+
+ReturnEditItemFormSet = forms.formset_factory(ReturnEditItemForm, extra=1, can_delete=True, max_num=500, validate_max=True)
+ReturnEditExchangeFormSet = forms.formset_factory(ReturnEditExchangeForm, extra=1, can_delete=True, max_num=500, validate_max=True)

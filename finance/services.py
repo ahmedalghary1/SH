@@ -52,11 +52,15 @@ def _locked_account(account):
     return CashAccount.objects.select_for_update().get(pk=account.pk)
 
 
-def _sync_order_payment_status(order):
+def _sync_order_payment_status(order, *, paid_delta):
     from orders.models import Order
 
     order.paid_amount = max(Decimal(str(order.paid_amount or 0)), Decimal('0'))
-    order.remaining_amount = max(Decimal(str(order.total or 0)) - order.paid_amount, Decimal('0'))
+    # The outstanding amount already includes completed returns. Rebuilding it
+    # from the original invoice total would restore debt cancelled by a return.
+    order.remaining_amount = max(
+        Decimal(str(order.remaining_amount or 0)) - paid_delta, Decimal('0'),
+    )
     if order.remaining_amount <= 0:
         order.payment_status = Order.PAYMENT_PAID
     elif order.paid_amount <= 0:
@@ -317,6 +321,8 @@ def record_customer_balance_adjustment(
 
 def _statement_date(value):
     if isinstance(value, datetime):
+        if timezone.is_aware(value):
+            value = timezone.localtime(value)
         return value.date()
     if isinstance(value, date):
         return value
@@ -335,6 +341,23 @@ def _statement_entry(*, date_value, sort_at, sort_order, entry_type, description
     }
     entry.update(extra)
     return entry
+
+
+def _statement_sort_key(entry):
+    payment = entry.get('payment')
+    if payment:
+        movement_time = payment.transaction_time
+    else:
+        movement_at = entry['sort_at']
+        if timezone.is_aware(movement_at):
+            movement_at = timezone.localtime(movement_at)
+        movement_time = movement_at.time()
+    # Keep the opening balance first; otherwise follow the effective movement
+    # time, using the type only to break ties (e.g. a return and its refund).
+    return (
+        entry['date'], entry['sort_order'] != 0, movement_time,
+        entry['sort_order'], payment.pk if payment else 0,
+    )
 
 
 def _customer_statement_orders(customer):
@@ -493,7 +516,7 @@ def build_customer_statement(customer):
             credit=abs(statement_opening_balance) if statement_opening_balance < 0 else 0,
         ))
 
-    entries.sort(key=lambda entry: (entry['date'], entry['sort_order'], entry['sort_at'], entry.get('payment').pk if entry.get('payment') else 0))
+    entries.sort(key=_statement_sort_key)
 
     balance = Decimal('0')
     total_debit = Decimal('0')
@@ -738,7 +761,7 @@ def collect_order_payment(
         )
         order.paid_amount = current_paid - paid_reversal
         order.save(update_fields=['paid_amount'])
-        _sync_order_payment_status(order)
+        _sync_order_payment_status(order, paid_delta=-paid_reversal)
         if extra_customer_balance > 0 and order.customer_id:
             record_customer_balance_adjustment(
                 customer=order.customer,
@@ -769,7 +792,7 @@ def collect_order_payment(
         order.paid_amount = F('paid_amount') + order_payment
         order.save(update_fields=['paid_amount'])
         order.refresh_from_db(fields=['paid_amount'])
-        _sync_order_payment_status(order)
+        _sync_order_payment_status(order, paid_delta=order_payment)
     if extra_credit > 0:
         if order.customer_id:
             tx = record_customer_payment(
@@ -813,6 +836,8 @@ def add_expense(*, amount, cash_account, user, notes='', transaction_date=None):
 @transaction.atomic
 def delete_transaction(*, payment_transaction, user=None):
     tx = PaymentTransaction.objects.select_for_update().select_related('cash_account').get(pk=payment_transaction.pk)
+    if tx.sales_returns.exists():
+        raise ValidationError('هذه الحركة مرتبطة بمرتجع. عدّل المرتجع لتحديث أثره المالي')
     account = CashAccount.objects.select_for_update().get(pk=tx.cash_account_id)
     old_balance = account.balance
     affects_cash = getattr(tx, 'affects_cash', True)
@@ -866,11 +891,9 @@ def delete_transaction(*, payment_transaction, user=None):
         from orders.models import Order
 
         order = Order.objects.select_for_update().get(pk=payment_row.related_order_id)
-        order.paid_amount = max(
-            Decimal(str(order.paid_amount or 0)) - payment_row.amount,
-            Decimal('0'),
-        )
-        _sync_order_payment_status(order)
+        paid_reversal = min(Decimal(str(order.paid_amount or 0)), payment_row.amount)
+        order.paid_amount = Decimal(str(order.paid_amount or 0)) - paid_reversal
+        _sync_order_payment_status(order, paid_delta=-paid_reversal)
     tx_repr = str(tx)
     tx_pk = tx.pk
     tx_amount = tx.amount
@@ -1006,7 +1029,7 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, o
             extra_customer_balance = refund_amount - paid_reversal
             order.paid_amount = current_paid - paid_reversal
             order.save(update_fields=['paid_amount'])
-            _sync_order_payment_status(order)
+            _sync_order_payment_status(order, paid_delta=-paid_reversal)
             if extra_customer_balance > 0 and order.customer_id:
                 record_customer_balance_adjustment(
                     customer=order.customer,

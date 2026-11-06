@@ -33,6 +33,7 @@
         {% csrf_token %}
         {{ form.invoice_number.as_hidden }}
         {% include 'returns/partials/datetime_field.html' %}
+        {% include 'returns/partials/warehouse_field.html' %}
         <div class="form-grid">
             <label>
                 <span>{{ form.return_type.label }}</span>

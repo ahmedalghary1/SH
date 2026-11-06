@@ -1,0 +1,24 @@
+<section data-return-formset>
+    {{ formset.management_form }}
+    {{ formset.non_form_errors }}
+    <div data-rows>
+        {% for row in formset %}
+        <fieldset class="card form-grid">
+            <legend>{{ title }} {{ forloop.counter }}</legend>
+            {{ row.non_field_errors }}
+            {% for field in row %}
+                {% if field.is_hidden %}{{ field }}{{ field.errors }}{% else %}<label><span>{{ field.label }}</span>{{ field }}{{ field.errors }}</label>{% endif %}
+            {% endfor %}
+        </fieldset>
+        {% endfor %}
+    </div>
+    <template>
+        <fieldset class="card form-grid">
+            <legend>{{ title }}</legend>
+            {% for field in formset.empty_form %}
+                {% if field.is_hidden %}{{ field }}{% else %}<label><span>{{ field.label }}</span>{{ field }}</label>{% endif %}
+            {% endfor %}
+        </fieldset>
+    </template>
+    <button type="button" class="btn btn-light" data-add-row>إضافة {{ title }}</button>
+</section>

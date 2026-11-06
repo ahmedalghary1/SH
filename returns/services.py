@@ -1,4 +1,6 @@
+from collections import defaultdict
 from decimal import Decimal
+from functools import wraps
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -7,15 +9,51 @@ from django.utils import timezone
 
 from audit.models import AuditLog
 from audit.services import log_audit
-from finance.models import PaymentTransaction
+from config.branching import (
+    get_current_branch_id,
+    reset_current_branch,
+    set_current_branch,
+)
+from finance.models import CashAccount, PaymentTransaction
 from finance.services import record_transaction
 from finance.validation import decimal_value, integer_value
-from inventory.models import Stock, StockMovement
+from inventory.models import StockMovement, Warehouse
 from inventory.services import return_stock, sale_stock
 from orders.models import Order, OrderItem
 from orders.services import get_order_item_warehouse
 
 from .models import ExchangeItem, SalesReturn, SalesReturnItem
+
+
+def _in_return_branch(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        branch_id = kwargs['sales_return'].branch_id
+        if get_current_branch_id() not in (None, branch_id):
+            raise ValidationError('المرتجع لا يتبع الفرع المحدد')
+        token = set_current_branch(branch_id)
+        try:
+            return function(*args, **kwargs)
+        finally:
+            reset_current_branch(token)
+    return wrapped
+
+
+def _validate_return_warehouse(warehouse, branch_id):
+    if warehouse and not Warehouse.objects.filter(pk=warehouse.pk, branch_id=branch_id, is_active=True).exists():
+        raise ValidationError('اختر مخزنًا نشطًا من نفس فرع الفاتورة')
+
+
+def _return_cash_account(sales_return, cash_account=None):
+    if cash_account is None:
+        previous = sales_return.financial_transactions.select_related('cash_account').order_by('-pk').first()
+        cash_account = previous.cash_account if previous else CashAccount._get_or_create_single(
+            branch_id=sales_return.branch_id, name='الخزنة الرئيسية',
+            defaults={'account_type': CashAccount.TYPE_CASH, 'is_active': True},
+        )
+    if cash_account.branch_id != sales_return.branch_id or not cash_account.is_active:
+        raise ValidationError('اختر خزنة نشطة من نفس فرع المرتجع')
+    return cash_account
 
 
 def _line_refund_unit_price(order_item):
@@ -71,7 +109,7 @@ def customer_purchase_rows(*, customer, user):
 
 
 @transaction.atomic
-def create_customer_returns(*, customer, user, selections, reason='', return_datetime=None):
+def create_customer_returns(*, customer, user, selections, reason='', return_datetime=None, return_warehouse=None):
     # Use the same order locks as completion before rebuilding available quantities.
     list(customer_purchase_orders(customer=customer, user=user).order_by('pk').select_for_update())
     rows = {row['variant'].pk: row for row in customer_purchase_rows(customer=customer, user=user)}
@@ -91,6 +129,7 @@ def create_customer_returns(*, customer, user, selections, reason='', return_dat
                 drafts[item.order_id] = create_sales_return(
                     order=item.order, return_type=SalesReturn.TYPE_PARTIAL_RETURN,
                     reason=reason, user=user, return_datetime=return_datetime,
+                    return_warehouse=return_warehouse,
                 )
             allocated = min(remaining, available)
             add_return_item(
@@ -105,8 +144,9 @@ def create_customer_returns(*, customer, user, selections, reason='', return_dat
 
 
 @transaction.atomic
-def create_sales_return(*, order, return_type, reason='', user, return_datetime=None):
+def create_sales_return(*, order, return_type, reason='', user, return_datetime=None, return_warehouse=None):
     order = Order.objects.select_for_update().get(pk=order.pk)
+    _validate_return_warehouse(return_warehouse, order.branch_id)
     if return_type not in dict(SalesReturn.RETURN_TYPE_CHOICES):
         raise ValidationError('نوع المرتجع غير صحيح')
     if order.status in {Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED}:
@@ -117,6 +157,8 @@ def create_sales_return(*, order, return_type, reason='', user, return_datetime=
         return_type=return_type,
         reason=reason,
         created_by=user,
+        branch_id=order.branch_id,
+        return_warehouse=return_warehouse,
     )
     if return_datetime:
         if timezone.is_naive(return_datetime):
@@ -164,6 +206,7 @@ def add_return_item(*, sales_return, original_order_item, quantity, condition='g
             raise ValidationError('سعر المرتجع لا يمكن أن يكون سالبًا')
     refund_amount = unit_price * quantity
     item = SalesReturnItem.objects.create(
+        branch_id=sales_return.branch_id,
         sales_return=sales_return,
         original_order_item=original_order_item,
         product_variant=original_order_item.variant,
@@ -216,6 +259,7 @@ def add_exchange_item(*, sales_return, old_order_item, new_product_variant, quan
         raise ValidationError('سعر صنف الاستبدال لا يمكن أن يكون سالبًا')
     price_difference = (new_unit_price - old_unit_price) * quantity
     item = ExchangeItem.objects.create(
+        branch_id=sales_return.branch_id,
         sales_return=sales_return,
         old_order_item=old_order_item,
         new_product_variant=new_product_variant,
@@ -225,6 +269,8 @@ def add_exchange_item(*, sales_return, old_order_item, new_product_variant, quan
         price_difference=price_difference,
         notes=notes,
     )
+    sales_return.revision += 1
+    sales_return.save(update_fields=['revision'])
     
     log_audit(
         user=sales_return.created_by,
@@ -257,8 +303,9 @@ def approve_sales_return(*, sales_return, user):
     if sales_return.return_type == SalesReturn.TYPE_EXCHANGE and not sales_return.exchange_items.exists():
         raise ValidationError('لا يمكن اعتماد استبدال بدون أصناف جديدة')
     sales_return.status = SalesReturn.STATUS_APPROVED
+    sales_return.revision += 1
     sales_return.approved_by = user
-    sales_return.save(update_fields=['status', 'approved_by'])
+    sales_return.save(update_fields=['status', 'approved_by', 'revision'])
     
     log_audit(
         user=user,
@@ -276,13 +323,18 @@ def approve_sales_return(*, sales_return, user):
 
 
 @transaction.atomic
-def complete_sales_return(*, sales_return, user, cash_account=None):
+@_in_return_branch
+def complete_sales_return(*, sales_return, user, cash_account=None, return_warehouse=Ellipsis):
     sales_return = SalesReturn.objects.select_for_update().get(pk=sales_return.pk)
     old_status = sales_return.status
     if sales_return.status != SalesReturn.STATUS_APPROVED:
         raise ValidationError('يجب اعتماد المرتجع قبل إكماله')
+    if return_warehouse is not Ellipsis:
+        sales_return.return_warehouse = return_warehouse
+        sales_return.save(update_fields=['return_warehouse'])
 
     order = Order.objects.select_for_update().get(pk=sales_return.order_id)
+    _validate_return_warehouse(sales_return.return_warehouse, order.branch_id)
     if order.status in {Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED}:
         raise ValidationError('حالة الطلب الحالية لا تسمح بإكمال المرتجع')
     # Other pending returns may have completed since this one was drafted.
@@ -293,9 +345,9 @@ def complete_sales_return(*, sales_return, user, cash_account=None):
         if row['quantity'] > calculate_available_return_quantity(original_item):
             raise ValidationError('كمية المرتجع أكبر من الكمية المتبقية المتاحة للإرجاع')
     for item in sales_return.items.select_related('product_variant', 'original_order_item__warehouse'):
-        item_warehouse = get_order_item_warehouse(item.original_order_item, order=order)
+        item_warehouse = sales_return.return_warehouse or get_order_item_warehouse(item.original_order_item, order=order)
         if item.condition == SalesReturnItem.CONDITION_GOOD and item.return_to_stock:
-            _increase_stock_for_return(order=order, item=item, user=user)
+            _increase_stock_for_return(order=order, item=item, user=user, warehouse=item_warehouse)
         elif item.condition == SalesReturnItem.CONDITION_DAMAGED:
             StockMovement.objects.create(
                 movement_type=StockMovement.TYPE_DAMAGED_RETURN,
@@ -310,8 +362,9 @@ def complete_sales_return(*, sales_return, user, cash_account=None):
     _process_refund(sales_return=sales_return, order=order, user=user, cash_account=cash_account)
 
     sales_return.status = SalesReturn.STATUS_COMPLETED
+    sales_return.revision += 1
     sales_return.completed_by = user
-    sales_return.save(update_fields=['status', 'completed_by'])
+    sales_return.save(update_fields=['status', 'completed_by', 'revision'])
     _update_order_return_status(order)
     
     log_audit(
@@ -337,8 +390,8 @@ def process_exchange(*, sales_return, user, cash_account=None):
     return complete_sales_return(sales_return=sales_return, user=user, cash_account=cash_account)
 
 
-def _increase_stock_for_return(*, order, item, user):
-    warehouse = get_order_item_warehouse(item.original_order_item, order=order)
+def _increase_stock_for_return(*, order, item, user, warehouse=None):
+    warehouse = warehouse or get_order_item_warehouse(item.original_order_item, order=order)
     movement = return_stock(
         variant=item.product_variant,
         warehouse=warehouse,
@@ -368,6 +421,8 @@ def _process_refund(*, sales_return, order, user, cash_account):
     current_remaining = Decimal(str(order.remaining_amount or 0))
     debt_reduction = min(refund_amount, current_remaining)
     cash_refund = refund_amount - debt_reduction
+    sales_return.debt_reduction = debt_reduction
+    sales_return.save(update_fields=['debt_reduction'])
     if debt_reduction > 0:
         order.remaining_amount = current_remaining - debt_reduction
         if order.remaining_amount <= 0:
@@ -379,16 +434,19 @@ def _process_refund(*, sales_return, order, user, cash_account):
         order.save(update_fields=['remaining_amount', 'payment_status'])
     if cash_refund <= 0:
         return None
-    return record_transaction(
+    payment = record_transaction(
         transaction_type=PaymentTransaction.TYPE_REFUND,
         direction=PaymentTransaction.DIRECTION_OUT,
         amount=cash_refund,
-        cash_account=cash_account,
+        cash_account=_return_cash_account(sales_return, cash_account),
         related_order=order,
         related_customer=sales_return.customer,
         notes=f'Refund for return {sales_return.pk} / order {order.order_number}',
         created_by=user,
+        transaction_date=sales_return.created_at,
     )
+    sales_return.financial_transactions.add(payment)
+    return payment
 
 
 def _process_exchange_stock_and_money(*, sales_return, order, user, cash_account):
@@ -411,34 +469,264 @@ def _process_exchange_stock_and_money(*, sales_return, order, user, cash_account
                 quantity=exchange.quantity,
             )
         if exchange.price_difference > 0:
-            record_transaction(
+            payment = record_transaction(
                 transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
                 direction=PaymentTransaction.DIRECTION_IN,
                 amount=exchange.price_difference,
-                cash_account=cash_account,
+                cash_account=_return_cash_account(sales_return, cash_account),
                 related_order=order,
                 related_customer=sales_return.customer,
                 notes=f'Exchange price difference for return {sales_return.pk}',
                 created_by=user,
+                transaction_date=sales_return.created_at,
             )
+            sales_return.financial_transactions.add(payment)
         elif exchange.price_difference < 0:
-            record_transaction(
+            payment = record_transaction(
                 transaction_type=PaymentTransaction.TYPE_REFUND,
                 direction=PaymentTransaction.DIRECTION_OUT,
                 amount=abs(exchange.price_difference),
-                cash_account=cash_account,
+                cash_account=_return_cash_account(sales_return, cash_account),
                 related_order=order,
                 related_customer=sales_return.customer,
                 notes=f'Exchange refund difference for return {sales_return.pk}',
                 created_by=user,
+                transaction_date=sales_return.created_at,
             )
+            sales_return.financial_transactions.add(payment)
 
 
 def _recalculate_refund_amount(sales_return):
     total = sales_return.items.aggregate(v=Sum('refund_amount'))['v'] or Decimal('0')
     sales_return.refund_amount = total
-    sales_return.save(update_fields=['refund_amount'])
+    sales_return.revision += 1
+    sales_return.save(update_fields=['refund_amount', 'revision'])
     return total
+
+
+def _return_stock_positions(sales_return, order, items, exchanges, warehouse):
+    positions = {}
+    for item in items:
+        target = warehouse or get_order_item_warehouse(item.original_order_item, order=order)
+        if item.condition != SalesReturnItem.CONDITION_GOOD or not item.return_to_stock:
+            continue
+        key = (target.pk, item.product_variant_id)
+        position = positions.setdefault(key, [target, item.product_variant, 0, item.original_order_item.unit_cost])
+        position[2] += item.quantity
+    for item in exchanges:
+        source = get_order_item_warehouse(item.old_order_item, order=order)
+        key = (source.pk, item.new_product_variant_id)
+        position = positions.setdefault(key, [source, item.new_product_variant, 0, item.new_product_variant.cost_price])
+        position[2] -= item.quantity
+    return positions
+
+
+def _apply_return_stock_changes(*, sales_return, before, after, user):
+    changes = []
+    for key in sorted(before.keys() | after.keys()):
+        warehouse, variant, _quantity, unit_cost = after.get(key, before.get(key))
+        delta = after.get(key, [None, None, 0])[2] - before.get(key, [None, None, 0])[2]
+        if delta:
+            changes.append((warehouse, variant, delta, unit_cost))
+    # Withdraw first so changing warehouses cannot hide a shortage at source.
+    for warehouse, variant, delta, unit_cost in sorted(changes, key=lambda row: row[2] > 0):
+        note = f'Adjustment for sales return {sales_return.pk}'
+        if delta < 0:
+            sale_stock(variant=variant, warehouse=warehouse, quantity=-delta,
+                       user=user, note=note, movement_type=StockMovement.TYPE_ADJUSTMENT)
+        else:
+            movement = return_stock(variant=variant, warehouse=warehouse, quantity=delta,
+                                    user=user, note=note, unit_cost=unit_cost)
+            movement.movement_type = StockMovement.TYPE_ADJUSTMENT
+            movement.save(update_fields=['movement_type'])
+        if warehouse.warehouse_type == Warehouse.TYPE_REPRESENTATIVE and warehouse.assigned_user_id:
+            from sales_reps.services import (
+                consume_sales_rep_assignments,
+                restore_sales_rep_assignments,
+            )
+
+            adjust = restore_sales_rep_assignments if delta > 0 else consume_sales_rep_assignments
+            adjust(sales_rep=warehouse.assigned_user, product_variant=variant, quantity=abs(delta))
+
+
+def _record_return_edit_payment(sales_return, order, amount, user, cash_account):
+    if not amount:
+        return
+    payment = record_transaction(
+        transaction_type=PaymentTransaction.TYPE_REFUND if amount > 0 else PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
+        direction=PaymentTransaction.DIRECTION_OUT if amount > 0 else PaymentTransaction.DIRECTION_IN,
+        amount=abs(amount), cash_account=_return_cash_account(sales_return, cash_account),
+        related_order=order, related_customer=sales_return.customer,
+        notes=f'تعديل مرتجع #{sales_return.pk}', created_by=user,
+        transaction_date=sales_return.created_at,
+    )
+    sales_return.financial_transactions.add(payment)
+
+
+def _record_damaged_changes(sales_return, order, old_items, new_items, old_warehouse, new_warehouse, user):
+    positions = {}
+    for items, warehouse, sign in ((old_items, old_warehouse, -1), (new_items, new_warehouse, 1)):
+        for item in items:
+            if item.condition != SalesReturnItem.CONDITION_DAMAGED:
+                continue
+            target = warehouse or get_order_item_warehouse(item.original_order_item, order=order)
+            key = (target.pk, item.product_variant_id)
+            entry = positions.setdefault(key, [target, item.product_variant, 0])
+            entry[2] += sign * item.quantity
+    for warehouse, variant, delta in positions.values():
+        if delta:
+            StockMovement.objects.create(
+                movement_type=StockMovement.TYPE_DAMAGED_RETURN, variant=variant,
+                from_warehouse=warehouse if delta < 0 else None,
+                to_warehouse=warehouse if delta > 0 else None, quantity=abs(delta),
+                note=f'Damaged return adjustment for return {sales_return.pk}', created_by=user,
+            )
+
+
+@transaction.atomic
+@_in_return_branch
+def update_sales_return(*, sales_return, user, revision, items, exchanges=None,
+                        reason='', return_datetime=None, return_warehouse=None, cash_account=None):
+    sales_return = SalesReturn.objects.select_for_update().get(pk=sales_return.pk)
+    manager = user.is_superuser or user.role in {'manager', 'director'}
+    if not manager and not (user.role == 'sales' and sales_return.created_by_id == user.pk
+                            and sales_return.status == SalesReturn.STATUS_DRAFT):
+        raise ValidationError('لا تملك صلاحية تعديل هذا المرتجع')
+    if sales_return.revision != revision:
+        raise ValidationError('تم تغيير المرتجع أثناء التعديل. أعد تحميل الصفحة ثم حاول مرة أخرى')
+    order = Order.objects.select_for_update().get(pk=sales_return.order_id)
+    if order.status in {Order.STATUS_CANCELLED, Order.STATUS_DRAFT}:
+        raise ValidationError('لا يمكن تعديل مرتجع لفاتورة ملغاة أو مسودة')
+    _validate_return_warehouse(return_warehouse, order.branch_id)
+    old_items = list(sales_return.items.select_related('original_order_item__warehouse', 'product_variant'))
+    old_exchanges = list(sales_return.exchange_items.select_related('old_order_item__warehouse', 'new_product_variant'))
+    old_by_id = {item.pk: item for item in old_items}
+    new_items, used_ids, quantities = [], set(), defaultdict(int)
+    for row in items:
+        item_id = row.get('item_id')
+        original = order.items.select_related('variant', 'warehouse').filter(pk=row['original_order_item'].pk).first()
+        if not original or not original.variant_id:
+            raise ValidationError('الصنف لا يتبع فاتورة المرتجع')
+        old = old_by_id.get(item_id)
+        if item_id and (not old or item_id in used_ids or old.original_order_item_id != original.pk):
+            raise ValidationError('بيانات صنف المرتجع غير صحيحة')
+        used_ids.add(item_id) if item_id else None
+        quantity = integer_value(row['quantity'], minimum=0)
+        if not quantity:
+            continue
+        condition = row['condition']
+        if condition not in dict(SalesReturnItem.CONDITION_CHOICES):
+            raise ValidationError('حالة الصنف غير صحيحة')
+        quantities[original.pk] += quantity
+        unit_price = old.refund_amount / old.quantity if old else _line_refund_unit_price(original)
+        new_items.append(SalesReturnItem(
+            pk=item_id, branch_id=sales_return.branch_id, sales_return=sales_return,
+            original_order_item=original, product_variant=original.variant, quantity=quantity,
+            condition=condition, return_to_stock=bool(row.get('return_to_stock')),
+            refund_amount=decimal_value(unit_price * quantity, max_digits=12), notes=row.get('notes', ''),
+        ))
+    if not new_items:
+        raise ValidationError('أضف صنفًا واحدًا بكمية أكبر من صفر على الأقل')
+    for original_id, quantity in quantities.items():
+        returned = SalesReturnItem.objects.filter(
+            original_order_item_id=original_id, sales_return__status=SalesReturn.STATUS_COMPLETED,
+        ).exclude(sales_return=sales_return).aggregate(v=Sum('quantity'))['v'] or 0
+        if quantity + returned > order.items.get(pk=original_id).quantity:
+            raise ValidationError('كمية المرتجع أكبر من المتاح للإرجاع')
+    new_exchanges, exchanged = [], defaultdict(int)
+    if sales_return.return_type == SalesReturn.TYPE_EXCHANGE:
+        old_exchange_ids = {item.pk for item in old_exchanges}
+        exchange_ids = set()
+        for row in exchanges or []:
+            exchange_id = row.get('item_id')
+            if exchange_id and (exchange_id not in old_exchange_ids or exchange_id in exchange_ids):
+                raise ValidationError('بيانات الاستبدال غير صحيحة')
+            exchange_ids.add(exchange_id) if exchange_id else None
+            quantity = integer_value(row['quantity'], minimum=0)
+            if not quantity:
+                continue
+            original = order.items.filter(pk=row['old_order_item'].pk).first()
+            variant = row['new_product_variant']
+            if not original or variant.branch_id != order.branch_id or not variant.is_active:
+                raise ValidationError('صنف الاستبدال غير صحيح أو من فرع مختلف')
+            exchanged[original.pk] += quantity
+            price = decimal_value(row['new_unit_price'], max_digits=10)
+            if price < 0:
+                raise ValidationError('السعر لا يمكن أن يكون سالبًا')
+            old_price = _line_refund_unit_price(original)
+            new_exchanges.append(ExchangeItem(
+                pk=exchange_id, branch_id=sales_return.branch_id, sales_return=sales_return,
+                old_order_item=original, new_product_variant=variant, quantity=quantity,
+                old_unit_price=old_price, new_unit_price=price,
+                price_difference=(price - old_price) * quantity, notes=row.get('notes', ''),
+            ))
+        if not new_exchanges or any(qty > quantities[key] for key, qty in exchanged.items()):
+            raise ValidationError('كميات الاستبدال يجب ألا تتجاوز كميات الأصناف المرتجعة')
+    was_completed = sales_return.status == SalesReturn.STATUS_COMPLETED
+    old_amount = sales_return.refund_amount
+    new_amount = decimal_value(sum((item.refund_amount for item in new_items), Decimal(0)), max_digits=12)
+    before = {'refund_amount': str(old_amount), 'warehouse': sales_return.return_warehouse_id,
+              'created_at': sales_return.created_at.isoformat(), 'status': sales_return.status,
+              'items': [{'id': item.pk, 'quantity': item.quantity, 'condition': item.condition,
+                         'return_to_stock': item.return_to_stock} for item in old_items]}
+    if was_completed:
+        old_positions = _return_stock_positions(sales_return, order, old_items, old_exchanges, sales_return.return_warehouse)
+        new_positions = _return_stock_positions(sales_return, order, new_items, new_exchanges, return_warehouse)
+        _apply_return_stock_changes(sales_return=sales_return, before=old_positions, after=new_positions, user=user)
+        _record_damaged_changes(sales_return, order, old_items, new_items,
+                                sales_return.return_warehouse, return_warehouse, user)
+    if return_datetime:
+        if timezone.is_naive(return_datetime):
+            return_datetime = timezone.make_aware(return_datetime)
+        sales_return.created_at = return_datetime
+    if was_completed:
+        if sales_return.return_type == SalesReturn.TYPE_EXCHANGE:
+            difference = sum((item.price_difference for item in new_exchanges), Decimal(0)) - sum(
+                (item.price_difference for item in old_exchanges), Decimal(0))
+            _record_return_edit_payment(sales_return, order, -difference, user, cash_account)
+        else:
+            delta = new_amount - old_amount
+            if delta > 0:
+                debt = min(delta, order.remaining_amount)
+                cash_delta = delta - debt
+            else:
+                cash_reversal = min(-delta, old_amount - sales_return.debt_reduction)
+                cash_delta = -cash_reversal
+                debt = delta + cash_reversal
+            order.remaining_amount -= debt
+            sales_return.debt_reduction += debt
+            _record_return_edit_payment(sales_return, order, cash_delta, user, cash_account)
+            order.payment_status = (Order.PAYMENT_PAID if order.remaining_amount <= 0 else
+                                    Order.PAYMENT_PARTIAL if order.paid_amount > 0 else Order.PAYMENT_UNPAID)
+            order.save(update_fields=['remaining_amount', 'payment_status'])
+        local_datetime = timezone.localtime(sales_return.created_at)
+        sales_return.financial_transactions.update(transaction_date=local_datetime.date(), transaction_time=local_datetime.time())
+    elif sales_return.status != SalesReturn.STATUS_DRAFT:
+        sales_return.status = SalesReturn.STATUS_DRAFT
+        sales_return.approved_by = None
+    # Preserve row IDs: other records may refer to existing return lines.
+    sales_return.items.exclude(pk__in=[item.pk for item in new_items if item.pk]).delete()
+    for item in new_items:
+        item.save()
+    sales_return.exchange_items.exclude(pk__in=[item.pk for item in new_exchanges if item.pk]).delete()
+    for item in new_exchanges:
+        item.save()
+    sales_return.reason = reason
+    sales_return.return_warehouse = return_warehouse
+    sales_return.refund_amount = new_amount
+    sales_return.revision += 1
+    sales_return.save()
+    if was_completed:
+        _update_order_return_status(order)
+    log_audit(user=user, action=AuditLog.ACTION_UPDATE, section=AuditLog.SECTION_RETURNS,
+              model_name='SalesReturn', object_id=sales_return.pk, object_repr=str(sales_return),
+              changes_before=before,
+              changes_after={'refund_amount': str(new_amount), 'warehouse': sales_return.return_warehouse_id,
+                             'created_at': sales_return.created_at.isoformat(), 'status': sales_return.status,
+                             'items': [{'id': item.pk, 'quantity': item.quantity, 'condition': item.condition,
+                                        'return_to_stock': item.return_to_stock} for item in new_items]},
+              notes=f'تعديل المرتجع #{sales_return.pk}')
+    return sales_return
 
 
 def _update_order_return_status(order):

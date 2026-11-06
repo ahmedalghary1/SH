@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block title %}تعديل المرتجع #{{ sales_return.pk }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>تعديل المرتجع #{{ sales_return.pk }}</h1><a class="btn btn-light" href="{% url 'returns:detail' sales_return.pk %}">رجوع</a></div>
+<section class="card">
+    <p>الفاتورة: {{ sales_return.order.order_number }} · العميل: {{ sales_return.customer|default:'—' }} · {{ sales_return.get_status_display }}</p>
+    {% if sales_return.status == 'completed' %}<p>سيتم تسجيل فرق الكميات والمبالغ عند الحفظ. يجب توفر الكمية المطلوب سحبها من مخزن الاستلام السابق.</p>{% endif %}
+    {% if sales_return.status == 'approved' %}<p>بعد التعديل سيعود المرتجع إلى مسودة لاعتماده مجددًا.</p>{% endif %}
+</section>
+<form method="post" class="card" data-auto-date-time-ready="1">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {{ form.revision }}{{ form.revision.errors }}
+    {% include 'returns/partials/datetime_field.html' %}
+    {% include 'returns/partials/warehouse_field.html' %}
+    <div class="form-grid">
+        <label><span>{{ form.reason.label }}</span>{{ form.reason }}{{ form.reason.errors }}</label>
+        {% if sales_return.status == 'completed' %}<label><span>{{ form.cash_account.label }}</span>{{ form.cash_account }}{{ form.cash_account.errors }}<small>اتركها فارغة لاستخدام خزنة المرتجع السابقة.</small></label>{% endif %}
+    </div>
+    <h2>الأصناف المرتجعة</h2>
+    <p>يمكن تعديل الكمية والحالة، أو حذف سطر وإضافة صنف من الفاتورة. يُحفظ سعر المرتجع السابق للأصناف الموجودة.</p>
+    {% include 'returns/partials/edit_formset.html' with formset=item_formset title='صنف مرتجع' %}
+    {% if exchange_formset %}
+        <h2>أصناف الاستبدال</h2>
+        {% include 'returns/partials/edit_formset.html' with formset=exchange_formset title='صنف بديل' %}
+    {% endif %}
+    <div class="form-actions"><button class="btn btn-primary" type="submit">حفظ التعديل</button><a class="btn btn-light" href="{% url 'returns:detail' sales_return.pk %}">إلغاء</a></div>
+</form>
+<script>
+document.querySelectorAll('[data-return-formset]').forEach(section => {
+    section.querySelector('[data-add-row]').addEventListener('click', () => {
+        const total = section.querySelector('input[name$="-TOTAL_FORMS"]');
+        if (Number(total.value) >= 500) return;
+        const template = section.querySelector('template');
+        section.querySelector('[data-rows]').insertAdjacentHTML('beforeend', template.innerHTML.replaceAll('__prefix__', total.value));
+        total.value = Number(total.value) + 1;
+    });
+});
+</script>
+{% endblock %}

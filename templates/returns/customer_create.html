@@ -25,6 +25,7 @@
             {% csrf_token %}
             <input type="hidden" name="customer" value="{{ form.customer.value }}">
             {% include 'returns/partials/datetime_field.html' %}
+            {% include 'returns/partials/warehouse_field.html' %}
             <div class="items-table-wrap">
                 <table>
                     <thead><tr><th>اختيار</th><th>المنتج</th><th>الكود</th><th>اللون / المقاس</th><th>إجمالي المشتريات</th><th>المتاح للإرجاع</th><th>آخر سعر شراء</th><th>آخر فاتورة / طلب</th><th>كمية المرتجع</th><th>الحالة</th><th>يعود للمخزون</th><th>قيمة المرتجع</th></tr></thead>
