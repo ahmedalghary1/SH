@@ -1,0 +1,7 @@
+<div class="form-grid">
+    <label>
+        <span>{{ form.return_datetime.label }}</span>
+        {{ form.return_datetime }}
+        {% if form.return_datetime.errors %}<small class="field-error">{{ form.return_datetime.errors|join:', ' }}</small>{% endif %}
+    </label>
+</div>

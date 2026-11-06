@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-head"><h1>إنشاء مرتجع</h1></div>
 
-<form method="get" class="card form-grid">
+<form method="get" class="card form-grid" data-auto-date-time-ready="1">
     <label class="span-2">
         <span>رقم الفاتورة</span>
         <input type="text" name="invoice_number" value="{{ searched_invoice_number }}" placeholder="مثال: INV-20260606-0001" required>
@@ -32,6 +32,7 @@
     <form method="post" class="card">
         {% csrf_token %}
         {{ form.invoice_number.as_hidden }}
+        {% include 'returns/partials/datetime_field.html' %}
         <div class="form-grid">
             <label>
                 <span>{{ form.return_type.label }}</span>

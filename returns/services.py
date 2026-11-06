@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Sum
+from django.utils import timezone
 
 from audit.models import AuditLog
 from audit.services import log_audit
@@ -70,7 +71,7 @@ def customer_purchase_rows(*, customer, user):
 
 
 @transaction.atomic
-def create_customer_returns(*, customer, user, selections, reason=''):
+def create_customer_returns(*, customer, user, selections, reason='', return_datetime=None):
     # Use the same order locks as completion before rebuilding available quantities.
     list(customer_purchase_orders(customer=customer, user=user).order_by('pk').select_for_update())
     rows = {row['variant'].pk: row for row in customer_purchase_rows(customer=customer, user=user)}
@@ -89,7 +90,7 @@ def create_customer_returns(*, customer, user, selections, reason=''):
             if item.order_id not in drafts:
                 drafts[item.order_id] = create_sales_return(
                     order=item.order, return_type=SalesReturn.TYPE_PARTIAL_RETURN,
-                    reason=reason, user=user,
+                    reason=reason, user=user, return_datetime=return_datetime,
                 )
             allocated = min(remaining, available)
             add_return_item(
@@ -104,7 +105,7 @@ def create_customer_returns(*, customer, user, selections, reason=''):
 
 
 @transaction.atomic
-def create_sales_return(*, order, return_type, reason='', user):
+def create_sales_return(*, order, return_type, reason='', user, return_datetime=None):
     order = Order.objects.select_for_update().get(pk=order.pk)
     if return_type not in dict(SalesReturn.RETURN_TYPE_CHOICES):
         raise ValidationError('نوع المرتجع غير صحيح')
@@ -117,6 +118,11 @@ def create_sales_return(*, order, return_type, reason='', user):
         reason=reason,
         created_by=user,
     )
+    if return_datetime:
+        if timezone.is_naive(return_datetime):
+            return_datetime = timezone.make_aware(return_datetime, timezone.get_current_timezone())
+        SalesReturn.objects.filter(pk=sales_return.pk).update(created_at=return_datetime)
+        sales_return.created_at = return_datetime
     
     log_audit(
         user=user,
@@ -126,7 +132,7 @@ def create_sales_return(*, order, return_type, reason='', user):
         object_id=sales_return.pk,
         object_repr=str(sales_return),
         changes_before={},
-        changes_after={'order': str(order), 'return_type': return_type},
+        changes_after={'order': str(order), 'return_type': return_type, 'created_at': sales_return.created_at.isoformat()},
         notes=f'إنشاء مرتجع للطلب {order.order_number} - النوع: {return_type}',
     )
     

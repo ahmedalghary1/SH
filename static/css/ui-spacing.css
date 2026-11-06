@@ -1,0 +1,398 @@
+/* Shared screen layout. Keep print documents and business behaviour independent. */
+@media screen {
+    .page-content input:is([type="checkbox"], [type="radio"]) {
+        width: 1.125rem;
+        height: 1.125rem;
+        min-height: 0;
+        padding: 0;
+        margin: .125rem;
+        flex: 0 0 auto;
+        vertical-align: middle;
+        accent-color: var(--accent-strong);
+    }
+
+    .page-content label:has(> input:is([type="checkbox"], [type="radio"])) {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: .5rem;
+    }
+
+    .page-content label:has(> input:is([type="checkbox"], [type="radio"])) > span {
+        margin-block: 0;
+    }
+
+    .page-head,
+    .section-head {
+        flex-wrap: wrap;
+        row-gap: 1rem;
+    }
+
+    .page-head > .actions,
+    .section-head > .actions {
+        max-width: 100%;
+    }
+
+    .page-content .export-actions {
+        margin-block-end: 1rem;
+    }
+
+    .page-content td > .btn {
+        margin-block: .2rem;
+        margin-inline-end: .375rem;
+    }
+
+    .page-content td > form {
+        display: inline-flex;
+        margin-block: .2rem;
+        margin-inline-end: .375rem;
+    }
+
+    .page-content .btn {
+        white-space: normal;
+        text-align: center;
+        line-height: 1.5;
+    }
+
+    .page-content :is(.actions, .button-row, .form-actions) > form {
+        margin: 0;
+    }
+
+    .page-content .invoice-summary .summary-row {
+        flex-wrap: wrap;
+        gap: .75rem;
+    }
+
+    .page-content .return-summary {
+        align-items: center;
+        flex-wrap: wrap;
+        gap: .75rem;
+        padding: 1rem;
+        border-radius: var(--radius-md);
+        background: var(--surface-muted);
+    }
+
+    .page-content .return-summary strong {
+        direction: ltr;
+        unicode-bidi: isolate;
+    }
+
+    .page-content .items-section form > label + input {
+        margin-block-start: .5rem;
+    }
+}
+
+/* Tablet landscape, laptops, and desktop monitors. Phone rules stay in main.css. */
+@media screen and (min-width: 48.0625rem) {
+    :root {
+        --sidebar-width: 15.5rem;
+        --content-width: 112rem;
+        --page-gutter: clamp(1.25rem, 1.65vw, 2rem);
+        --layout-gap: clamp(1rem, 1.3vw, 1.5rem);
+        --section-gap: clamp(1.25rem, 1.6vw, 1.75rem);
+        --panel-padding: clamp(1.125rem, 1.4vw, 1.75rem);
+    }
+
+    .page-content {
+        padding-block: var(--section-gap) calc(var(--section-gap) * 2);
+    }
+
+    .page-content > .simple-form-page {
+        max-width: 64rem;
+        margin-inline: auto;
+    }
+
+    .page-content .page-head {
+        gap: 1rem 1.5rem;
+        margin-block-end: var(--section-gap);
+    }
+
+    .page-content :is(.card, .simple-form, .filter-section, .search-section,
+        .items-section, .customers-table-section, .suppliers-table-section,
+        .cash-transactions-section, .cash-accounts-section) {
+        padding: var(--panel-padding);
+    }
+
+    .page-content :is(.card, .filters, .filter-section, .search-section,
+        .stats-grid, .quick-actions, .cash-summary-grid, .cash-actions,
+        .cash-accounts-section, .cash-balance-strip, .invoice-navigation) {
+        margin-block-end: var(--section-gap);
+    }
+
+    .page-content :is(.stats-grid, .detail-grid, .summary-grid, .cash-summary-grid,
+        .quick-actions, .products-grid, .reports-grid, .cash-accounts-grid,
+        .order-layout, .dashboard-grid, .variant-pickers) {
+        gap: var(--layout-gap);
+    }
+
+    .page-content .form-grid {
+        grid-template-columns: repeat(auto-fit, minmax(min(15.5rem, 100%), 1fr));
+        gap: 1.25rem var(--layout-gap);
+        align-items: start;
+    }
+
+    .page-content :is(.filters, .cash-filter-form, .cash-filter-bar) {
+        grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+        align-items: end;
+        gap: 1rem;
+    }
+
+    .page-content :is(.filters, .form-grid) > *,
+    .page-content :is(.filter-inputs, .filter-group, .period-filter) {
+        min-width: 0;
+    }
+
+    .page-content :is(.simple-customers-page, .simple-suppliers-page) .filter-inputs {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+        gap: 1rem;
+        flex: 1 1 32rem;
+    }
+
+    .page-content :is(.simple-customers-page, .simple-suppliers-page) .filter-group :is(input, select) {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .page-content :is(.invoice-filters, .period-filter, .period-filter__custom.is-open) {
+        flex-wrap: wrap;
+        gap: .875rem;
+    }
+
+    .page-content .period-filter {
+        flex: 1 1 24rem;
+    }
+
+    .page-content .period-filter__custom label {
+        flex: 1 1 12rem;
+        min-width: 0;
+    }
+
+    .page-content .period-filter__custom input {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .page-content :is(.actions, .button-row, .form-actions, .inline-form) {
+        gap: .75rem;
+    }
+
+    .page-content .form-actions {
+        margin-block-start: 1.25rem;
+    }
+
+    .page-content .form-grid > .form-actions {
+        margin-block-start: .25rem;
+        padding-block-start: 1.25rem;
+        border-block-start: 1px solid var(--border-color);
+    }
+
+    .page-content label > span:first-child {
+        margin-block-end: .5rem;
+        line-height: 1.65;
+    }
+
+    .page-content form.card:not(.form-grid) > label + label {
+        margin-block-start: 1.25rem;
+    }
+
+    .page-content :is(.stat-card, .cash-card, .report-card) {
+        min-width: 0;
+        padding: var(--panel-padding);
+    }
+
+    .page-content .stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+    }
+
+    .page-content .stat-card > small {
+        display: block;
+        margin-block-start: .5rem;
+        line-height: 1.7;
+    }
+
+    .page-content .stat-card > .button-row {
+        margin-block-start: 1rem;
+    }
+
+    .page-content .cash-summary-grid {
+        grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
+    }
+
+    .page-content .cash-balance-metrics {
+        grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr));
+    }
+
+    .page-content .cash-content {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .page-content .quick-actions {
+        grid-template-columns: repeat(auto-fit, minmax(min(10.5rem, 100%), 1fr));
+    }
+
+    .page-content .quick-action-btn {
+        padding: 1.125rem;
+        min-height: 7rem;
+        gap: .75rem;
+    }
+
+    .page-content :is(th, td) {
+        padding: .875rem 1rem;
+        line-height: 1.65;
+    }
+
+    .page-content .responsive-table-region {
+        max-width: 100%;
+        scrollbar-gutter: stable;
+    }
+
+    .table-column-control {
+        margin-block: .25rem .75rem;
+    }
+
+    .table-column-control summary {
+        min-height: 2.25rem;
+        padding: .4rem .75rem;
+    }
+
+    .table-column-options label {
+        padding: .5rem;
+        gap: .5rem;
+    }
+
+    .page-content .cashier-layout {
+        width: 100%;
+        max-width: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    .page-content .cashier-grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--layout-gap);
+    }
+
+    .page-content .cashier-grid .card {
+        margin-block-end: 0;
+    }
+
+    .page-content .cashier-session-bar,
+    .page-content .session-drafts {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .page-content .cashier-session-bar {
+        gap: 1rem;
+        margin-block-end: var(--layout-gap);
+    }
+
+    .page-content .invoice-info {
+        grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+        gap: 1rem;
+    }
+
+    .page-content .invoice-info > .btn {
+        align-self: end;
+    }
+
+    .page-content .quantity-section {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+    }
+
+    .page-content .quantity-section > .btn {
+        grid-column: 1 / -1;
+    }
+
+    .page-content .stock-info .info-item {
+        gap: .75rem;
+        align-items: stretch;
+    }
+
+    .page-content .invoice-summary .summary-row:has(#discount-type) {
+        display: grid;
+        grid-template-columns: auto minmax(7rem, 1fr) minmax(6rem, .8fr);
+        gap: .875rem;
+    }
+
+    .page-content .invoice-summary .summary-row:has(#discount-type) :is(input, select) {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .page-content .invoice-actions {
+        grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr));
+        gap: .875rem;
+    }
+
+    .page-content .invoice-actions .btn {
+        padding: .875rem;
+    }
+
+    .page-content .search-section + .items-section > #purchase-search {
+        margin-block: .5rem 1.25rem;
+    }
+}
+
+@media screen and (min-width: 61.3125rem) {
+    .page-content .simple-dashboard .quick-actions {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .page-content .simple-dashboard .stats-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .topbar:not(.has-branch-selector) {
+        grid-template-columns: minmax(0, 1fr) auto auto;
+    }
+
+    .topbar.has-branch-selector {
+        grid-template-columns: minmax(8rem, 1fr) minmax(9rem, 13rem) auto auto;
+    }
+
+    .topbar-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: .625rem;
+    }
+
+    .topbar .branch-selector select {
+        width: 100%;
+        max-width: 100%;
+    }
+}
+
+@media screen and (min-width: 61.3125rem) and (max-width: 80rem) {
+    :root { --sidebar-width: 14rem; }
+
+    .topbar-datetime { display: none; }
+
+    .topbar:not(.has-branch-selector) {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .topbar.has-branch-selector {
+        grid-template-columns: minmax(7rem, 1fr) minmax(9rem, 12rem) auto;
+    }
+}
+
+@media screen and (min-width: 82rem) {
+    .page-content .cashier-grid {
+        grid-template-columns: minmax(19rem, .8fr) minmax(0, 1.4fr);
+    }
+}
+
+@media screen and (min-width: 120rem) {
+    :root {
+        --sidebar-width: 16rem;
+        --page-gutter: 2rem;
+        --layout-gap: 1.5rem;
+    }
+
+    .page-content .cashier-grid {
+        grid-template-columns: minmax(23rem, .75fr) minmax(0, 1.5fr);
+    }
+}

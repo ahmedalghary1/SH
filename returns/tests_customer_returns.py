@@ -1,8 +1,10 @@
 from decimal import Decimal
+from datetime import datetime
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from accounts.models import User, Branch
 from config.branching import set_current_branch, reset_current_branch
@@ -159,3 +161,53 @@ class CustomerReturnTests(TestCase):
                 create_customer_returns(customer=self.customer, user=self.user,
                                          selections=selections)
         self.assertFalse(SalesReturn.objects.exists())
+
+    def test_selected_datetime_is_saved_on_all_customer_return_drafts(self):
+        self.client.force_login(self.user)
+        selected = '2026-11-03T14:35'
+        response = self.client.post(reverse('returns:customer_create'), {
+            'customer': self.customer.pk, 'return_datetime': selected,
+            f'selected_{self.variant.pk}': 'on', f'quantity_{self.variant.pk}': '4',
+        })
+        self.assertRedirects(response, reverse('returns:list'))
+        expected = timezone.make_aware(datetime.fromisoformat(selected))
+        self.assertEqual(SalesReturn.objects.count(), 2)
+        self.assertTrue(all(draft.created_at == expected for draft in SalesReturn.objects.all()))
+        response = self.client.get(reverse('returns:list'), {
+            'period': 'custom', 'date_from': '2026-11-03', 'date_to': '2026-11-03',
+        })
+        self.assertEqual(len(response.context['returns']), 2)
+
+    def test_customer_return_date_is_editable_and_initialized_after_search(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('returns:customer_create'), {'customer': self.customer.pk})
+        self.assertContains(response, 'name="return_datetime"')
+        self.assertContains(response, 'type="datetime-local"')
+        self.assertTrue(response.context['form']['return_datetime'].value())
+        self.assertNotIn('readonly', response.context['form']['return_datetime'].field.widget.attrs)
+
+    def test_invalid_datetime_keeps_input_and_does_not_create_return(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse('returns:customer_create'), {
+            'customer': self.customer.pk, 'return_datetime': '2026-02-30T14:35',
+            f'selected_{self.variant.pk}': 'on', f'quantity_{self.variant.pk}': '1',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('return_datetime', response.context['form'].errors)
+        self.assertEqual(response.context['form']['return_datetime'].value(), '2026-02-30T14:35')
+        self.assertTrue(response.context['item_rows'][0]['selected'])
+        self.assertFalse(SalesReturn.objects.exists())
+
+    def test_invoice_return_routes_save_selected_datetime(self):
+        self.client.force_login(self.user)
+        selected = '2026-11-02T10:20'
+        for route in ('returns:simple_create', 'returns:create'):
+            with self.subTest(route=route):
+                response = self.client.post(reverse(route), {
+                    'invoice_number': self.invoice.invoice_number,
+                    'return_type': SalesReturn.TYPE_PARTIAL_RETURN, 'return_datetime': selected,
+                    f'selected_{self.order_item.pk}': 'on', f'quantity_{self.order_item.pk}': '1',
+                })
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(SalesReturn.objects.latest('pk').created_at,
+                                 timezone.make_aware(datetime.fromisoformat(selected)))

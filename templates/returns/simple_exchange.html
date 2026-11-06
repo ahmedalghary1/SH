@@ -8,7 +8,7 @@
 
     <!-- قسم البحث -->
     <div class="search-section">
-        <form method="get" class="search-form">
+        <form method="get" class="search-form" data-auto-date-time-ready="1">
             <div class="search-inputs">
                 <div class="search-group">
                     <label>رقم الفاتورة</label>
@@ -50,6 +50,7 @@
             {% csrf_token %}
             <input type="hidden" name="invoice_number" value="{{ searched_invoice_number }}">
             <input type="hidden" name="return_type" value="{{ SalesReturn.TYPE_EXCHANGE }}">
+            {% include 'returns/partials/datetime_field.html' %}
             
             <div class="items-table-wrap">
                 <table>

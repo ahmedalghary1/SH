@@ -124,6 +124,7 @@ class CustomerReturnCreateView(SalesRequiredMixin, FormView):
             drafts = create_customer_returns(
                 customer=form.cleaned_data['customer'], user=self.request.user,
                 selections=selections, reason=form.cleaned_data['reason'],
+                return_datetime=form.cleaned_data.get('return_datetime'),
             )
         except (ValidationError, ValueError) as exc:
             form.add_error(None, _validation_error_message(exc))
@@ -253,6 +254,7 @@ class SimpleReturnCreateView(SalesRequiredMixin, FormView):
                     order=order,
                     return_type=form.cleaned_data['return_type'],
                     reason=form.cleaned_data.get('reason') or '',
+                    return_datetime=form.cleaned_data.get('return_datetime'),
                     user=self.request.user,
                 )
                 for item_data in selected_items:
@@ -333,6 +335,7 @@ class SimpleExchangeCreateView(SalesRequiredMixin, FormView):
                     order=order,
                     return_type=SalesReturn.TYPE_EXCHANGE,
                     reason=form.cleaned_data.get('reason') or '',
+                    return_datetime=form.cleaned_data.get('return_datetime'),
                     user=self.request.user,
                 )
                 for item_data in selected_items:
@@ -544,6 +547,7 @@ class SalesReturnCreateView(SalesRequiredMixin, FormView):
                     order=order,
                     return_type=form.cleaned_data['return_type'],
                     reason=form.cleaned_data.get('reason') or '',
+                    return_datetime=form.cleaned_data.get('return_datetime'),
                     user=self.request.user,
                 )
                 for item_data in selected_items:

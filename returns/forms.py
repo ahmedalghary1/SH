@@ -1,6 +1,7 @@
 from django import forms
 
 from django.db.models import Q
+from django.utils import timezone
 
 from orders.models import Order, OrderItem
 from products.models import ProductVariant
@@ -10,7 +11,24 @@ from .models import SalesReturn, SalesReturnItem
 from .services import calculate_available_return_quantity
 
 
-class CustomerReturnCreateForm(forms.Form):
+class ReturnDateTimeForm(forms.Form):
+    return_datetime = forms.DateTimeField(
+        required=False,
+        label='تاريخ ووقت المرتجع',
+        initial=timezone.now,
+        input_formats=['%Y-%m-%dT%H:%M'],
+        widget=forms.DateTimeInput(format='%Y-%m-%dT%H:%M', attrs={'type': 'datetime-local'}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Invoice/customer searches bind the form before the date is entered.
+        if self.is_bound and 'return_datetime' not in self.data:
+            self.data = self.data.copy()
+            self.data['return_datetime'] = timezone.localtime().strftime('%Y-%m-%dT%H:%M')
+
+
+class CustomerReturnCreateForm(ReturnDateTimeForm):
     customer = forms.ModelChoiceField(queryset=Customer.objects.none(), label='حساب العميل')
     reason = forms.CharField(required=False, label='سبب المرتجع')
 
@@ -22,7 +40,7 @@ class CustomerReturnCreateForm(forms.Form):
         self.fields['customer'].queryset = customers.order_by('name', 'pk')
 
 
-class SalesReturnCreateForm(forms.Form):
+class SalesReturnCreateForm(ReturnDateTimeForm):
     invoice_number = forms.CharField(
         label='رقم الفاتورة',
         widget=forms.TextInput(attrs={'placeholder': 'مثال: INV-20260606-0001'}),

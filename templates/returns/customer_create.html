@@ -8,7 +8,7 @@
         <a class="btn btn-light" href="{% url 'returns:simple_create' %}">مرتجع برقم الفاتورة</a>
     </div>
     <div class="search-section">
-        <form method="get" class="search-form" data-customer-return-picker>
+        <form method="get" class="search-form" data-customer-return-picker data-auto-date-time-ready="1">
             <label for="id_customer">حساب العميل</label>
             {{ form.customer }}
             <button class="btn btn-primary" type="submit">عرض المشتريات</button>
@@ -24,6 +24,7 @@
         <form method="post" data-customer-return-form>
             {% csrf_token %}
             <input type="hidden" name="customer" value="{{ form.customer.value }}">
+            {% include 'returns/partials/datetime_field.html' %}
             <div class="items-table-wrap">
                 <table>
                     <thead><tr><th>اختيار</th><th>المنتج</th><th>الكود</th><th>اللون / المقاس</th><th>إجمالي المشتريات</th><th>المتاح للإرجاع</th><th>آخر سعر شراء</th><th>آخر فاتورة / طلب</th><th>كمية المرتجع</th><th>الحالة</th><th>يعود للمخزون</th><th>قيمة المرتجع</th></tr></thead>

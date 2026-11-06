@@ -1,5 +1,5 @@
 // Release all shell assets together; private pages require a verified scope.
-const CACHE_VERSION = "sh-pwa-v2026-10-19-workspace-06";
+const CACHE_VERSION = "sh-pwa-v2026-11-06-layout-01";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_PREFIX = `${CACHE_VERSION}-pages-`;
 const META_CACHE = "sh-pwa-identity-v1";
@@ -9,6 +9,7 @@ const MAX_PAGES = 100;
 const PREFETCH_FRESH_MS = 5 * 60 * 1000;
 const CORE_ASSETS = [
   OFFLINE_URL, "/manifest.json", "/static/css/main.css", "/static/js/main.js",
+  "/static/css/ui-spacing.css",
   "/static/js/internal-tabs.js", "/static/js/orders.js", "/static/js/inventory.js",
   "/static/js/product_create.js", "/static/js/purchase_create.js", "/static/js/purchase_return.js",
   "/static/js/pwa/identity.js", "/static/js/pwa/db.js", "/static/js/pwa/sync-queue.js",
