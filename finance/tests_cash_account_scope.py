@@ -42,6 +42,49 @@ class CashAccountBranchLookupTests(TestCase):
         finally:
             reset_current_branch(token)
 
+    def test_lookup_without_request_context_uses_default_branch(self):
+        for factory in (CashAccount.get_default, CashAccount.get_cash_drawer):
+            self.assertEqual(factory().branch_id, self.main_id)
+        self.assertEqual(CashAccount.all_objects.count(), 4)
+
+    def test_transfer_and_purchase_pages_handle_matching_names_across_branches(self):
+        user = User.objects.create_superuser(username='cash-pages-root', password='pass')
+        self.client.force_login(user)
+        balances = dict(CashAccount.all_objects.values_list('pk', 'balance'))
+        for selected_branch, expected_branch in ((None, self.main_id), (self.other.pk, self.other.pk)):
+            session = self.client.session
+            if selected_branch is None:
+                session.pop('active_branch_id', None)
+            else:
+                session['active_branch_id'] = selected_branch
+            session.save()
+            for path, field_name, account_name in (
+                ('/finance/transactions/transfer/', 'to_account', 'الخزنة الرئيسية'),
+                ('/purchases/orders/create/', 'cash_account', 'درج النقدية'),
+            ):
+                with self.subTest(branch=selected_branch, path=path):
+                    response = self.client.get(path)
+                    self.assertEqual(response.status_code, 200)
+                    initial = response.context['form'].fields[field_name].initial
+                    expected = CashAccount.all_objects.get(branch_id=expected_branch, name=account_name)
+                    self.assertEqual(initial.pk, expected.pk)
+        self.assertEqual(dict(CashAccount.all_objects.values_list('pk', 'balance')), balances)
+
+    def test_branch_manager_pages_use_their_assigned_branch(self):
+        user = User.objects.create_user(
+            username='cash-pages-manager', password='pass', role='manager', branch=self.other,
+        )
+        self.client.force_login(user)
+        for path, field_name in (
+            ('/finance/transactions/transfer/', 'to_account'),
+            ('/purchases/orders/create/', 'cash_account'),
+        ):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.context['form'].fields[field_name].initial.branch_id, self.other.pk)
+        self.assertEqual(CashAccount.all_objects.count(), 4)
+
     def test_default_is_created_in_main_when_only_other_branch_has_one(self):
         CashAccount.all_objects.filter(branch_id=self.main_id, name='الخزنة الرئيسية').delete()
         token = set_current_branch(None)
