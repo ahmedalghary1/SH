@@ -2,7 +2,9 @@ from datetime import datetime
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.db import connection
+from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -14,6 +16,8 @@ from finance.services import (
     delete_transaction,
 )
 from inventory.models import Stock, StockBatch, StockMovement, Warehouse
+from orders.models import OrderItem
+from products.models import Color, Size
 
 from . import tests as legacy_tests
 from .models import SalesReturn
@@ -229,6 +233,35 @@ class SalesReturnEditTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'أكبر من المتاح')
         self.assertEqual(response.context['item_formset'][0]['quantity'].value(), '5')
+
+    @override_settings(DEBUG=False)
+    def test_opening_edit_page_does_not_query_color_and_size_for_every_invoice_line(self):
+        color = Color.objects.create(name='Return edit color')
+        size = Size.objects.create(name='Return edit size')
+        self.variant.color = color
+        self.variant.size = size
+        self.variant.save(update_fields=['color', 'size'])
+        sales_return = self.make_return()
+        for _ in range(20):
+            OrderItem.objects.create(order=self.order, variant=self.variant, quantity=1,
+                                     unit_price=300, total=300)
+        self.client.force_login(self.user)
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(reverse('returns:edit', args=[sales_return.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, color.name)
+        related_queries = [query for query in queries.captured_queries if
+                           'FROM "products_color"' in query['sql'] or 'FROM "products_size"' in query['sql']]
+        self.assertLessEqual(len(related_queries), 2)
+
+    @override_settings(DEBUG=False)
+    def test_completed_exchange_edit_page_opens_with_production_settings(self):
+        sales_return = self.make_return(exchange=True, paid=900)
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('returns:edit', args=[sales_return.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="exchanges-0-new_unit_price"')
+        self.assertContains(response, 'name="items-0-original_order_item"')
 
     def test_insufficient_cash_rolls_back_completed_edit(self):
         sales_return = self.make_return(paid=900)

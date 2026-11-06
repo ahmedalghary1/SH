@@ -1,3 +1,5 @@
+from functools import cached_property
+
 from django import forms
 from django.db.models import Q
 from django.utils import timezone
@@ -159,9 +161,12 @@ class ReturnEditItemForm(forms.Form):
     return_to_stock = forms.BooleanField(required=False, label='يعود للمخزون', initial=True)
     notes = forms.CharField(required=False, label='ملاحظات')
 
-    def __init__(self, *args, sales_return, **kwargs):
+    def __init__(self, *args, sales_return, order_item_choices=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['original_order_item'].queryset = sales_return.order.items.filter(variant__isnull=False).select_related('variant__product')
+        field = self.fields['original_order_item']
+        field.queryset = _return_order_items(sales_return)
+        if order_item_choices is not None:
+            field.choices = order_item_choices
 
 
 class ReturnEditExchangeForm(forms.Form):
@@ -172,13 +177,51 @@ class ReturnEditExchangeForm(forms.Form):
     new_unit_price = forms.DecimalField(min_value=0, max_digits=10, decimal_places=2, label='سعر البديل')
     notes = forms.CharField(required=False, label='ملاحظات')
 
-    def __init__(self, *args, sales_return, **kwargs):
+    def __init__(self, *args, sales_return, order_item_choices=None, variant_choices=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['old_order_item'].queryset = sales_return.order.items.select_related('variant__product')
+        self.fields['old_order_item'].queryset = _return_order_items(sales_return)
+        if order_item_choices is not None:
+            self.fields['old_order_item'].choices = order_item_choices
         self.fields['new_product_variant'].queryset = ProductVariant.objects.filter(
             branch_id=sales_return.branch_id, is_active=True,
         ).select_related('product', 'color', 'size')
+        if variant_choices is not None:
+            self.fields['new_product_variant'].choices = variant_choices
 
 
-ReturnEditItemFormSet = forms.formset_factory(ReturnEditItemForm, extra=1, can_delete=True, max_num=500, validate_max=True)
-ReturnEditExchangeFormSet = forms.formset_factory(ReturnEditExchangeForm, extra=1, can_delete=True, max_num=500, validate_max=True)
+def _return_order_items(sales_return):
+    return sales_return.order.items.filter(variant__isnull=False).select_related(
+        'order', 'variant__product', 'variant__color', 'variant__size',
+    )
+
+
+class BaseReturnEditFormSet(forms.BaseFormSet):
+    @cached_property
+    def order_item_choices(self):
+        # Each row and the empty-row template render the same invoice choices.
+        # Load their labels once per request, including all label relations.
+        items = _return_order_items(self.form_kwargs['sales_return'])
+        return [('', '---------'), *((item.pk, str(item)) for item in items)]
+
+    @cached_property
+    def variant_choices(self):
+        sales_return = self.form_kwargs['sales_return']
+        variants = ProductVariant.objects.filter(branch_id=sales_return.branch_id, is_active=True).select_related(
+            'product', 'color', 'size',
+        )
+        return [('', '---------'), *((variant.pk, str(variant)) for variant in variants)]
+
+    def get_form_kwargs(self, index):
+        kwargs = super().get_form_kwargs(index)
+        kwargs['order_item_choices'] = self.order_item_choices
+        if 'new_product_variant' in self.form.base_fields:
+            kwargs['variant_choices'] = self.variant_choices
+        return kwargs
+
+
+ReturnEditItemFormSet = forms.formset_factory(
+    ReturnEditItemForm, formset=BaseReturnEditFormSet, extra=1, can_delete=True, max_num=500, validate_max=True,
+)
+ReturnEditExchangeFormSet = forms.formset_factory(
+    ReturnEditExchangeForm, formset=BaseReturnEditFormSet, extra=1, can_delete=True, max_num=500, validate_max=True,
+)
