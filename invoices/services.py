@@ -20,7 +20,7 @@ def invoice_deletion_block_reason(order):
         return 'هذه الفاتورة محذوفة بالفعل'
     if order.status not in {Order.STATUS_CONFIRMED, Order.STATUS_PREPARING, Order.STATUS_READY, Order.STATUS_COMPLETED}:
         return 'حالة الفاتورة الحالية لا تسمح بالحذف'
-    if order.sales_returns.exclude(status='rejected').exists():
+    if order.sales_returns.exclude(status__in=['rejected', 'cancelled']).exists():
         return 'الفاتورة مرتبطة بمرتجع؛ راجع المرتجع أولًا قبل الحذف'
     if order.sales_rep_collections.filter(handed_over_amount__gt=0).exists():
         return 'تم تسليم تحصيلات هذه الفاتورة من عهدة المندوب؛ يجب تسوية العهدة أولًا'

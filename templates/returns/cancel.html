@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block title %}إلغاء المرتجع #{{ sales_return.pk }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>إلغاء المرتجع #{{ sales_return.pk }}</h1><a class="btn btn-light" href="{% url 'returns:detail' sales_return.pk %}">رجوع</a></div>
+<section class="card">
+    <p>الفاتورة: {{ sales_return.order.order_number }} · العميل: {{ sales_return.customer|default:'—' }}</p>
+    <p>حالة المرتجع: {{ sales_return.get_status_display }} · قيمة المرتجع: {{ sales_return.refund_amount }}</p>
+    {% if sales_return.status == 'cancelled' %}
+        <p>هذا المرتجع ملغى بالفعل، ولا يمكن إلغاؤه مرة أخرى.</p>
+    {% else %}
+        {% if sales_return.status == 'completed' %}
+        <p>سيتم سحب الأصناف السليمة من مخزن استلام المرتجع، وإعادة أصناف الاستبدال إلى مخزن الفاتورة، وعكس المبالغ في الخزن الأصلية. يجب توفر الكميات وأرصدة الخزن اللازمة للإلغاء.</p>
+        {% endif %}
+        <p>ستعود الكميات إلى الفاتورة وتصبح متاحة للإرجاع مجددًا، وتُزال قيود هذا المرتجع من كشف حساب العميل. سيبقى سجل الإلغاء محفوظًا للمراجعة.</p>
+    {% endif %}
+</section>
+{% if sales_return.status != 'cancelled' %}
+<form method="post" class="card form-grid" data-auto-date-time-ready="1">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {{ form.revision }}{{ form.revision.errors }}
+    <label><span>{{ form.reason.label }}</span>{{ form.reason }}{{ form.reason.errors }}</label>
+    <div class="form-actions"><button class="btn btn-danger" type="submit">تأكيد إلغاء المرتجع</button><a class="btn btn-light" href="{% url 'returns:detail' sales_return.pk %}">رجوع دون إلغاء</a></div>
+</form>
+{% endif %}
+{% endblock %}

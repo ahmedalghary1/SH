@@ -4,8 +4,13 @@
 <div class="page-head">
     <h1>مرتجع #{{ sales_return.pk }}</h1>
     <div class="actions">
+        {% if sales_return.status != 'cancelled' %}
         {% if request.user.is_manager or sales_return.status == 'draft' and request.user == sales_return.created_by %}
             <a class="btn btn-light" href="{% url 'returns:edit' sales_return.pk %}">تعديل المرتجع</a>
+        {% endif %}
+        {% if request.user.is_manager %}
+            <a class="btn btn-danger" href="{% url 'returns:cancel' sales_return.pk %}">إلغاء المرتجع</a>
+        {% endif %}
         {% endif %}
         {% if sales_return.status == 'draft' %}
             <a class="btn btn-primary" href="{% url 'returns:add_item' sales_return.pk %}">إضافة صنف</a>
@@ -18,6 +23,13 @@
         {% endif %}
     </div>
 </div>
+{% if sales_return.status == 'cancelled' %}
+<section class="card">
+    <h2>تم إلغاء المرتجع</h2>
+    <p>بواسطة {{ sales_return.cancelled_by|default:'—' }} في {{ sales_return.cancelled_at|date:'Y-m-d H:i' }}</p>
+    <p>{{ sales_return.cancellation_reason|default:'تم عكس أثر المرتجع وإزالته من كشف حساب العميل.' }}</p>
+</section>
+{% endif %}
 <div class="stats-grid">
     <div class="stat-card"><span>الطلب</span><strong>{{ sales_return.order }}</strong></div>
     <div class="stat-card"><span>النوع</span><strong>{{ sales_return.get_return_type_display }}</strong></div>

@@ -23,11 +23,13 @@ class SalesReturn(BranchOwnedModel):
     STATUS_APPROVED = 'approved'
     STATUS_COMPLETED = 'completed'
     STATUS_REJECTED = 'rejected'
+    STATUS_CANCELLED = 'cancelled'
     STATUS_CHOICES = [
         (STATUS_DRAFT, 'مسودة'),
         (STATUS_APPROVED, 'معتمد'),
         (STATUS_COMPLETED, 'مكتمل'),
         (STATUS_REJECTED, 'مرفوض'),
+        (STATUS_CANCELLED, 'ملغى'),
     ]
 
     order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name='sales_returns')
@@ -45,6 +47,13 @@ class SalesReturn(BranchOwnedModel):
         'finance.PaymentTransaction', blank=True, related_name='sales_returns',
     )
     revision = models.PositiveIntegerField(default=0)
+    order_status_before_return = models.CharField(max_length=30, blank=True, default='')
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='cancelled_sales_returns',
+    )
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancellation_reason = models.TextField(blank=True, default='')
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_sales_returns')
     approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_sales_returns')
     completed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='completed_sales_returns')

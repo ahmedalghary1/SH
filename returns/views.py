@@ -21,6 +21,7 @@ from config.exports import ExportListMixin
 from products.models import ProductVariant
 
 from .forms import (
+    CancelReturnForm,
     CompleteReturnForm,
     CustomerReturnCreateForm,
     ExchangeItemForm,
@@ -37,6 +38,7 @@ from .services import (
     add_return_item,
     approve_sales_return,
     calculate_available_return_quantity,
+    cancel_sales_return,
     complete_sales_return,
     create_customer_returns,
     create_sales_return,
@@ -599,7 +601,7 @@ class SalesReturnEditView(SalesRequiredMixin, FormView):
 
     def get_sales_return(self):
         if not hasattr(self, 'sales_return'):
-            queryset = SalesReturn.objects.select_related('order', 'return_warehouse')
+            queryset = SalesReturn.objects.select_related('order', 'return_warehouse').exclude(status=SalesReturn.STATUS_CANCELLED)
             if not self.request.user.is_manager:
                 queryset = queryset.filter(created_by=self.request.user, status=SalesReturn.STATUS_DRAFT)
             self.sales_return = get_object_or_404(queryset, pk=self.kwargs['pk'])
@@ -749,6 +751,37 @@ class SalesReturnCompleteView(ManagerRequiredMixin, FormView):
         return kwargs
 
 
+class SalesReturnCancelView(ManagerRequiredMixin, FormView):
+    template_name = 'returns/cancel.html'
+    form_class = CancelReturnForm
+
+    def get_sales_return(self):
+        if not hasattr(self, 'sales_return'):
+            self.sales_return = get_object_or_404(
+                SalesReturn.objects.select_related('order', 'customer'), pk=self.kwargs['pk'],
+            )
+        return self.sales_return
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['sales_return'] = self.get_sales_return()
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['sales_return'] = self.get_sales_return()
+        return context
+
+    def form_valid(self, form):
+        try:
+            cancel_sales_return(sales_return=self.get_sales_return(), user=self.request.user, **form.cleaned_data)
+        except ValidationError as exc:
+            form.add_error(None, _validation_error_message(exc))
+            return self.form_invalid(form)
+        messages.success(self.request, 'تم إلغاء المرتجع وعكس أثره وإزالته من كشف حساب العميل')
+        return redirect('returns:detail', pk=self.sales_return.pk)
+
+
 class SalesReturnRejectView(ManagerRequiredMixin, View):
     @transaction.atomic
     def post(self, request, pk):
@@ -779,7 +812,9 @@ class ReturnReasonReportView(ManagerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['reasons'] = SalesReturn.objects.values('reason').annotate(count=Count('id'), total=Sum('refund_amount')).order_by('-count')
+        context['reasons'] = SalesReturn.objects.exclude(status=SalesReturn.STATUS_CANCELLED).values('reason').annotate(
+            count=Count('id'), total=Sum('refund_amount'),
+        ).order_by('-count')
         return context
 
 

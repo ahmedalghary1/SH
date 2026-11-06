@@ -550,7 +550,7 @@ def cancel_order(*, order, user):
         return order
     if order.status not in {Order.STATUS_CONFIRMED, Order.STATUS_PREPARING, Order.STATUS_READY, Order.STATUS_COMPLETED}:
         raise ValidationError('لا يمكن إلغاء هذا الطلب')
-    if order.sales_returns.exclude(status='rejected').exists():
+    if order.sales_returns.exclude(status__in=['rejected', 'cancelled']).exists():
         raise ValidationError('لا يمكن حذف أو إلغاء فاتورة مرتبطة بمرتجع؛ راجع المرتجع أولًا')
     if order.items.filter(variant__isnull=True).exists():
         raise ValidationError('تعذر عكس المخزون لأن أحد أصناف الفاتورة لم يعد موجودًا')

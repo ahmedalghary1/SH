@@ -153,6 +153,15 @@ class SalesReturnEditForm(ReturnDateTimeForm):
                             return_warehouse=sales_return.return_warehouse_id, revision=sales_return.revision)
 
 
+class CancelReturnForm(forms.Form):
+    revision = forms.IntegerField(widget=forms.HiddenInput)
+    reason = forms.CharField(required=False, label='سبب الإلغاء', widget=forms.Textarea(attrs={'rows': 3}))
+
+    def __init__(self, *args, sales_return, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.initial['revision'] = sales_return.revision
+
+
 class ReturnEditItemForm(forms.Form):
     item_id = forms.IntegerField(required=False, widget=forms.HiddenInput)
     original_order_item = forms.ModelChoiceField(queryset=OrderItem.objects.none(), label='الصنف المرتجع')

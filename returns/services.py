@@ -337,6 +337,7 @@ def complete_sales_return(*, sales_return, user, cash_account=None, return_wareh
     _validate_return_warehouse(sales_return.return_warehouse, order.branch_id)
     if order.status in {Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED}:
         raise ValidationError('حالة الطلب الحالية لا تسمح بإكمال المرتجع')
+    sales_return.order_status_before_return = _order_status_before_returns(order)
     # Other pending returns may have completed since this one was drafted.
     # Recheck aggregated quantities under the order lock before any side effect.
     requested = sales_return.items.values('original_order_item_id').annotate(quantity=Sum('quantity'))
@@ -364,7 +365,7 @@ def complete_sales_return(*, sales_return, user, cash_account=None, return_wareh
     sales_return.status = SalesReturn.STATUS_COMPLETED
     sales_return.revision += 1
     sales_return.completed_by = user
-    sales_return.save(update_fields=['status', 'completed_by', 'revision'])
+    sales_return.save(update_fields=['status', 'completed_by', 'revision', 'order_status_before_return'])
     _update_order_return_status(order)
     
     log_audit(
@@ -507,9 +508,9 @@ def _recalculate_refund_amount(sales_return):
 def _return_stock_positions(order, items, exchanges, warehouse):
     positions = {}
     for item in items:
-        target = warehouse or get_order_item_warehouse(item.original_order_item, order=order)
         if item.condition != SalesReturnItem.CONDITION_GOOD or not item.return_to_stock:
             continue
+        target = warehouse or get_order_item_warehouse(item.original_order_item, order=order)
         key = (target.pk, item.product_variant_id)
         position = positions.setdefault(key, [target, item.product_variant, 0, item.original_order_item.unit_cost])
         position[2] += item.quantity
@@ -588,6 +589,8 @@ def _record_damaged_changes(sales_return, order, old_items, new_items, old_wareh
 def update_sales_return(*, sales_return, user, revision, items, exchanges=None,
                         reason='', return_datetime=None, return_warehouse=None, cash_account=None):
     sales_return = SalesReturn.objects.select_for_update().get(pk=sales_return.pk)
+    if sales_return.status == SalesReturn.STATUS_CANCELLED:
+        raise ValidationError('لا يمكن تعديل مرتجع ملغى')
     manager = user.is_superuser or user.role in {'manager', 'director'}
     if not manager and not (user.role == 'sales' and sales_return.created_by_id == user.pk
                             and sales_return.status == SalesReturn.STATUS_DRAFT):
@@ -732,7 +735,93 @@ def update_sales_return(*, sales_return, user, revision, items, exchanges=None,
     return sales_return
 
 
-def _update_order_return_status(order):
+def _order_status_before_returns(order):
+    if order.status not in {Order.STATUS_RETURNED, Order.STATUS_PARTIALLY_RETURNED}:
+        return order.status
+    previous = order.sales_returns.filter(status=SalesReturn.STATUS_COMPLETED).exclude(order_status_before_return__in=[
+        '', Order.STATUS_RETURNED, Order.STATUS_PARTIALLY_RETURNED,
+        Order.STATUS_DRAFT, Order.STATUS_CANCELLED,
+    ]).order_by('pk').values_list('order_status_before_return', flat=True).first()
+    return previous or Order.STATUS_COMPLETED
+
+
+@transaction.atomic
+@_in_return_branch
+def cancel_sales_return(*, sales_return, user, revision=None, reason=''):
+    if not user.is_superuser and user.role not in {'manager', 'director'}:
+        raise ValidationError('لا تملك صلاحية إلغاء المرتجعات')
+    sales_return = SalesReturn.objects.select_for_update().get(pk=sales_return.pk)
+    if sales_return.status == SalesReturn.STATUS_CANCELLED:
+        return sales_return
+    if revision is not None and sales_return.revision != revision:
+        raise ValidationError('تم تغيير المرتجع. أعد تحميل الصفحة قبل الإلغاء')
+    order = Order.objects.select_for_update().get(pk=sales_return.order_id)
+    old_status = sales_return.status
+    restore_status = sales_return.order_status_before_return or _order_status_before_returns(order)
+    if old_status == SalesReturn.STATUS_COMPLETED:
+        if order.status in {Order.STATUS_DRAFT, Order.STATUS_CANCELLED}:
+            raise ValidationError('لا يمكن إلغاء مرتجع مكتمل لفاتورة ملغاة أو مسودة')
+        items = list(sales_return.items.select_related('original_order_item__warehouse', 'product_variant'))
+        exchanges = list(sales_return.exchange_items.select_related('old_order_item__warehouse', 'new_product_variant'))
+        payments = list(sales_return.financial_transactions.select_for_update().filter(affects_cash=True))
+        cash_effects = defaultdict(lambda: Decimal(0))
+        for payment in payments:
+            cash_effects[payment.cash_account_id] += (
+                payment.amount if payment.direction == PaymentTransaction.DIRECTION_IN else -payment.amount
+            )
+        expected_effect = (sum((item.price_difference for item in exchanges), Decimal(0))
+                           if sales_return.return_type == SalesReturn.TYPE_EXCHANGE
+                           else sales_return.debt_reduction - sales_return.refund_amount)
+        if sum(cash_effects.values(), Decimal(0)) != expected_effect:
+            raise ValidationError('تعذر مطابقة الحركات المالية للمرتجع. يجب مراجعتها قبل الإلغاء')
+        positions = _return_stock_positions(order, items, exchanges, sales_return.return_warehouse)
+        _apply_return_stock_changes(sales_return=sales_return, before=positions, after={}, user=user)
+        _record_damaged_changes(sales_return, order, items, [],
+                                sales_return.return_warehouse, sales_return.return_warehouse, user)
+
+        # Reverse the net cash effect separately in every original account.
+        # Keep original and reversal rows for the cash ledger and audit history.
+        accounts = {account.pk: account for account in CashAccount.objects.select_for_update().filter(
+            pk__in=cash_effects,
+        ).order_by('pk')}
+        if len(accounts) != len(cash_effects):
+            raise ValidationError('إحدى خزن المرتجع لا تتبع فرع الفاتورة')
+        for account_id in sorted(cash_effects):
+            effect = cash_effects[account_id]
+            if not effect:
+                continue
+            payment = record_transaction(
+                transaction_type=PaymentTransaction.TYPE_ADJUSTMENT,
+                direction=PaymentTransaction.DIRECTION_OUT if effect > 0 else PaymentTransaction.DIRECTION_IN,
+                amount=abs(effect), cash_account=accounts[account_id], related_order=order,
+                related_customer=sales_return.customer, created_by=user,
+                notes=f'إلغاء المرتجع #{sales_return.pk}',
+            )
+            sales_return.financial_transactions.add(payment)
+        if sales_return.return_type != SalesReturn.TYPE_EXCHANGE:
+            order.remaining_amount += sales_return.debt_reduction
+            order.payment_status = (Order.PAYMENT_PAID if order.remaining_amount <= 0 else
+                                    Order.PAYMENT_PARTIAL if order.paid_amount > 0 else Order.PAYMENT_UNPAID)
+            order.save(update_fields=['remaining_amount', 'payment_status'])
+
+    sales_return.status = SalesReturn.STATUS_CANCELLED
+    sales_return.cancelled_by = user
+    sales_return.cancelled_at = timezone.now()
+    sales_return.cancellation_reason = reason
+    sales_return.revision += 1
+    sales_return.save(update_fields=['status', 'cancelled_by', 'cancelled_at', 'cancellation_reason', 'revision'])
+    if old_status == SalesReturn.STATUS_COMPLETED:
+        _update_order_return_status(order, fallback_status=restore_status)
+    log_audit(
+        user=user, action=AuditLog.ACTION_CANCEL, section=AuditLog.SECTION_RETURNS,
+        model_name='SalesReturn', object_id=sales_return.pk, object_repr=str(sales_return),
+        changes_before={'status': old_status, 'refund_amount': str(sales_return.refund_amount)},
+        changes_after={'status': sales_return.status}, notes=reason or f'إلغاء المرتجع #{sales_return.pk}',
+    )
+    return sales_return
+
+
+def _update_order_return_status(order, *, fallback_status=None):
     total_quantity = order.items.aggregate(v=Sum('quantity'))['v'] or 0
     returned_quantity = SalesReturnItem.objects.filter(
         original_order_item__order=order,
@@ -742,4 +831,6 @@ def _update_order_return_status(order):
         order.status = Order.STATUS_RETURNED
     elif returned_quantity > 0:
         order.status = Order.STATUS_PARTIALLY_RETURNED
+    elif order.status in {Order.STATUS_RETURNED, Order.STATUS_PARTIALLY_RETURNED}:
+        order.status = fallback_status or _order_status_before_returns(order)
     order.save(update_fields=['status'])

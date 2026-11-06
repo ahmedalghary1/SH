@@ -12,6 +12,7 @@ urlpatterns = [
     path('create/', views.SalesReturnCreateView.as_view(), name='create'),
     path('<int:pk>/', views.SalesReturnDetailView.as_view(), name='detail'),
     path('<int:pk>/edit/', views.SalesReturnEditView.as_view(), name='edit'),
+    path('<int:pk>/cancel/', views.SalesReturnCancelView.as_view(), name='cancel'),
     path('<int:pk>/items/add/', views.ReturnItemAddView.as_view(), name='add_item'),
     path('<int:pk>/exchange/add/', views.ExchangeItemAddView.as_view(), name='add_exchange'),
     path('<int:pk>/approve/', views.SalesReturnApproveView.as_view(), name='approve'),

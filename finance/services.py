@@ -385,6 +385,8 @@ def build_customer_statement(customer):
         ],
     ).filter(
         Q(related_order__isnull=False) | Q(affects_customer_balance=True),
+    ).exclude(
+        sales_returns__status=SalesReturn.STATUS_CANCELLED,
     ).select_related('cash_account', 'related_order', 'created_by').order_by('transaction_date', 'created_at', 'pk')
     returns = SalesReturn.objects.filter(
         customer=customer,
@@ -681,10 +683,12 @@ def record_order_sale_payment(*, order, user, cash_account=None, notes='', trans
 
 @transaction.atomic
 def record_order_refund(*, order, user, cash_account=None, amount=None, notes=''):
+    from returns.models import SalesReturn
+
     order = order.__class__.objects.select_for_update().get(pk=order.pk)
     payments = list(PaymentTransaction.objects.select_for_update().filter(
         related_order=order,
-    ).order_by('pk'))
+    ).exclude(sales_returns__status=SalesReturn.STATUS_CANCELLED).order_by('pk'))
     receipt_references = {
         row.reference for row in payments
         if not row.affects_cash and (row.reference or '').startswith(CUSTOMER_RECEIPT_REFERENCE_PREFIX)

@@ -17,6 +17,7 @@
         <option value="approved" {% if request.GET.status == 'approved' %}selected{% endif %}>معتمد</option>
         <option value="completed" {% if request.GET.status == 'completed' %}selected{% endif %}>مكتمل</option>
         <option value="rejected" {% if request.GET.status == 'rejected' %}selected{% endif %}>مرفوض</option>
+        <option value="cancelled" {% if request.GET.status == 'cancelled' %}selected{% endif %}>ملغى</option>
     </select>
     {% include 'partials/date_period_filter.html' %}
     <button class="btn btn-primary">بحث</button>
@@ -36,8 +37,13 @@
                 <td>{{ ret.created_at|date:'Y-m-d H:i' }}</td>
                 <td>
                     <a class="btn btn-light" href="{% url 'returns:detail' ret.pk %}">عرض</a>
+                    {% if ret.status != 'cancelled' %}
                     {% if request.user.is_manager or ret.status == 'draft' and request.user == ret.created_by %}
                         <a class="btn btn-light" href="{% url 'returns:edit' ret.pk %}">تعديل</a>
+                    {% endif %}
+                    {% if request.user.is_manager %}
+                        <a class="btn btn-danger" href="{% url 'returns:cancel' ret.pk %}">إلغاء المرتجع</a>
+                    {% endif %}
                     {% endif %}
                     {% if request.user.can_hard_delete and ret.status == 'draft' or request.user.can_hard_delete and ret.status == 'rejected' %}
                         <a class="btn btn-danger" href="{% url 'returns:delete' ret.pk %}">حذف</a>
