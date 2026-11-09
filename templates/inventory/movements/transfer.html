@@ -1,5 +1,25 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block title %}تحويل مخزون{% endblock %}
-{% block content %}<div class="page-head"><h1>تحويل مخزون</h1></div>{% include 'partials/model_form.html' with button_text='تحويل' %}{% endblock %}
-{% block extra_js %}<script src="{% static 'js/inventory.js' %}"></script>{% endblock %}
+{% block content %}
+<div class="page-head"><h1>تحويل مخزون</h1><p>اختر المخزنين وأضف الأصناف. يُنفذ التحويل بالكامل عند توفر جميع الكميات.</p></div>
+<form method="post" class="card" id="bulk-transfer-form">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <div class="form-grid">{% for field in form %}<label>{{ field.label }}{{ field }}{{ field.errors }}</label>{% endfor %}</div>
+    {{ form.lines.management_form }}
+    {{ form.lines.non_form_errors }}
+    <div class="table-wrap"><table>
+        <thead><tr><th>اسم الصنف</th><th>الكمية</th><th>حذف السطر</th></tr></thead>
+        <tbody id="transfer-lines">{% for line in form.lines %}
+        <tr><td>{{ line.variant }}{{ line.variant.errors }}</td><td>{{ line.quantity }}{{ line.quantity.errors }}</td><td>{{ line.DELETE }}</td></tr>
+        {% endfor %}</tbody>
+    </table></div>
+    <template id="transfer-empty-line"><tr><td>{{ form.lines.empty_form.variant }}</td><td>{{ form.lines.empty_form.quantity }}</td><td>{{ form.lines.empty_form.DELETE }}</td></tr></template>
+    <div class="form-actions">
+        <button type="button" class="btn btn-light" id="add-transfer-line">إضافة صنف</button>
+        <button type="submit" class="btn btn-primary">تحويل جميع الأصناف</button>
+    </div>
+</form>
+{% endblock %}
+{% block extra_js %}<script src="{% static 'js/bulk-transfer.js' %}"></script>{% endblock %}

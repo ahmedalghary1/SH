@@ -13,7 +13,7 @@ from audit.services import log_audit
 from customers.models import Customer
 from finance.validation import decimal_value, integer_value, validate_money_fields
 from inventory.models import Stock, StockBatch, StockMovement, Warehouse
-from inventory.services import return_stock, sale_stock
+from inventory.services import can_sell_negative_stock, return_stock, sale_stock
 from settings_app.models import CompanySettings
 
 from .models import Order, OrderItem
@@ -445,7 +445,10 @@ def confirm_order(*, order, user, auto_collect=True):
     }
     for stock_key, quantity in required_stock.items():
         stock = locked_stock.get(stock_key)
-        if not stock or stock.quantity < quantity:
+        warehouse = next(get_order_item_warehouse(item, order=order) for item in order_items
+                         if item.warehouse_id == stock_key[0] or (not item.warehouse_id and order.warehouse_id == stock_key[0]))
+        allow_negative = order.document_type == Order.DOCUMENT_SALE and can_sell_negative_stock(user, warehouse)
+        if (not stock or stock.quantity < quantity) and not allow_negative:
             raise ValidationError('الكمية الإجمالية المطلوبة لأحد الأصناف غير متاحة')
     if required_batches:
         locked_batches = {

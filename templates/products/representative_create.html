@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% block title %}تسجيل منتج للمندوب{% endblock %}
+{% block content %}
+<div class="page-head"><h1>تسجيل منتج جديد</h1><p>يُسجل المنتج برصيد صفر في عهدتك، ويمكن بيعه بالسالب حتى استلام مشترياته في المخزن نفسه. استخدم كودًا مميزًا لتجنب تكرار المنتج.</p></div>
+{% include 'partials/model_form.html' with button_text='تسجيل المنتج' %}
+<a class="btn btn-light" href="{% url 'orders:create' %}">الانتقال لفاتورة بيع</a>
+{% endblock %}

@@ -38,7 +38,7 @@ class Stock(BranchOwnedModel):
     branch_relations = ('warehouse', 'variant')
     warehouse = models.ForeignKey(Warehouse, on_delete=models.CASCADE)
     variant = models.ForeignKey(ProductVariant, on_delete=models.CASCADE)
-    quantity = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    quantity = models.IntegerField(default=0)
     min_quantity = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     updated_at = models.DateTimeField(auto_now=True, db_index=True)
 
@@ -49,7 +49,6 @@ class Stock(BranchOwnedModel):
         ]
         constraints = [
             models.UniqueConstraint(fields=['branch', 'warehouse', 'variant'], name='stock_warehouse_variant_unique'),
-            check_constraint(check=models.Q(quantity__gte=0), name='stock_quantity_non_negative'),
             check_constraint(check=models.Q(min_quantity__gte=0), name='stock_min_quantity_non_negative'),
         ]
 

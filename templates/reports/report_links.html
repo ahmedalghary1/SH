@@ -13,7 +13,7 @@
         <a class="btn btn-light" href="{% url 'reports:low_stock' %}">المنتجات الناقصة</a>
         <a class="btn btn-light" href="{% url 'reports:employees' %}">أداء الموظفين</a>
         <a class="btn btn-light" href="{% url 'reports:stale_products' %}">المنتجات الراكدة</a>
-        <a class="btn btn-light" href="{% url 'reports:stock_movement' %}">حركة صنف</a>
+        <a class="btn btn-light" href="{% url 'reports:stock_movement' %}">حركة مخزن</a>
     {% elif request.user.is_sales %}
         <a class="btn btn-light" href="{% url 'reports:daily_sales' %}">تقرير اليوم</a>
         <a class="btn btn-light" href="{% url 'reports:sales' %}">مبيعاتي</a>
@@ -22,7 +22,7 @@
     {% elif request.user.is_warehouse %}
         <a class="btn btn-light" href="{% url 'reports:inventory' %}">المخزون</a>
         <a class="btn btn-light" href="{% url 'reports:low_stock' %}">المنتجات الناقصة</a>
-        <a class="btn btn-light" href="{% url 'reports:stock_movement' %}">حركة صنف</a>
+        <a class="btn btn-light" href="{% url 'reports:stock_movement' %}">حركة مخزن</a>
         <a class="btn btn-light" href="{% url 'reports:sales_rep_custody' %}">عهدة المندوبين</a>
     {% endif %}
 </div>

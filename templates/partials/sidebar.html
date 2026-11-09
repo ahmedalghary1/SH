@@ -10,6 +10,7 @@
         </button>
     </div>
     <nav class="side-nav" aria-label="روابط النظام">
+        {% if request.user.is_sales %}<a class="nav-link" href="{% url 'products:representative_create' %}">تسجيل منتج جديد</a><a class="nav-link" href="{% url 'inventory:stock' %}">رصيد عهدتي</a>{% endif %}
         <a class="nav-link nav-single" href="{% url 'dashboard:index' %}">
             <svg class="ui-icon color-red"><use href="#icon-home"></use></svg>
             <span class="nav-text">الرئيسية</span>

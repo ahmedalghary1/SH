@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
-{% block title %}حركة صنف{% endblock %}
+{% block title %}حركة مخزن{% endblock %}
 {% block content %}
-<div class="page-head"><h1>حركة صنف</h1><p class="page-description">تابع حركة المنتج بين المخازن والبيع والمرتجعات.</p></div>
+<div class="page-head"><h1>حركة مخزن</h1><p class="page-description">رصيد الصنف قبل كل حركة وبعدها في المخزن. تُعرض أحدث 500 حركة، والتحويل يظهر بسطر لكل مخزن.</p></div>
 {% include 'reports/report_links.html' %}
 <div class="reports-page">
     
@@ -57,10 +57,13 @@
                             <th>التاريخ</th>
                             <th>المنتج</th>
                             <th>كود اللون/المقاس</th>
+                            <th>المخزن</th>
+                            <th>رصيد سابق</th>
                             <th>نوع الحركة</th>
                             <th>من مخزن</th>
                             <th>إلى مخزن</th>
-                            <th>الكمية</th>
+                            <th>التغير في الرصيد</th>
+                            <th>الرصيد الحالي</th>
                             <th>المستخدم</th>
                             <th>ملاحظات</th>
                         </tr>
@@ -71,10 +74,13 @@
                             <td>{{ movement.created_at|date:'Y-m-d H:i' }}</td>
                             <td>{{ movement.variant.product.name|default:"-" }}</td>
                             <td>{{ movement.variant.variant_sku|default:"-" }}</td>
+                            <td>{{ movement.report_warehouse }}</td>
+                            <td>{{ movement.previous_balance }}</td>
                             <td>{{ movement.report_movement_type|default:"-" }}</td>
                             <td>{{ movement.from_warehouse.name|default:"-" }}</td>
                             <td>{{ movement.to_warehouse.name|default:"-" }}</td>
-                            <td>{{ movement.quantity }}</td>
+                            <td>{{ movement.quantity_change }}</td>
+                            <td>{{ movement.current_balance }}</td>
                             <td>{{ movement.created_by.username|default:"-" }}</td>
                             <td>{{ movement.note|default:"-" }}</td>
                         </tr>

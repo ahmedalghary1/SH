@@ -408,6 +408,7 @@
                     const option = document.createElement("option");
                     option.value = variant.id;
                     option.textContent = `${variant.color || "-"} / ${variant.size || "-"} - ${variant.sku}`;
+                    option.dataset.productLocalUuid = variant.product_local_uuid || "";
                     option.dataset.color = variant.color;
                     option.dataset.size = variant.size;
                     option.dataset.piecesPerDozen = variant.pieces_per_dozen || 12;
@@ -553,7 +554,7 @@
         const alreadySelected = items
             .filter((item) => item.variant_id === variantSelect.value && item.warehouse_id === itemWarehouse.value)
             .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-        if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity + alreadySelected > available) {
+        if (!Number.isSafeInteger(quantity) || quantity <= 0 || (!(document.body.dataset.pwaRole === 'sales' && documentType?.value === 'sale') && quantity + alreadySelected > available)) {
             window.alert("الكمية غير متاحة");
             return;
         }
@@ -566,6 +567,7 @@
         }
         items.push({
             variant_id: variantSelect.value,
+            product_local_uuid: selected.dataset.productLocalUuid || null,
             product_name: selectedProduct.name,
             color: selected.dataset.color,
             size: selected.dataset.size,
@@ -611,7 +613,7 @@
                 }
                 return sum;
             }, 0);
-            if (!Number.isSafeInteger(nextQuantity) || nextQuantity <= 0 || nextQuantity + otherQuantity > Number(item.available_quantity || 0)) {
+            if (!Number.isSafeInteger(nextQuantity) || nextQuantity <= 0 || (!(document.body.dataset.pwaRole === 'sales' && documentType?.value === 'sale') && nextQuantity + otherQuantity > Number(item.available_quantity || 0))) {
                 window.alert("الكمية غير متاحة");
                 quantityInput.value = item.quantity;
                 return;

@@ -29,7 +29,7 @@ from finance.services import (
     transfer_between_accounts,
 )
 from inventory.models import Stock, StockMovement, Warehouse
-from inventory.services import adjust_stock, stock_in, stock_out, transfer_stock
+from inventory.services import adjust_stock, stock_in, stock_out, transfer_stock, transfer_stock_bulk
 from invoices.models import Invoice
 from invoices.services import delete_invoice, generate_invoice
 from orders.models import Order, OrderItem
@@ -468,7 +468,16 @@ def process_order(operation, user):
 
     items = []
     for item in items_data:
-        variant = ProductVariant.objects.get(pk=item.get('variant_server_id') or item.get('variant_id'))
+        variant_id = item.get('variant_server_id') or item.get('variant_id')
+        if item.get('product_local_uuid'):
+            receipt = SyncOperation.objects.filter(
+                user=user, device_id=operation.get('device_id') or '', entity_type='product',
+                local_uuid=item['product_local_uuid'], status=SyncOperation.STATUS_SUCCESS,
+            ).order_by('-pk').first()
+            if not receipt or not receipt.response_json.get('variant_id'):
+                raise ValidationError('يجب مزامنة المنتج الجديد قبل فاتورة بيعه.')
+            variant_id = receipt.response_json['variant_id']
+        variant = ProductVariant.objects.get(pk=variant_id, is_active=True, product__is_active=True)
         item_warehouse = _model_by_pk(Warehouse, item.get('warehouse_server_id') or item.get('warehouse_id')) or default_warehouse
         items.append({
             'variant': variant,
@@ -752,6 +761,14 @@ def process_stock(operation, user):
     path = payload.get('original_url') or ''
     if '/inventory/warehouses/' in path:
         return _process_warehouse(operation, data)
+
+    if 'transfer' in path and 'items-TOTAL_FORMS' in data:
+        from inventory.forms import BulkStockTransferForm
+        form = BulkStockTransferForm(data)
+        if not form.is_valid():
+            raise ValidationError('بيانات التحويل غير صالحة: ' + str(form.errors) + str(form.lines.errors))
+        movements = transfer_stock_bulk(user=user, **form.cleaned_data)
+        return response_success(operation['local_uuid'], movements[0].pk, 'StockMovement', resolution='local_applied')
 
     variant = _model_by_pk(ProductVariant, data.get('variant') or data.get('product_variant'))
     if variant is None:
@@ -1183,6 +1200,10 @@ def process_product(operation, user):
     payload = operation.get('payload') or {}
     product_data = payload.get('product') or _form_payload(operation)
     path = payload.get('original_url') or ''
+    if path == '/products/representative/create/':
+        from products.services import create_representative_product
+        product, variant = create_representative_product(data=product_data, user=user)
+        return response_success(operation['local_uuid'], product.pk, 'Product', variant_id=variant.pk, resolution='local_applied')
     if '/products/bulk-price-update/' in path:
         return _process_bulk_price_update(operation, product_data)
     if '/products/categories/' in path or '/products/ajax/quick-create-category/' in path:
@@ -1560,7 +1581,10 @@ def _validate_operation(operation, user, branch_id):
     if user.is_manager:
         return
     entity = operation['entity_type']
-    if entity in {'product', 'purchase', 'return'}:
+    rep_product_create = (user.is_sales and entity == 'product'
+                          and path == '/products/representative/create/'
+                          and operation.get('operation_type', 'create') == 'create')
+    if entity in {'product', 'purchase', 'return'} and not rep_product_create:
         raise ValidationError('غير مسموح بتنفيذ هذه العملية لهذا الحساب.')
     if entity in {'order', 'customer', 'return'} and not user.is_sales:
         raise ValidationError('غير مسموح بتنفيذ عملية مبيعات لهذا الحساب.')

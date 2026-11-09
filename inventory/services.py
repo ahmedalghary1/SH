@@ -18,14 +18,14 @@ def _get_locked_stock(warehouse, variant):
     return stock
 
 
-def _create_batch(*, variant, warehouse, quantity, unit_cost=0, source='', note='', user=None):
+def _create_batch(*, variant, warehouse, quantity, unit_cost=0, source='', note='', user=None, remaining_quantity=None):
     if quantity <= 0:
         return None
     return StockBatch.objects.create(
         variant=variant,
         warehouse=warehouse,
         received_quantity=quantity,
-        remaining_quantity=quantity,
+        remaining_quantity=quantity if remaining_quantity is None else remaining_quantity,
         unit_cost=decimal_value(unit_cost, max_digits=12),
         source=source,
         note=note,
@@ -33,7 +33,7 @@ def _create_batch(*, variant, warehouse, quantity, unit_cost=0, source='', note=
     )
 
 
-def _consume_batches(*, variant, warehouse, quantity, batch=None):
+def _consume_batches(*, variant, warehouse, quantity, batch=None, shortage_source='legacy_reconciliation'):
     consumptions = []
     if batch:
         batch = StockBatch.objects.select_for_update().get(pk=batch.pk)
@@ -72,8 +72,9 @@ def _consume_batches(*, variant, warehouse, quantity, batch=None):
             received_quantity=remaining,
             remaining_quantity=0,
             unit_cost=getattr(variant, 'cost_price', 0) or 0,
-            source='legacy_reconciliation',
-            note='Automatic reconciliation for stock created before batch tracking',
+            source=shortage_source,
+            note=('Provisional cost for a negative-stock sale' if shortage_source == 'negative_sale'
+                  else 'Automatic reconciliation for stock created before batch tracking'),
         )
         consumptions.append((legacy_batch, remaining, legacy_batch.unit_cost))
     return consumptions
@@ -93,7 +94,7 @@ def stock_in(*, variant, warehouse, quantity, user, note='', unit_cost=None, sou
     if quantity <= 0:
         raise ValidationError('الكمية يجب أن تكون أكبر من صفر')
     stock = _get_locked_stock(warehouse, variant)
-    integer_value(stock.quantity + quantity)
+    integer_value(stock.quantity + quantity, minimum=-2147483648)
     old_quantity = stock.quantity
     stock.quantity = F('quantity') + quantity
     stock.save(update_fields=['quantity'])
@@ -102,6 +103,7 @@ def stock_in(*, variant, warehouse, quantity, user, note='', unit_cost=None, sou
         variant=variant,
         warehouse=warehouse,
         quantity=quantity,
+        remaining_quantity=max(0, quantity + min(old_quantity, 0)),
         unit_cost=unit_cost if unit_cost is not None else getattr(variant, 'cost_price', 0),
         source=source,
         note=note,
@@ -186,7 +188,7 @@ def transfer_stock(*, variant, from_warehouse, to_warehouse, quantity, user, not
     if source.quantity < quantity:
         raise ValidationError('الكمية غير متاحة للتحويل')
     target = locked_stocks[to_warehouse.pk]
-    integer_value(target.quantity + quantity)
+    integer_value(target.quantity + quantity, minimum=-2147483648)
     source_old_quantity = source.quantity
     target_old_quantity = target.quantity
     source.quantity = F('quantity') - quantity
@@ -197,11 +199,15 @@ def transfer_stock(*, variant, from_warehouse, to_warehouse, quantity, user, not
     target.refresh_from_db(fields=['quantity'])
     consumptions = _consume_batches(variant=variant, warehouse=from_warehouse, quantity=quantity)
     target_batches = []
+    debt_remaining = max(0, -target_old_quantity)
     for source_batch, consumed_quantity, unit_cost in consumptions:
+        debt_covered = min(debt_remaining, consumed_quantity)
+        debt_remaining -= debt_covered
         target_batches.append(_create_batch(
             variant=variant,
             warehouse=to_warehouse,
             quantity=consumed_quantity,
+            remaining_quantity=consumed_quantity - debt_covered,
             unit_cost=unit_cost,
             source='transfer',
             note=note,
@@ -255,6 +261,7 @@ def adjust_stock(*, variant, warehouse, new_quantity, user, note=''):
             variant=variant,
             warehouse=warehouse,
             quantity=diff,
+            remaining_quantity=max(0, new_quantity - max(old_quantity, 0)),
             unit_cost=getattr(variant, 'cost_price', 0),
             source='adjustment',
             note=note,
@@ -294,13 +301,16 @@ def adjust_stock(*, variant, warehouse, new_quantity, user, note=''):
 def sale_stock(*, variant, warehouse, quantity, user, note='', batch=None, movement_type=StockMovement.TYPE_SALE):
     quantity = integer_value(quantity)
     stock = _get_locked_stock(warehouse, variant)
-    if stock.quantity < quantity:
+    allow_negative = can_sell_negative_stock(user, warehouse) and movement_type == StockMovement.TYPE_SALE
+    if stock.quantity < quantity and not allow_negative:
         raise ValidationError('الكمية غير متاحة')
+    integer_value(stock.quantity - quantity, minimum=-2147483648)
     old_quantity = stock.quantity
     stock.quantity = F('quantity') - quantity
     stock.save(update_fields=['quantity'])
     stock.refresh_from_db(fields=['quantity'])
-    consumptions = _consume_batches(variant=variant, warehouse=warehouse, quantity=quantity, batch=batch)
+    consumptions = _consume_batches(variant=variant, warehouse=warehouse, quantity=quantity, batch=batch,
+                                    shortage_source='negative_sale' if allow_negative else 'legacy_reconciliation')
     movement = StockMovement.objects.create(
         movement_type=movement_type,
         variant=variant,
@@ -332,7 +342,7 @@ def sale_stock(*, variant, warehouse, quantity, user, note='', batch=None, movem
 def return_stock(*, variant, warehouse, quantity, user, note='', unit_cost=None):
     quantity = integer_value(quantity)
     stock = _get_locked_stock(warehouse, variant)
-    integer_value(stock.quantity + quantity)
+    integer_value(stock.quantity + quantity, minimum=-2147483648)
     old_quantity = stock.quantity
     stock.quantity = F('quantity') + quantity
     stock.save(update_fields=['quantity'])
@@ -341,6 +351,7 @@ def return_stock(*, variant, warehouse, quantity, user, note='', unit_cost=None)
         variant=variant,
         warehouse=warehouse,
         quantity=quantity,
+        remaining_quantity=max(0, quantity + min(old_quantity, 0)),
         unit_cost=unit_cost if unit_cost is not None else getattr(variant, 'cost_price', 0),
         source='return',
         note=note,
@@ -369,3 +380,34 @@ def return_stock(*, variant, warehouse, quantity, user, note='', unit_cost=None)
     )
     
     return movement
+
+
+@transaction.atomic
+def transfer_stock_bulk(*, items, from_warehouse, to_warehouse, user, note=''):
+    """Transfer the whole document or roll back every line, including batches."""
+    if not items or len(items) > 100:
+        raise ValidationError('اختر من صنف واحد إلى 100 صنف للتحويل.')
+    if (from_warehouse == to_warehouse or not from_warehouse.is_active
+            or not to_warehouse.is_active or from_warehouse.branch_id != to_warehouse.branch_id):
+        raise ValidationError('اختر مخزنين نشطين مختلفين داخل المعرض نفسه.')
+    quantities = {}
+    variants = {}
+    for item in items:
+        variant = item['variant']
+        if variant.branch_id != from_warehouse.branch_id or not variant.is_active:
+            raise ValidationError('الصنف غير متاح في هذا المعرض.')
+        quantity = integer_value(item['quantity'], minimum=1)
+        quantities[variant.pk] = integer_value(quantities.get(variant.pk, 0) + quantity)
+        variants[variant.pk] = variant
+    # Every document locks variants and warehouses in the same order.
+    return [transfer_stock(
+        variant=variants[pk], from_warehouse=from_warehouse, to_warehouse=to_warehouse,
+        quantity=quantities[pk], user=user, note=note,
+    ) for pk in sorted(quantities)]
+
+
+def can_sell_negative_stock(user, warehouse):
+    """Only a representative selling from their own active custody warehouse."""
+    return bool(user and user.is_active and getattr(user, 'role', None) == 'sales'
+                and warehouse.is_active and warehouse.warehouse_type == warehouse.TYPE_REPRESENTATIVE
+                and warehouse.assigned_user_id == user.pk and warehouse.branch_id == user.branch_id)

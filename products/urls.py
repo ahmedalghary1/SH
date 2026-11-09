@@ -5,6 +5,7 @@ from . import views
 app_name = 'products'
 
 urlpatterns = [
+    path('representative/create/', views.RepresentativeProductCreateView.as_view(), name='representative_create'),
     path('', views.ProductListView.as_view(), name='list'),
     path('categories/', views.CategoryListView.as_view(), name='categories'),
     path('categories/create/', views.CategoryCreateView.as_view(), name='category_create'),

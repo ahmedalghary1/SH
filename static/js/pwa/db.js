@@ -244,15 +244,77 @@ export async function queueEntityOperation(entityName, actionType, payload, opti
         },
         local_uuid: localRecord?.local_uuid || localUuid,
         local_record_id: localRecord?.id || payload.id || null,
+        stock_mutations: options.stock_mutations || [],
         timestamp, status: "pending", attempts: 0, next_attempt_at: timestamp,
         idempotency_key: uuid(), scope: getOfflineScope(), sync_status: "pending",
     });
     const db = await openOfflineDB();
-    const stores = localRecord ? [storeName, STORE_NAMES.syncQueue] : [STORE_NAMES.syncQueue];
+    const mutations = item.stock_mutations;
+    const deltas = new Map();
+    for (const mutation of mutations) {
+        const { variant_id, warehouse_id, delta } = mutation;
+        if (!variant_id || !warehouse_id || !Number.isSafeInteger(delta) || delta === 0) {
+            throw new Error('اختر الصنف والمخزن وأدخل كمية صحيحة موجبة.');
+        }
+        const key = `${warehouse_id}:${variant_id}`;
+        const existing = deltas.get(key);
+        deltas.set(key, { ...mutation, delta: (existing?.delta || 0) + delta });
+    }
+    const stores = [...new Set([STORE_NAMES.syncQueue, STORE_NAMES.metadata, ...(localRecord ? [storeName] : []),
+        ...(options.local_variants?.length ? [STORE_NAMES.productVariants] : []),
+        ...(mutations.length ? [STORE_NAMES.stock, STORE_NAMES.warehouses] : [])])];
     await new Promise((resolve, reject) => {
         const tx = db.transaction(stores, "readwrite");
         tx.oncomplete = resolve;
-        tx.onerror = tx.onabort = () => reject(tx.error || new Error("لم يكتمل الحفظ المحلي."));
+        bumpQueueRevision(tx, item);
+        let validationError;
+        tx.onerror = tx.onabort = () => reject(validationError || tx.error || new Error("لم يكتمل الحفظ المحلي."));
+        // Serialize stock checks with invoice/queue writes, including other tabs.
+        const normalized = new Map();
+        let unresolved = deltas.size;
+        const collect = (mutation) => {
+            const key = `${mutation.warehouse_id}:${mutation.variant_id}`;
+            normalized.set(key, {...mutation, delta: (normalized.get(key)?.delta || 0) + mutation.delta});
+            unresolved -= 1;
+            if (!unresolved) reserveStock();
+        };
+        const reserveStock = () => { for (const [id, mutation] of normalized) {
+            const stockStore = tx.objectStore(STORE_NAMES.stock);
+            const request = stockStore.get(id);
+            request.onsuccess = () => {
+                const previous = request.result;
+                const quantity = Number(previous?.quantity || 0) + mutation.delta;
+                const save = (allowNegative) => {
+                    if (!Number.isSafeInteger(quantity) || quantity < (allowNegative ? -2147483648 : 0) || quantity > 2147483647) {
+                        validationError = new Error('الكمية غير متاحة في المخزون المحلي. راجع الكمية والمخزن.');
+                        tx.abort();
+                        return;
+                    }
+                    stockStore.put(withRecordMeta({
+                        ...previous, id, variant_id: mutation.variant_id, warehouse_id: mutation.warehouse_id,
+                        quantity, updated_at: timestamp, sync_status: 'synced',
+                    }));
+                };
+                if (quantity < 0 && entityName === 'sales' && payload.order?.action === 'confirm'
+                    && (payload.order.document_type || 'sale') === 'sale'
+                    && document.body.dataset.pwaRole === 'sales') {
+                    const warehouse = tx.objectStore(STORE_NAMES.warehouses).get(`server-warehouse-${mutation.warehouse_id}`);
+                    warehouse.onsuccess = () => save(warehouse.result?.warehouse_type === 'representative'
+                        && String(warehouse.result.assigned_user_id) === document.body.dataset.pwaUserId);
+                } else save(mutation.delta > 0 && Number(previous?.quantity || 0) < 0);
+            };
+        } };
+        for (const mutation of deltas.values()) {
+            const localPrefix = 'local-variant-';
+            if (String(mutation.variant_id).startsWith(localPrefix)) {
+                const localUuid = String(mutation.variant_id).slice(localPrefix.length);
+                const mapping = tx.objectStore(STORE_NAMES.metadata).get(`product_variant_mapping:${localUuid}`);
+                mapping.onsuccess = () => collect({...mutation, variant_id: mapping.result?.value || mutation.variant_id});
+            } else collect(mutation);
+        }
+        for (const variant of options.local_variants || []) {
+            tx.objectStore(STORE_NAMES.productVariants).put(withRecordMeta(variant));
+        }
         if (localRecord) tx.objectStore(storeName).put(localRecord);
         tx.objectStore(STORE_NAMES.syncQueue).put(item);
     });
@@ -262,7 +324,8 @@ export async function queueEntityOperation(entityName, actionType, payload, opti
 export async function getDueQueueItems() {
     const items = await getAll(STORE_NAMES.syncQueue);
     const now = Date.now();
-    const ordered = items.sort((a, b) => Date.parse(a.timestamp || a.created_at) - Date.parse(b.timestamp || b.created_at));
+    const ordered = items.sort((a, b) => Number(a.queue_sequence || 0) - Number(b.queue_sequence || 0)
+        || Date.parse(a.timestamp || a.created_at) - Date.parse(b.timestamp || b.created_at));
     const due = [];
     for (const item of ordered) {
         if (!["pending", "failed"].includes(item.status) || (item.next_attempt_at && Date.parse(item.next_attempt_at) > now)) break;
@@ -272,7 +335,24 @@ export async function getDueQueueItems() {
 }
 
 export async function removeQueueItem(id) {
-    await deleteRecord(STORE_NAMES.syncQueue, id);
+    const db = await openOfflineDB();
+    await new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_NAMES.syncQueue, STORE_NAMES.metadata], 'readwrite');
+        tx.oncomplete = resolve;
+        tx.onerror = tx.onabort = () => reject(tx.error);
+        tx.objectStore(STORE_NAMES.syncQueue).delete(id);
+        bumpQueueRevision(tx);
+    });
+}
+
+function bumpQueueRevision(tx, queueItem = null) {
+    const metadata = tx.objectStore(STORE_NAMES.metadata);
+    const request = metadata.get('queue_revision');
+    request.onsuccess = () => {
+        const revision = Number(request.result?.value || 0) + 1;
+        metadata.put({key: 'queue_revision', value: revision, updated_at: nowIso()});
+        if (queueItem) tx.objectStore(STORE_NAMES.syncQueue).put({...queueItem, queue_sequence: revision});
+    };
 }
 
 export async function markQueueItemFailed(item, error, { permanent = false } = {}) {
@@ -296,7 +376,7 @@ export async function markLocalEntitySynced(entityName, localId, serverResult = 
     if (!localId || storeName === STORE_NAMES.syncQueue) return;
     const existing = await getRecord(storeName, localId);
     if (!existing) return;
-    await putRecord(storeName, {
+    const synced = {
         ...existing,
         server_id: serverResult.server_id || existing.server_id,
         server_model: serverResult.server_model || existing.server_model,
@@ -304,6 +384,41 @@ export async function markLocalEntitySynced(entityName, localId, serverResult = 
         operation_type: existing.operation_type || "create",
         sync_resolution: serverResult.resolution || "synced",
         updated_at: nowIso(),
+    };
+    if (entityName !== 'products') {
+        await putRecord(storeName, synced);
+        return;
+    }
+    // Keep the local variant ID while dependent invoices remain queued. Mark
+    // its snapshot status too so the next complete bootstrap can replace it.
+    const db = await openOfflineDB();
+    await new Promise((resolve, reject) => {
+        const tx = db.transaction([storeName, STORE_NAMES.productVariants, STORE_NAMES.stock, STORE_NAMES.metadata], 'readwrite');
+        tx.oncomplete = resolve;
+        tx.onerror = tx.onabort = () => reject(tx.error);
+        tx.objectStore(storeName).put(synced);
+        if (serverResult.variant_id) tx.objectStore(STORE_NAMES.metadata).put({
+            key: `product_variant_mapping:${existing.local_uuid}`, value: serverResult.variant_id, updated_at: nowIso(),
+        });
+        const variants = tx.objectStore(STORE_NAMES.productVariants);
+        const request = variants.getAll();
+        request.onsuccess = () => request.result.forEach(variant => {
+            if (variant.product_local_uuid === existing.local_uuid) {
+                variants.put({...variant, sync_status:'synced',
+                    server_id: serverResult.variant_id || variant.server_id,
+                    product_id: serverResult.server_id || variant.product_id});
+            }
+        });
+        if (serverResult.variant_id) {
+            const stocks = tx.objectStore(STORE_NAMES.stock);
+            const request = stocks.getAll();
+            request.onsuccess = () => request.result.forEach(row => {
+                if (String(row.variant_id) === `local-variant-${existing.local_uuid}`) {
+                    stocks.delete(row.id);
+                    stocks.put({...row, id:`${row.warehouse_id}:${serverResult.variant_id}`, variant_id:serverResult.variant_id});
+                }
+            });
+        }
     });
 }
 
@@ -324,14 +439,11 @@ function serverKey(prefix, id) {
     return String(id || "").startsWith(`${prefix}-`) ? String(id) : `${prefix}-${id}`;
 }
 
-export async function importBootstrap(payload) {
+export async function importBootstrap(payload, { expectedQueueRevision } = {}) {
     if (!payload.scope || payload.scope !== getOfflineScope()) {
         throw new Error("تغير الحساب أو المعرض. أعد فتح الصفحة قبل تنزيل البيانات.");
     }
     const importedAt = nowIso();
-    if (payload.user) await setMetadata("user", payload.user);
-    if (payload.company) await setMetadata("company", payload.company);
-    if (payload.cash) await setMetadata("cash", payload.cash);
 
     const snapshots = new Map();
     const collect = (storeName, record) => snapshots.get(storeName).push(record);
@@ -401,26 +513,47 @@ export async function importBootstrap(payload) {
         created_at: account.updated_at || importedAt,
         updated_at: account.updated_at || importedAt,
     }));
-    // Replace complete snapshots atomically, retaining all unsent local edits.
+    // A server snapshot may already include an operation whose acknowledgement
+    // was lost. Never mix it with any pending local effects, even during backoff.
     const db = await openOfflineDB();
-    await new Promise((resolve, reject) => {
-        const tx = db.transaction([...snapshots.keys()], "readwrite");
-        tx.oncomplete = resolve;
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction([...snapshots.keys(), STORE_NAMES.syncQueue, STORE_NAMES.metadata], "readwrite");
+        let imported = false;
+        tx.oncomplete = () => resolve(imported);
         tx.onerror = tx.onabort = () => reject(tx.error);
-        for (const [name, records] of snapshots) {
-            const store = tx.objectStore(name);
-            const request = store.getAll();
-            request.onsuccess = () => {
-                const pending = new Set();
-                request.result.forEach((row) => {
-                    if (row.sync_status !== "synced") pending.add(row.id);
-                    else store.delete(row.id);
-                });
-                records.forEach((row) => { if (!pending.has(row.id)) store.put(row); });
+        const queue = tx.objectStore(STORE_NAMES.syncQueue).count();
+        queue.onsuccess = () => {
+            if (queue.result) return;
+            const revision = tx.objectStore(STORE_NAMES.metadata).get('queue_revision');
+            revision.onsuccess = () => {
+                // Protect browsers without Web Locks too: another tab may have
+                // queued AND synchronized a sale while this download was in flight.
+                if (expectedQueueRevision !== undefined
+                    && Number(revision.result?.value || 0) !== expectedQueueRevision) return;
+                applySnapshot();
             };
-        }
+        };
+        const applySnapshot = () => {
+            imported = true;
+            const metadata = tx.objectStore(STORE_NAMES.metadata);
+            for (const key of ['user', 'company', 'cash']) {
+                if (payload[key]) metadata.put({ key, value: payload[key], updated_at: importedAt });
+            }
+            metadata.put({ key: 'last_bootstrap_at', value: importedAt, updated_at: importedAt });
+            for (const [name, records] of snapshots) {
+                const store = tx.objectStore(name);
+                const request = store.getAll();
+                request.onsuccess = () => {
+                    const pending = new Set();
+                    request.result.forEach((row) => {
+                        if (row.sync_status !== "synced") pending.add(row.id);
+                        else store.delete(row.id);
+                    });
+                    records.forEach((row) => { if (!pending.has(row.id)) store.put(row); });
+                };
+            }
+        };
     });
-    await setMetadata("last_bootstrap_at", importedAt);
 }
 
 export async function searchProducts(query = "") {
@@ -440,14 +573,15 @@ export async function searchProducts(query = "") {
         .filter((product) => {
             if (!q) return true;
             const productText = normalizeText([product.name, product.sku, product.category].join(" "));
-            const variantText = normalizeText((variantByProduct.get(String(product.server_id || product.id)) || [])
+            const key = variantByProduct.has(String(product.id)) ? product.id : product.server_id || product.id;
+            const variantText = normalizeText((variantByProduct.get(String(key)) || [])
                 .map((variant) => [variant.variant_sku, variant.barcode, variant.color, variant.size].join(" "))
                 .join(" "));
             return productText.includes(q) || variantText.includes(q);
         })
         .slice(0, 10)
         .map((product) => ({
-            id: product.server_id,
+            id: variantByProduct.has(String(product.id)) ? product.id : product.server_id || product.id,
             name: product.name,
             sku: product.sku,
         }));
@@ -456,10 +590,12 @@ export async function searchProducts(query = "") {
 export async function variantsForProduct(productId) {
     const variants = await getAll(STORE_NAMES.productVariants);
     return variants
-        .filter((variant) => String(variant.product_id) === String(productId) && variant.is_active !== false)
+        .filter((variant) => (String(variant.product_id) === String(productId)
+            || variant.product_local_uuid === productId) && variant.is_active !== false)
         .map((variant) => ({
             id: variant.server_id || variant.id,
             sku: variant.variant_sku,
+            product_local_uuid: variant.product_local_uuid || null,
             color: variant.color || "",
             size: variant.size || "",
             pieces_per_dozen: variant.pieces_per_dozen || 12,
@@ -467,7 +603,19 @@ export async function variantsForProduct(productId) {
 }
 
 export async function stockForVariant(variantId) {
+    if (String(variantId).startsWith('local-variant-')) {
+        variantId = await getMetadata(`product_variant_mapping:${String(variantId).slice('local-variant-'.length)}`) || variantId;
+    }
     const stockRows = await getAll(STORE_NAMES.stock);
+    if (document.body.dataset.pwaRole === 'sales') {
+        const warehouses = await getAll(STORE_NAMES.warehouses);
+        return warehouses.filter(row => row.warehouse_type === 'representative'
+            && String(row.assigned_user_id) === document.body.dataset.pwaUserId).map(warehouse => {
+                const id = warehouse.server_id;
+                const row = stockRows.find(stock => String(stock.variant_id) === String(variantId) && String(stock.warehouse_id) === String(id));
+                return {warehouse_id: id, warehouse_name: warehouse.name, quantity: Number(row?.quantity || 0), min_quantity: row?.min_quantity || 0};
+            });
+    }
     return stockRows
         .filter((stock) => String(stock.variant_id) === String(variantId) && Number(stock.quantity || 0) > 0)
         .sort((a, b) => String(a.warehouse_name || "").localeCompare(String(b.warehouse_name || "")))
@@ -481,7 +629,7 @@ export async function stockForVariant(variantId) {
 
 export async function priceForVariant(variantId, orderType = "b2c") {
     const variants = await getAll(STORE_NAMES.productVariants);
-    const variant = variants.find((row) => String(row.server_id || row.id) === String(variantId));
+    const variant = variants.find((row) => String(row.server_id || row.id) === String(variantId) || String(row.id) === String(variantId));
     if (!variant) return "0.00";
     if (orderType === "b2b") return String(variant.wholesale_price || variant.sale_price || "0.00");
     return String(variant.retail_price || variant.sale_price || "0.00");
@@ -518,7 +666,7 @@ export async function updateStockQuantity({ variant_id, warehouse_id, delta }) {
     });
 }
 
-export async function estimateOrderTotals(payload = {}) {
+export function calculateOrderTotals(payload = {}) {
     const items = payload.items || [];
     const subtotal = items.reduce((sum, item) => sum + (Number(item.unit_price || 0) * Number(item.quantity || 0)), 0);
     const itemDiscount = items.reduce((sum, item) => {
@@ -540,4 +688,8 @@ export async function estimateOrderTotals(payload = {}) {
         total: total.toFixed(2),
         remaining_amount: remaining.toFixed(2),
     };
+}
+
+export async function estimateOrderTotals(payload = {}) {
+    return calculateOrderTotals(payload);
 }

@@ -1,7 +1,8 @@
-import { getAll, STORE_NAMES } from "./db.js";
+import { calculateOrderTotals, getAll, STORE_NAMES } from "./db.js";
 
 const PENDING_STATUSES = new Set(["pending", "failed", "conflict"]);
 let renderScheduled = false;
+let stockTableSnapshot = null;
 
 function text(value, fallback = "-") {
     const normalized = String(value ?? "").trim();
@@ -165,7 +166,8 @@ function renderOrders(queue, lookup, mode = "orders") {
         })
         .map((item) => {
             const { order, items } = orderPayload(item);
-            const total = totalForItems(items);
+            const totals = calculateOrderTotals({ ...order, items });
+            const total = Number(totals.total);
             const paid = Number(order.paid_amount || 0);
             if (mode === "invoices") {
                 return makeRow(item, [
@@ -190,7 +192,7 @@ function renderOrders(queue, lookup, mode = "orders") {
                 td(customerNameForOrder(item, lookup)),
                 td(paymentLabel(order.payment_method)),
                 td(money(total)),
-                td(money(order.discount_amount || order.discount || 0)),
+                td(totals.discount),
                 td(formatDate(item.timestamp)),
                 td("محلي"),
                 td(badge(statusLabel(item))),
@@ -561,6 +563,14 @@ function renderDriverActions(queue) {
 
 async function renderOfflineRecords() {
     clearOfflineRows();
+    if (window.location.pathname === '/inventory/stock/') {
+        if (!navigator.onLine) await renderLocalStock();
+        else if (stockTableSnapshot) {
+            stockTableSnapshot.body.replaceChildren(...stockTableSnapshot.rows);
+            stockTableSnapshot = null;
+        }
+        return;
+    }
     const queue = await getPendingQueue();
     if (!queue.length) return;
     const path = window.location.pathname;
@@ -579,6 +589,46 @@ async function renderOfflineRecords() {
     else if (path.startsWith("/sales-reps/")) renderDriverActions(queue);
 }
 
+async function renderLocalStock() {
+    const tbody = document.querySelector('.stock-table-wrap tbody');
+    if (!tbody) return;
+    if (stockTableSnapshot?.body !== tbody) {
+        stockTableSnapshot = { body: tbody, rows: Array.from(tbody.childNodes) };
+    }
+    const [stock, variants, warehouses] = await Promise.all([
+        getAll(STORE_NAMES.stock), getAll(STORE_NAMES.productVariants), getAll(STORE_NAMES.warehouses),
+    ]);
+    const variantById = new Map(variants.map(row => [String(row.server_id || row.id), row]));
+    const warehouseById = new Map(warehouses.map(row => [String(row.server_id || row.id), row]));
+    const params = new URLSearchParams(window.location.search);
+    const q = (params.get('q') || '').trim().toLocaleLowerCase();
+    const hasCosts = document.querySelectorAll('.stock-table-wrap th').length === 7;
+    const rows = [];
+    for (const row of stock) {
+        const variant = variantById.get(String(row.variant_id));
+        if (!variant) continue;
+        if (params.get('warehouse') && String(row.warehouse_id) !== params.get('warehouse')) continue;
+        if (params.get('low') && Number(row.quantity) > Number(row.min_quantity || 0)) continue;
+        if (q && ![variant.product_name, variant.product_sku, variant.variant_sku, variant.barcode].join(' ').toLocaleLowerCase().includes(q)) continue;
+        const tr = document.createElement('tr');
+        tr.dataset.offlineRow = row.id;
+        tr.append(td(`${variant.product_name} ${variant.product_sku || ''}`),
+            td(`${variant.color || '-'} / ${variant.size || '-'} ${variant.variant_sku || ''}`),
+            td(row.warehouse_name || warehouseById.get(String(row.warehouse_id))?.name || row.warehouse_id));
+        if (hasCosts) tr.append(td(money(variant.cost_price)));
+        tr.append(td(row.quantity), td(row.min_quantity || 0), td(badge('رصيد محلي')));
+        rows.push(tr);
+    }
+    tbody.replaceChildren(...rows);
+    if (!rows.length) {
+        const tr = document.createElement('tr');
+        const cell = td('لا توجد كميات محلية مطابقة للفلاتر');
+        cell.colSpan = hasCosts ? 7 : 6;
+        tr.append(cell);
+        tbody.append(tr);
+    }
+}
+
 function scheduleRender() {
     if (renderScheduled) return;
     renderScheduled = true;
@@ -593,6 +643,8 @@ function scheduleRender() {
 window.addEventListener("DOMContentLoaded", scheduleRender);
 window.addEventListener("pageshow", scheduleRender);
 window.addEventListener("focus", scheduleRender);
+window.addEventListener("offline", scheduleRender);
+window.addEventListener("online", scheduleRender);
 window.addEventListener("sh-sync-status", scheduleRender);
 
 window.SHOfflineLists = {

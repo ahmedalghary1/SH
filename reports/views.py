@@ -22,9 +22,10 @@ MOVEMENT_TYPE_LABELS = {
     StockMovement.TYPE_OUT: 'صرف مخزون',
     StockMovement.TYPE_TRANSFER: 'تحويل بين المخازن',
     StockMovement.TYPE_SALE: 'بيع',
-    StockMovement.TYPE_RETURN: 'مرتجع',
+    StockMovement.TYPE_RETURN: 'مرتجع بيع',
     StockMovement.TYPE_ADJUSTMENT: 'تسوية مخزون',
-    StockMovement.TYPE_PURCHASE_RECEIVE: 'استلام مشتريات',
+    StockMovement.TYPE_PURCHASE_RECEIVE: 'شراء',
+    StockMovement.TYPE_PURCHASE_RETURN: 'مرتجع شراء',
     StockMovement.TYPE_SALES_RETURN: 'مرتجع مبيعات',
     StockMovement.TYPE_DAMAGED_RETURN: 'مرتجع تالف',
     StockMovement.TYPE_EXCHANGE_OUT: 'صرف استبدال',
@@ -103,8 +104,8 @@ REPORT_CARDS = {
             'roles': ('manager', 'warehouse'),
         },
         {
-            'title': 'حركة المخزون',
-            'description': 'راجع التحويلات والإضافات والصرف.',
+            'title': 'حركة مخزن',
+            'description': 'راجع الرصيد السابق والحالي للبيع والشراء والمرتجعات والتحويلات.',
             'url_name': 'reports:stock_movement',
             'icon': 'icon-exchange',
             'tone': 'general',
@@ -702,7 +703,7 @@ class StockMovementReportView(RoleRequiredMixin, TemplateView):
         movements = StockMovement.objects.select_related(
             'variant__product', 'variant__color', 'variant__size',
             'from_warehouse', 'to_warehouse', 'created_by'
-        ).order_by('-created_at')
+        ).order_by('-created_at', '-pk')
         
         # Filtering
         date_from = self.request.GET.get('date_from')
@@ -735,7 +736,8 @@ class StockMovementReportView(RoleRequiredMixin, TemplateView):
                 movement.movement_type,
                 movement.get_movement_type_display(),
             )
-        context['movements'] = movement_rows
+        context['movements'] = services.movement_balance_rows(
+            movement_rows, positive_id(warehouse_id) if warehouse_id else None)
         context['warehouses'] = Warehouse.objects.filter(is_active=True)
         context['movement_types'] = [
             (value, MOVEMENT_TYPE_LABELS.get(value, label))

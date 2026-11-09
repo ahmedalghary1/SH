@@ -20,7 +20,7 @@ the server accepts its synchronization.
   remains in its account-specific database.
 - Browser synchronization supplies `X-PWA-Scope`. The server returns HTTP 409
   before processing a request from a stale account/branch scope.
-- A full bootstrap replaces server snapshots and preserves unsent local edits.
+- A full bootstrap replaces server snapshots only when the queue is empty, and preserves unsent local edits.
   Offline stock is an estimate; synchronization checks stock and permissions again.
 
 The old shared `sh-offline-db` is preserved and is **not automatically replayed
@@ -97,3 +97,77 @@ non-replay of dispatched POSTs, and visible permission/server errors.
 session scope, invalid input, and concurrent PostgreSQL requests. Use disposable
 databases. Release results and production limits appear in the
 [Arabic review report](review-2026-10-12-ar.md).
+
+
+## Stock integrity improvements (2026-11-09)
+
+- Confirmed offline sales commit the invoice, queue entry, and stock reservation
+  in one IndexedDB transaction. Insufficient stock rejects the complete save.
+  Duplicate variant/warehouse lines are aggregated. Read/write transactions also
+  serialize simultaneous reservations from multiple tabs. Quotes and held drafts
+  do not reserve stock, matching the server workflow.
+- Bulk warehouse transfers support up to 100 lines, including repeated variants.
+  Both warehouse effects commit locally together. The server groups repeated
+  variants and applies the entire document atomically, preserving batch costs.
+  A failed line rolls back all lines. Legacy single-item queue entries still work.
+- Bootstrap and queue processing share the same Web Lock. Snapshot import checks
+  the queue inside its IndexedDB transaction and defers while any item remains,
+  including conflicts or deferred retries. This prevents a downloaded stock value
+  from erasing local reservations, including after a lost server acknowledgement.
+  An atomic queue revision also rejects downloads that became stale while another
+  tab queued and synchronized work, including on browsers without Web Locks.
+- Stock refresh runs on reconnect, focus and periodically while the app is open.
+  The offline stock list reads local quantities rather than cached HTML quantities.
+  Local invoice list totals now include item and invoice discounts.
+- Existing queues and IndexedDB data are retained. Deploy the whole release and
+  collect static files; the new service worker version includes the bulk form JS.
+
+The browser test `tests/pwa_browser_review.py` uses an isolated SQLite database,
+real Chromium IndexedDB, service worker caching, offline invoice form capture,
+concurrent reservations, a deliberately lost acknowledgement, reconnection,
+server idempotency, and bulk-transfer replay. Run it with a Python environment
+containing Playwright and an installed Chromium browser:
+
+```powershell
+.venv-audit/Scripts/python.exe tests/pwa_browser_review.py
+```
+
+Offline quantities represent this device's last download plus its own queued
+work. Other devices can consume stock while disconnected; the server remains
+responsible for final validation. Conflicts remain visible for reconciliation.
+A permanent conflict intentionally pauses dependent operations and snapshot
+replacement. Keep the application open to complete retries; do not clear storage.
+
+
+## Representative negative-stock sales (2026-11-09)
+
+Representatives can create a single-variant product using
+`/products/representative/create/` and sell active branch catalog items from their
+own active representative warehouse, including zero or negative quantities.
+Creation starts with zero stock. Prices and an optional estimated cost are
+captured; existing products are selected by their existing code to avoid duplicates.
+This permission does not allow representatives to edit existing products, create
+purchase receipts, change another warehouse's stock, or make samples negative.
+Managers and warehouse users retain ordinary availability checks when selling.
+
+Offline product and variant records commit with their queue entry. Local variant
+references are resolved on the server through the same user's/device's successful
+product receipt before accepting dependent sales. An atomic queue sequence orders
+operations even when timestamps tie or the device clock changes. Forms containing
+local product references remain queued when connectivity returns mid-edit.
+
+Receipts, transfers and returns into the same warehouse increase its signed
+balance. Incoming batches first settle the negative quantity, leaving only the
+surplus available for future FIFO sales. For example, -10 + 6 = -4 and a further
+10 received leaves +6, with exactly six units available in batches. Purchasing
+into the main warehouse requires the usual transfer to the representative's
+warehouse to settle that custody balance.
+
+A shortage uses the variant's current cost as a provisional sale cost. Later
+purchase receipts set the cost of newly received batches; they do not retroactively
+rewrite the original invoice's profit. Set the estimated product cost if known.
+
+This release includes inventory migration 0014 to permit signed stock balances.
+Deploy with `python manage.py migrate`, collect static files and restart the app;
+then update the PWA and download the authorized snapshot online before departure.
+Existing queues are retained. PostgreSQL concurrency tests require PostgreSQL.

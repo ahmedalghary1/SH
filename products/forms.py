@@ -221,3 +221,20 @@ class InitialStockForm(forms.Form):
         return self.is_valid() and bool(
             self.cleaned_data.get('warehouse') or (self.cleaned_data.get('new_warehouse_name') or '').strip()
         )
+
+
+class RepresentativeProductForm(forms.Form):
+    name = forms.CharField(max_length=200, label='اسم المنتج')
+    sku = forms.CharField(max_length=100, label='كود المنتج')
+    color_name = forms.CharField(max_length=50, required=False, label='اللون')
+    size_name = forms.CharField(max_length=20, required=False, label='المقاس')
+    retail_price = forms.DecimalField(max_digits=10, decimal_places=2, min_value=0, label='سعر القطاعي')
+    wholesale_price = forms.DecimalField(max_digits=10, decimal_places=2, min_value=0, label='سعر الجملة')
+    cost_price = forms.DecimalField(max_digits=10, decimal_places=2, min_value=0, required=False,
+                                    label='التكلفة التقديرية', initial=0)
+
+    def clean_sku(self):
+        sku = self.cleaned_data['sku'].strip()
+        if Product.objects.filter(sku=sku).exists():
+            raise forms.ValidationError('الكود موجود بالفعل. اختر الصنف الموجود في فاتورة البيع.')
+        return sku

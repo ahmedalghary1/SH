@@ -1111,3 +1111,25 @@ def api_products(request):
     return JsonResponse({'success': True, 'message': 'تم جلب المنتجات', 'data': data})
 
 # Create your views here.
+
+
+class RepresentativeProductCreateView(RoleRequiredMixin, View):
+    allowed_roles = ('sales',)
+    template_name = 'products/representative_create.html'
+
+    def get(self, request):
+        from .forms import RepresentativeProductForm
+        return render(request, self.template_name, {'form': RepresentativeProductForm()})
+
+    def post(self, request):
+        from .forms import RepresentativeProductForm
+        from .services import create_representative_product
+        form = RepresentativeProductForm(request.POST)
+        if form.is_valid():
+            try:
+                create_representative_product(data=request.POST, user=request.user)
+                messages.success(request, 'تم تسجيل المنتج. يمكنك اختياره وبيعه بالسالب من عهدتك.')
+                return redirect('orders:create')
+            except ValidationError as exc:
+                form.add_error(None, '؛ '.join(exc.messages))
+        return render(request, self.template_name, {'form': form})

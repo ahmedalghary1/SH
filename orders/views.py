@@ -65,31 +65,11 @@ def _order_totals(queryset):
 
 
 def _available_variants_for_user(user):
-    qs = ProductVariant.objects.filter(is_active=True)
-    # Allow managers to see all active variants regardless of stock
-    if user.role in {'manager', 'director'} or user.is_superuser:
-        return qs
-    if _is_restricted_sales_user(user):
-        qs = qs.filter(
-            stock__quantity__gt=0,
-            stock__warehouse__is_active=True,
-            stock__warehouse__assigned_user=user,
-            stock__warehouse__warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
-        ).distinct()
-    return qs
+    return ProductVariant.objects.filter(is_active=True, product__is_active=True)
 
 
 def _available_products_for_user(user):
-    qs = Product.objects.filter(is_active=True)
-    if _is_restricted_sales_user(user):
-        qs = qs.filter(
-            variants__is_active=True,
-            variants__stock__quantity__gt=0,
-            variants__stock__warehouse__is_active=True,
-            variants__stock__warehouse__assigned_user=user,
-            variants__stock__warehouse__warehouse_type=Warehouse.TYPE_REPRESENTATIVE,
-        ).distinct()
-    return qs
+    return Product.objects.filter(is_active=True)
 
 
 def _loads_items_payload(raw_items):
@@ -359,10 +339,6 @@ class OrderCreateView(SalesRequiredMixin, FormView):
                 'discount_percentage': discount_percentage,
             })
 
-        if _is_restricted_sales_user(self.request.user):
-            for stock_key, quantity in requested_stock.items():
-                if stock_quantities.get(stock_key, 0) < quantity:
-                    raise ValidationError('الكمية الإجمالية المطلوبة غير متاحة في عهدة المندوب')
         for batch_id, quantity in requested_batches.items():
             if batches[batch_id].remaining_quantity < quantity:
                 raise ValidationError('الكمية الإجمالية غير متاحة في دفعة السعر المحددة')
@@ -673,6 +649,17 @@ def ajax_get_variant_stock(request, variant_id):
         stock = stocks.filter(warehouse_id=warehouse_id).first()
         quantity = (stock.quantity if stock else 0) + reserved_by_warehouse.get(warehouse_id, 0)
         return JsonResponse({'success': True, 'message': 'تم جلب المخزون', 'data': {'quantity': quantity}})
+    if _is_restricted_sales_user(request.user):
+        from sales_reps.services import get_or_create_sales_rep_warehouse
+        get_or_create_sales_rep_warehouse(request.user)
+        get_object_or_404(_available_variants_for_user(request.user), pk=variant_id)
+        quantities = {stock.warehouse_id: stock.quantity for stock in stocks}
+        warehouses = Warehouse.objects.filter(is_active=True, assigned_user=request.user,
+                                               warehouse_type=Warehouse.TYPE_REPRESENTATIVE)
+        return JsonResponse({'success': True, 'data': {'warehouses': [
+            {'warehouse_id': warehouse.pk, 'warehouse_name': warehouse.name,
+             'quantity': quantities.get(warehouse.pk, 0), 'batches': []}
+            for warehouse in warehouses]}})
     show_costs = can_view_costs(request.user)
     data = [
         {

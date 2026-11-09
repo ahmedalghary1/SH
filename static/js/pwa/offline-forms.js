@@ -1,13 +1,14 @@
 import {
     estimateOrderTotals,
     getMetadata,
+    getAll,
+    STORE_NAMES,
     nowIso,
     priceForVariant,
     queueEntityOperation,
     searchCustomers,
     searchProducts,
     stockForVariant,
-    updateStockQuantity,
     uuid,
     variantsForProduct,
 } from "./db.js";
@@ -286,32 +287,59 @@ function genericPayload(fields, path, localUuid, entityType, serverId = "") {
     };
 }
 
-async function applyOptimisticStockMutation(classification, payload) {
-    if (classification.entity_name === "sales" && payload.items) {
-        if (payload.order?.document_type === 'quote' || payload.order?.action !== 'confirm') return;
-        await Promise.all(payload.items.map((item) => updateStockQuantity({
-            variant_id: item.variant_id,
-            warehouse_id: item.warehouse_id,
-            delta: -Number(item.quantity || 0),
-        })));
-        return;
+function positiveStockQuantity(value) {
+    const quantity = Number(value);
+    if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 2147483647) {
+        throw new Error('أدخل كمية صحيحة موجبة.');
     }
-    if (classification.entity_name !== "stock") return;
+    return quantity;
+}
+
+function stockMutationsForSubmission(classification, payload) {
+    if (classification.entity_name === "sales" && payload.items) {
+        if (!payload.items.length) throw new Error('أضف صنفًا واحدًا على الأقل.');
+        if (payload.order?.document_type === 'quote' || payload.order?.action !== 'confirm') return [];
+        return payload.items.map((item) => ({
+            variant_id: item.variant_server_id || item.variant_id,
+            warehouse_id: item.warehouse_server_id || item.warehouse_id || payload.order.warehouse,
+            delta: -positiveStockQuantity(item.quantity),
+        }));
+    }
+    if (classification.entity_name !== "stock") return [];
     const movement = payload.stock || {};
     const path = payload.original_url || "";
-    const quantity = Number(movement.quantity || 0);
-    if (!quantity) return;
-    if (path.includes("/transfer/") && movement.from_warehouse && movement.to_warehouse && movement.variant) {
-        await updateStockQuantity({ variant_id: movement.variant, warehouse_id: movement.from_warehouse, delta: -quantity });
-        await updateStockQuantity({ variant_id: movement.variant, warehouse_id: movement.to_warehouse, delta: quantity });
-    } else if (path.includes("/representative-issue/") && movement.from_warehouse && movement.variant) {
-        await updateStockQuantity({ variant_id: movement.variant, warehouse_id: movement.from_warehouse, delta: -quantity });
-    } else if (path.includes("/representative-return/") && movement.to_warehouse && movement.variant) {
-        await updateStockQuantity({ variant_id: movement.variant, warehouse_id: movement.to_warehouse, delta: quantity });
-    } else if (movement.warehouse && movement.variant) {
-        const delta = path.includes("/out/") ? -quantity : quantity;
-        await updateStockQuantity({ variant_id: movement.variant, warehouse_id: movement.warehouse, delta });
+    if (path.includes('/transfer/')) {
+        if (String(movement.from_warehouse) === String(movement.to_warehouse)) {
+            throw new Error('اختر مخزنين مختلفين.');
+        }
+        let lines = [movement];
+        if ('items-TOTAL_FORMS' in movement) {
+            const count = Number(movement['items-TOTAL_FORMS']);
+            if (!Number.isInteger(count) || count < 1 || count > 100) throw new Error('عدد سطور التحويل غير صالح.');
+            lines = [];
+            for (let i = 0; i < count; i += 1) {
+                if (movement[`items-${i}-DELETE`]) continue;
+                const variant = movement[`items-${i}-variant`];
+                const quantity = movement[`items-${i}-quantity`];
+                if (!variant && !quantity) continue;
+                lines.push({ variant, quantity });
+            }
+            if (!lines.length) throw new Error('اختر صنفًا واحدًا على الأقل.');
+        }
+        return lines.flatMap((line) => [
+            { variant_id: line.variant, warehouse_id: movement.from_warehouse, delta: -positiveStockQuantity(line.quantity) },
+            { variant_id: line.variant, warehouse_id: movement.to_warehouse, delta: positiveStockQuantity(line.quantity) },
+        ]);
     }
+    if (!movement.quantity) return [];
+    const quantity = positiveStockQuantity(movement.quantity);
+    if (path.includes('/representative-issue/')) return [{ variant_id: movement.variant, warehouse_id: movement.from_warehouse, delta: -quantity }];
+    if (path.includes('/representative-return/')) return [{ variant_id: movement.variant, warehouse_id: movement.to_warehouse, delta: quantity }];
+    if (movement.warehouse && movement.variant) return [{
+        variant_id: movement.variant, warehouse_id: movement.warehouse,
+        delta: path.includes('/out/') ? -quantity : quantity,
+    }];
+    return [];
 }
 
 async function queueFormSubmission(form, submitter = null) {
@@ -337,6 +365,37 @@ async function queueFormSubmission(form, submitter = null) {
     } else {
         payload = genericPayload(fields, path, localUuid, classification.entity_type, serverId);
     }
+    let localVariants = [];
+    if (path === '/products/representative/create/') {
+        const products = await getAll(STORE_NAMES.products);
+        if (products.some(row => String(row.sku || row.product?.sku).trim() === String(fields.sku).trim())) {
+            throw new Error('الكود موجود محليًا. اختر المنتج الموجود بدل تسجيله مرتين.');
+        }
+        Object.assign(payload, { name: fields.name, sku: fields.sku, is_active: true });
+        localVariants = [{
+            id: `local-variant-${localUuid}`, product_id: localUuid, product_local_uuid: localUuid,
+            product_name: fields.name, product_sku: fields.sku, variant_sku: `${fields.sku}-REP`,
+            color: fields.color_name || '', size: fields.size_name || '',
+            retail_price: fields.retail_price, wholesale_price: fields.wholesale_price,
+            sale_price: fields.retail_price, cost_price: fields.cost_price || '0', is_active: true,
+            sync_status: 'pending', pieces_per_dozen: 12,
+        }];
+    }
+    if (classification.entity_name === 'sales') {
+        const variants = await getAll(STORE_NAMES.productVariants);
+        for (const item of payload.items) {
+            const id = String(item.variant_id || item.variant_server_id);
+            const variant = variants.find(row => String(row.server_id || row.id) === id || String(row.id) === id);
+            if (variant?.product_local_uuid) item.product_local_uuid = variant.product_local_uuid;
+            if (item.product_local_uuid) {
+                const mapped = await getMetadata(`product_variant_mapping:${item.product_local_uuid}`);
+                if (mapped) {
+                    item.variant_id = mapped;
+                    item.variant_server_id = mapped;
+                }
+            }
+        }
+    }
     payload.source = "pwa-form";
     payload.original_url = path;
     payload.server_id = serverId || payload.server_id || "";
@@ -344,10 +403,9 @@ async function queueFormSubmission(form, submitter = null) {
     await queueEntityOperation(classification.entity_name, classification.action_type, payload, {
         entity_type: classification.entity_type,
         operation_type: operationType,
+        stock_mutations: stockMutationsForSubmission(classification, payload),
+        local_variants: localVariants,
     });
-    // Queue persistence is authoritative. A failed local estimate must not
-    // encourage the user to submit an already-saved operation a second time.
-    await applyOptimisticStockMutation(classification, payload).catch(() => {});
     requestBackgroundSync();
     return true;
 }
@@ -547,7 +605,9 @@ async function handleCapturedSubmit(form, submitter = null) {
             // A timed-out probe does not prove the POST cannot reach the server.
             // Never queue a financial write while the browser reports online:
             // the server may already have committed it when a response is lost.
-            if (navigator.onLine) {
+            const localProducts = form.id === 'order-form' && parseItemsJson(getField(form, 'items_json')?.value)
+                .some(item => item.product_local_uuid || !/^\d+$/.test(String(item.variant_id || item.variant_server_id || '')));
+            if (navigator.onLine && !localProducts) {
                 if (window.SHWorkspace?.canSubmitForm?.(form, submitter)) {
                     await window.SHWorkspace.submitForm(form, submitter);
                     return;
@@ -569,6 +629,7 @@ async function handleCapturedSubmit(form, submitter = null) {
                 window.SHUnsavedForms?.markSaved?.(form);
                 window.dispatchEvent(new CustomEvent('sh-sync-status', { detail: { state: 'pending' } }));
                 showOfflineNotice("تم الحفظ محليا. ستتم المزامنة تلقائيا عند عودة الاتصال.");
+                if (navigator.onLine) processQueue();
                 return;
             }
         } catch (error) {

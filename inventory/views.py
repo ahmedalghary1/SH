@@ -16,9 +16,9 @@ from products.models import ProductVariant
 from sales_reps.models import SalesRepStockAssignment
 from sales_reps.services import assign_stock_to_sales_rep, return_stock_from_sales_rep
 
-from .forms import RepresentativeIssueForm, RepresentativeReturnForm, StockAdjustmentForm, StockMovementForm, StockTransferForm, WarehouseForm
+from .forms import BulkStockTransferForm, RepresentativeIssueForm, RepresentativeReturnForm, StockAdjustmentForm, StockMovementForm, WarehouseForm
 from .models import Stock, StockMovement, Warehouse
-from .services import adjust_stock, stock_in, stock_out, transfer_stock
+from .services import adjust_stock, stock_in, stock_out, transfer_stock_bulk
 
 
 class WarehouseListView(RoleRequiredMixin, ExportListMixin, ListView):
@@ -213,12 +213,12 @@ class StockOutView(WarehouseRequiredMixin, FormView):
 
 class StockTransferView(WarehouseRequiredMixin, FormView):
     template_name = 'inventory/movements/transfer.html'
-    form_class = StockTransferForm
+    form_class = BulkStockTransferForm
     success_url = reverse_lazy('inventory:movements')
 
     def form_valid(self, form):
         try:
-            transfer_stock(user=self.request.user, **form.cleaned_data)
+            transfer_stock_bulk(user=self.request.user, **form.cleaned_data)
             messages.success(self.request, 'تم تحويل المخزون')
             return redirect(self.success_url)
         except ValidationError as exc:

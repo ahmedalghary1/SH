@@ -1,5 +1,5 @@
 // Release all shell assets together; private pages require a verified scope.
-const CACHE_VERSION = "sh-pwa-v2026-11-06-layout-01";
+const CACHE_VERSION = "sh-pwa-v2026-11-09-negative-stock-02";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_PREFIX = `${CACHE_VERSION}-pages-`;
 const META_CACHE = "sh-pwa-identity-v1";
@@ -14,7 +14,7 @@ const CORE_ASSETS = [
   "/static/js/product_create.js", "/static/js/purchase_create.js", "/static/js/purchase_return.js",
   "/static/js/pwa/identity.js", "/static/js/pwa/db.js", "/static/js/pwa/sync-queue.js",
   "/static/js/pwa/sync-engine.js", "/static/js/pwa/offline-forms.js", "/static/js/pwa/offline-list-view.js",
-  "/static/js/pwa/queue-view.js",
+  "/static/js/pwa/queue-view.js", "/static/js/bulk-transfer.js",
   "/static/images/sh-family-Logo.png", "/static/fonts/cairo/Cairo-400.ttf",
   "/static/fonts/cairo/Cairo-600.ttf", "/static/fonts/cairo/Cairo-700.ttf",
   "/static/icons/icon-192.png", "/static/icons/icon-512.png",

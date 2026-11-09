@@ -1,5 +1,6 @@
 import {
     getDeviceId,
+    getMetadata,
     getAll,
     getDueQueueItems,
     importBootstrap,
@@ -40,6 +41,7 @@ const APP_SHELL_URLS = [
     "/",
     "/products/",
     "/products/create/",
+    "/products/representative/create/",
     "/products/categories/",
     "/products/categories/create/",
     "/products/sizes/",
@@ -146,8 +148,14 @@ function uniqueUrls(urls) {
 export async function cacheAppShell(extraUrls = []) {
     const scope = getOfflineScope();
     if (!("serviceWorker" in navigator) || !scope || !navigator.onLine) return;
+    const representativeUrls = new Set([
+        '/', '/products/representative/create/', '/inventory/stock/', '/orders/create/',
+        '/orders/', '/orders/quotes/', '/invoices/', '/customers/', '/customers/simple/create/',
+        '/customers/list/', '/customers/create/', '/finance/transactions/collection/',
+    ]);
     const urls = uniqueUrls([
-        ...(shellCached ? [] : APP_SHELL_URLS.filter((url) => !["/reports/", "/settings/"].includes(url))),
+        ...(shellCached ? [] : APP_SHELL_URLS.filter((url) =>
+            document.body.dataset.pwaRole === 'sales' ? representativeUrls.has(url) : !["/reports/", "/settings/"].includes(url))),
         `${window.location.pathname}${window.location.search}`,
         ...extraUrls,
     ]);
@@ -270,13 +278,18 @@ async function pushQueueItem(item) {
     return result;
 }
 
-export async function bootstrapNow() {
+async function bootstrapSnapshot() {
     if (!navigator.onLine || bootstrapInProgress || !getOfflineScope()) return null;
     bootstrapInProgress = true;
     try {
+        const expectedQueueRevision = Number(await getMetadata('queue_revision') || 0);
         const payload = await jsonFetch("/api/sync/bootstrap-browser/");
-        await importBootstrap(payload);
+        const imported = await importBootstrap(payload, { expectedQueueRevision });
         csrfToken = payload.csrf_token || csrfToken;
+        if (!imported) {
+            syncStatusEvent({ state: "pending", ...(await getQueueStatus()) });
+            return null;
+        }
         lastBootstrapAt = Date.now();
         await setMetadata("last_successful_sync_at", nowIso());
         await cacheAppShell();
@@ -319,7 +332,7 @@ async function processQueueUnlocked() {
             }
         }
         if (synced) await setMetadata("last_successful_sync_at", nowIso());
-        if (synced && !failed) await bootstrapNow();
+        if (synced && !failed) await bootstrapSnapshot();
         syncStatusEvent({ state: failed ? "pending" : "idle", ...(await getQueueStatus()) });
     } catch (error) {
         syncStatusEvent({ state: [401, 403].includes(error.status) ? "authentication_required" : "sync_failed", error: String(error.message || error) });
@@ -335,11 +348,20 @@ export async function getQueueStatus() {
 }
 
 export async function processQueue() {
-    if (!navigator.onLine || syncInProgress || !getOfflineScope()) return;
+    if (!navigator.onLine || syncInProgress || bootstrapInProgress || !getOfflineScope()) return;
     const run = () => { if (!syncInProgress) return processQueueUnlocked(); };
     if (navigator.locks?.request) {
         await navigator.locks.request(`sh-sync-${getOfflineScope()}`, { ifAvailable: true }, (lock) => lock ? run() : undefined);
     } else await run(); // Server idempotency still protects browsers without Web Locks.
+}
+
+export async function bootstrapNow() {
+    if (!navigator.onLine || syncInProgress || bootstrapInProgress || !getOfflineScope()) return null;
+    const run = () => (!syncInProgress && !bootstrapInProgress) ? bootstrapSnapshot() : null;
+    if (navigator.locks?.request) {
+        return navigator.locks.request(`sh-sync-${getOfflineScope()}`, { ifAvailable: true }, (lock) => lock ? run() : null);
+    }
+    return run();
 }
 
 async function startOnlineWork() {
@@ -349,7 +371,7 @@ async function startOnlineWork() {
 
 window.addEventListener("online", startOnlineWork);
 window.addEventListener("focus", () => {
-    if (navigator.onLine) processQueue();
+    if (navigator.onLine) startOnlineWork();
 });
 
 navigator.serviceWorker?.addEventListener("message", (event) => {
@@ -362,7 +384,7 @@ if (navigator.onLine && getOfflineScope()) {
     startOnlineWork();
 }
 window.setInterval(() => {
-    if (navigator.onLine && !document.hidden && getOfflineScope()) processQueue();
+    if (navigator.onLine && !document.hidden && getOfflineScope()) startOnlineWork();
 }, 30000);
 navigator.serviceWorker?.addEventListener("controllerchange", () => cacheAppShell());
 

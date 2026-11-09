@@ -50,9 +50,6 @@ def _allowed_products_and_variants(user):
     if _can_view_all_inventory(user):
         return products, variants
     if getattr(user, 'is_sales', False):
-        allowed_variant_ids = _allowed_stock(user).filter(quantity__gt=0).values('variant_id')
-        variants = variants.filter(pk__in=allowed_variant_ids).distinct()
-        products = products.filter(variants__in=variants).distinct()
         return products, variants
     return products.none(), variants.none()
 
@@ -87,6 +84,9 @@ def _allowed_cash_accounts(user):
 
 
 def _bootstrap_payload(user):
+    if getattr(user, 'is_sales', False):
+        from sales_reps.services import get_or_create_sales_rep_warehouse
+        get_or_create_sales_rep_warehouse(user)
     can_view_costs = bool(getattr(user, 'is_manager', False))
     products, variants = _allowed_products_and_variants(user)
     customers = visible_customers_for_user(user, Customer.objects.filter(is_active=True)).order_by('-created_at')

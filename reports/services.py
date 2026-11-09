@@ -379,3 +379,59 @@ def manager_dashboard_kpis():
         'latest_orders': valid_orders.select_related('customer', 'created_by').order_by('-created_at')[:10],
         'daily_sales_chart': valid_orders.filter(created_at__date__gte=today - timedelta(days=6)).annotate(day=TruncDate('created_at')).values('day').annotate(total=Sum('total')).order_by('day'),
     }
+
+
+def movement_balance_rows(movements, warehouse_id=None):
+    """Reconstruct each warehouse balance, including movements hidden by filters.
+
+    Anchor to actual stock so legacy opening quantities remain accounted for.
+    Transfers produce one outgoing and one incoming warehouse row.
+    """
+    from copy import copy
+    from django.db.models import OuterRef, Subquery
+    from django.db.models.functions import Coalesce
+    from inventory.models import StockMovement
+
+    selected = {movement.pk: movement for movement in movements}
+    if not selected:
+        return []
+    variants = {movement.variant_id for movement in movements}
+    balances = {}
+    rows = []
+    remaining = set(selected)
+
+    def stock_balance(warehouse_field):
+        return Coalesce(Subquery(Stock.objects.filter(
+            variant_id=OuterRef('variant_id'), warehouse_id=OuterRef(warehouse_field),
+        ).values('quantity')[:1]), 0)
+
+    # Read movements and stock anchors in one SQL snapshot. A concurrent sale
+    # cannot appear in history without its corresponding current balance.
+    history = StockMovement.objects.filter(variant_id__in=variants).annotate(
+        from_balance=stock_balance('from_warehouse_id'),
+        to_balance=stock_balance('to_warehouse_id'),
+    ).order_by('-created_at', '-pk').values(
+        'pk', 'variant_id', 'from_warehouse_id', 'to_warehouse_id', 'quantity', 'from_balance', 'to_balance')
+    for event in history.iterator():
+        legs = {}
+        for field, sign in [('from_warehouse_id', -1), ('to_warehouse_id', 1)]:
+            warehouse = event[field]
+            if warehouse:
+                legs[warehouse] = legs.get(warehouse, 0) + sign * event['quantity']
+        for warehouse, delta in legs.items():
+            key = (warehouse, event['variant_id'])
+            anchor = event['from_balance'] if warehouse == event['from_warehouse_id'] else event['to_balance']
+            after = balances.get(key, anchor)
+            before = after - delta
+            balances[key] = before
+            if event['pk'] in selected and (warehouse_id is None or warehouse == warehouse_id):
+                row = copy(selected[event['pk']])
+                row.report_warehouse = row.from_warehouse if warehouse == row.from_warehouse_id else row.to_warehouse
+                row.previous_balance = before
+                row.current_balance = after
+                row.quantity_change = delta
+                rows.append(row)
+        remaining.discard(event['pk'])
+        if not remaining:
+            break
+    return rows

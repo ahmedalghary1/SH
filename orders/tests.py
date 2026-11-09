@@ -466,28 +466,28 @@ class OrderSalesRepProductVisibilityTests(TestCase):
         Stock.objects.create(warehouse=self.rep_warehouse, variant=self.zero_variant, quantity=0, min_quantity=1)
         Stock.objects.create(warehouse=self.other_rep_warehouse, variant=self.same_product_hidden_variant, quantity=5, min_quantity=1)
 
-    def test_sales_rep_product_search_only_returns_products_in_their_stock(self):
+    def test_sales_rep_product_search_includes_unstocked_branch_catalog(self):
         self.client.force_login(self.sales)
 
         response = self.client.get(reverse('orders:ajax_search_products'), {'q': 'Shirt'})
         product_ids = {row['id'] for row in response.json()['data']}
 
-        self.assertEqual(product_ids, {self.visible_product.id})
+        self.assertEqual(product_ids, {self.visible_product.id, self.hidden_product.id, self.zero_product.id})
 
-    def test_sales_rep_variants_only_returns_variants_in_their_stock(self):
+    def test_sales_rep_variants_include_unstocked_variants(self):
         self.client.force_login(self.sales)
 
         response = self.client.get(reverse('orders:ajax_get_product_variants', args=[self.visible_product.id]))
         variant_ids = {row['id'] for row in response.json()['data']}
 
-        self.assertEqual(variant_ids, {self.visible_variant.id})
+        self.assertEqual(variant_ids, {self.visible_variant.id, self.same_product_hidden_variant.id})
 
-    def test_sales_rep_cannot_fetch_price_for_unavailable_variant(self):
+    def test_sales_rep_can_fetch_price_for_unstocked_variant(self):
         self.client.force_login(self.sales)
 
         response = self.client.get(reverse('orders:ajax_get_variant_price', args=[self.hidden_variant.id]))
 
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 200)
 
     def test_manager_product_search_is_not_restricted_to_rep_stock(self):
         self.client.force_login(self.manager)
@@ -600,7 +600,7 @@ class OrderCreateViewTests(TestCase):
             80,
         )
 
-    def test_repeated_lines_cannot_exceed_total_available_stock(self):
+    def test_repeated_representative_lines_can_make_stock_negative(self):
         self.client.force_login(self.sales)
         item = {
             'variant_id': str(self.variant.id),
@@ -622,9 +622,9 @@ class OrderCreateViewTests(TestCase):
             'action': 'confirm',
         })
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'الكمية الإجمالية المطلوبة غير متاحة')
-        self.assertFalse(Order.objects.exists())
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Order.objects.get().items.count(), 3)
+        self.assertEqual(Stock.objects.get(warehouse=self.warehouse, variant=self.variant).quantity, -1)
 
     def test_invalid_items_payload_returns_form_error_instead_of_server_error(self):
         self.client.force_login(self.sales)
