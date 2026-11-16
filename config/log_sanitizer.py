@@ -87,6 +87,31 @@ def _sanitize_string(text: str) -> str:
     return _KV_PATTERN.sub(lambda m: f'{m.group(1)}{m.group(2)}{_REDACTED}', text)
 
 
+def sanitize_error_text(text):
+    """Redact configured secrets even when an exception omits their key names."""
+    from django.conf import settings
+
+    text = _sanitize_string(str(text))
+    if settings.configured:
+        secrets = [getattr(settings, name, '') for name in (
+            'SECRET_KEY', 'EMAIL_HOST_PASSWORD', 'BACKUP_ENCRYPTION_KEY',
+        )]
+        secrets.extend(db.get('PASSWORD', '') for db in settings.DATABASES.values())
+        for secret in sorted({str(s) for s in secrets if s and len(str(s)) >= 4}, key=len, reverse=True):
+            text = text.replace(secret, _REDACTED)
+            if ' ' in secret and len(secret.replace(' ', '')) >= 8:
+                text = text.replace(secret.replace(' ', ''), _REDACTED)
+    return text
+
+
+class SanitizingFormatter(logging.Formatter):
+    def formatException(self, exc_info):
+        return sanitize_error_text(super().formatException(exc_info))
+
+    def format(self, record):
+        return sanitize_error_text(super().format(record))
+
+
 # ------------------------------------------------------------------ #
 #  Logging Filter                                                     #
 # ------------------------------------------------------------------ #
@@ -101,7 +126,8 @@ class SanitizingFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         from config.request_context import request_id
-        record.request_id = request_id.get()
+        context_id = request_id.get()
+        record.request_id = context_id if context_id != '-' else getattr(record, 'request_id', '-')
         # Sanitize the formatted message
         if isinstance(record.msg, str):
             record.msg = _sanitize_string(record.msg)

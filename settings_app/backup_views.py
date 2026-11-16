@@ -1,7 +1,4 @@
-import logging
-
 from django.contrib import messages
-from django.db import DatabaseError
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -10,12 +7,11 @@ from django.views import View
 from django.views.decorators.cache import never_cache
 
 from accounts.permissions import SuperuserRequiredMixin
+from config.error_email import email_status
+from .backup_errors import report_backup_error
 from .backup_forms import BackupConfirmForm, BackupUploadForm
 from .backup_services import BackupError, apply_import, build_backup, cleanup_archives, ensure_backup_schema, limits, stage_upload
 from .models import BackupImport
-
-
-logger = logging.getLogger(__name__)
 
 
 @method_decorator(never_cache, name='dispatch')
@@ -23,29 +19,46 @@ class BackupAccessView(SuperuserRequiredMixin, View):
     pass
 
 
-def page_context(form=None, backup_error=''):
+def page_context(form=None, backup_error='', error_reference=''):
+    try:
+        maximum = limits()['upload'] // (1024 * 1024)
+    except BackupError as exc:
+        maximum = None
+        backup_error = backup_error or str(exc)
     return {
         'form': form if form is not None else BackupUploadForm(),
-        'max_upload_mb': limits()['upload'] // (1024 * 1024),
+        'max_upload_mb': maximum,
         'backup_error': backup_error,
         'backup_ready': not backup_error,
+        'error_reference': error_reference,
+        'error_email': email_status(),
     }
+
+
+def backup_failure_response(request, exc, operation):
+    failure = report_backup_error(request, exc, operation)
+    try:
+        response = render(request, 'settings/backups.html',
+                          page_context(backup_error=failure['message'], error_reference=failure['reference']),
+                          status=failure['status'])
+    except Exception:
+        # A database failure can also break authenticated layout processors.
+        from config.errors import _error
+        response = _error(request, failure['status'], 'تعذر إكمال النسخ الاحتياطي', failure['message'])
+    response['Cache-Control'] = 'private, no-store'
+    response['X-Request-ID'] = failure['reference']
+    return response
 
 
 class BackupPageView(BackupAccessView):
     def get(self, request):
-        backup_error = ''
         try:
             ensure_backup_schema()
             cleanup_archives()
-        except BackupError as exc:
-            backup_error = str(exc)
-        except DatabaseError:
-            logger.exception('Backup schema is unavailable')
-            backup_error = 'تعذر قراءة بيانات النسخ الاحتياطي. تحقق من تحديث قاعدة البيانات واتصال الخادم.'
-        except OSError:
-            logger.exception('Could not remove an expired staged backup')
-        return render(request, 'settings/backups.html', page_context(backup_error=backup_error))
+            limits()
+            return render(request, 'settings/backups.html', page_context())
+        except Exception as exc:
+            return backup_failure_response(request, exc, 'open')
 
     def post(self, request):
         form = BackupUploadForm(request.POST, request.FILES)
@@ -55,9 +68,8 @@ class BackupPageView(BackupAccessView):
                 return redirect('settings_app:backup_preview', job_id=job.pk)
             except BackupError as exc:
                 form.add_error('archive', str(exc))
-            except (DatabaseError, OSError):
-                logger.exception('Backup preview failed')
-                form.add_error('archive', 'تعذر تجهيز المعاينة. تحقق من المساحة المتاحة ثم أعد المحاولة.')
+            except Exception as exc:
+                return backup_failure_response(request, exc, 'preview')
         return render(request, 'settings/backups.html', page_context(form))
 
 
@@ -65,13 +77,8 @@ class BackupDownloadView(BackupAccessView):
     def get(self, request):
         try:
             stream = build_backup()
-        except BackupError as exc:
-            messages.error(request, str(exc))
-            return redirect('settings_app:backups')
-        except (DatabaseError, OSError):
-            logger.exception('Full backup download failed')
-            messages.error(request, 'تعذر تجهيز النسخة. تحقق من المساحة المتاحة وأعد المحاولة.')
-            return redirect('settings_app:backups')
+        except Exception as exc:
+            return backup_failure_response(request, exc, 'download')
         filename = f'sh-backup-{timezone.localtime():%Y%m%d-%H%M%S}.zip'
         response = FileResponse(stream, as_attachment=True, filename=filename, content_type='application/zip')
         response['Cache-Control'] = 'private, no-store'
@@ -97,9 +104,8 @@ class BackupPreviewView(BackupAccessView):
                 return redirect('settings_app:backup_preview', job_id=result.pk)
             except BackupError as exc:
                 form.add_error(None, str(exc))
-            except (DatabaseError, OSError):
-                logger.exception('Backup merge failed: job=%s', job.pk)
-                form.add_error(None, 'تعذر تطبيق الدمج؛ أُلغيت تغييرات هذه المحاولة. راجع الملف وأعد المعاينة.')
+            except Exception as exc:
+                return backup_failure_response(request, exc, 'merge')
         return render(request, 'settings/backup_preview.html', {
             'job': job, 'summary': job.summary, 'form': form,
         })

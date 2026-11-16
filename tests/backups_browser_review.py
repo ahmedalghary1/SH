@@ -111,9 +111,13 @@ def main():
             unexpected = []
             page.on('download', lambda download: unexpected.append(download.suggested_filename))
             page.locator('a[href="/settings/backups/download/"]').click()
-            page.wait_for_selector('.toast:has-text("تعذر تجهيز النسخة للاختبار")')
+            page.wait_for_selector('[data-backup-error]:has-text("تعذر تجهيز النسخة للاختبار")')
+            assert page.locator('[data-backup-error] code').inner_text().strip()
             assert not unexpected, unexpected
+            page.screenshot(path=str(screenshots / 'download-error.png'), full_page=True)
             fail_download.clear()
+            page.locator('[data-backup-error] a').click()
+            page.wait_for_selector('input[type=file]')
             page.locator('input[type=file]').set_input_files(str(archive))
             page.locator('button[type=submit]').filter(has_text='رفع').click()
             page.wait_for_selector('input[name=confirm]')

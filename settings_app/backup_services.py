@@ -200,6 +200,8 @@ def _global_uid(obj):
 def collect_snapshot(preferred=None):
     """Called inside a transaction; only UUID bookkeeping may be created."""
     preferred = {(label, str(pk)): uid for (label, pk), uid in (preferred or {}).items()}
+    if sum(model._base_manager.count() for model in backup_models().values()) > limits()['records']:
+        raise BackupError('عدد السجلات يتجاوز حدود النسخ الحالية؛ يلزم ضبط حدود النسخ على الخادم.')
     identity_rows = list(BackupIdentity.objects.order_by('-is_primary', 'id'))
     identities = {}
     used_uids = {str(item.uid) for item in identity_rows}
@@ -361,8 +363,10 @@ def build_backup():
                 'data_sha256': hashlib.sha256(payload).hexdigest(),
                 'counts': dict(Counter(r['model'] for r in records)),
                 'media': [{k: v for k, v in item.items() if k != 'source'} for item in media.values()],
-                'missing_media': sorted({v['path'] for r in records for v in r['fields'].values()
-                                         if isinstance(v, dict) and 'path' in v and v['path'] and not v['sha256']}),
+                'missing_media': sorted({r['fields'][f.name]['path']
+                                         for r in records for f in backup_models()[r['model']]._meta.concrete_fields
+                                         if isinstance(f, models.FileField) and r['fields'][f.name]['path']
+                                         and not r['fields'][f.name]['sha256']}),
             }
             if len(payload) > limits()['json']:
                 raise BackupError('حجم بيانات النسخة يتجاوز الحد المسموح على الخادم.')

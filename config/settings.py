@@ -315,11 +315,15 @@ EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', True)
 EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', False)
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '').strip()
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+if EMAIL_HOST.lower().strip() == 'smtp.gmail.com':
+    EMAIL_HOST_PASSWORD = ''.join(EMAIL_HOST_PASSWORD.split())
 EMAIL_TIMEOUT = env_int('EMAIL_TIMEOUT', 10)
 SERVER_EMAIL = os.environ.get('SERVER_EMAIL') or EMAIL_HOST_USER
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL') or EMAIL_HOST_USER
 ADMINS = [(address, address) for address in env_list('ERROR_EMAIL_TO', EMAIL_HOST_USER)]
 EMAIL_SUBJECT_PREFIX = os.environ.get('EMAIL_SUBJECT_PREFIX', '[SH ERP] ')
+ERROR_EMAIL_ENABLED = env_bool('ERROR_EMAIL_ENABLED', not DEBUG)
+ERROR_EMAIL_REPEAT_SECONDS = env_int('ERROR_EMAIL_REPEAT_SECONDS', 300)
 
 
 LOG_DIR = Path(os.environ.get('LOG_DIR', BASE_DIR / 'logs'))
@@ -339,10 +343,12 @@ LOGGING = {
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
+            '()': 'config.log_sanitizer.SanitizingFormatter',
             'format': '{levelname} {asctime} {name} {module} request={request_id} {message}',
             'style': '{',
         },
         'simple': {
+            '()': 'config.log_sanitizer.SanitizingFormatter',
             'format': '{levelname} {asctime} request={request_id} {message}',
             'style': '{',
         },
@@ -373,6 +379,11 @@ LOGGING = {
         'security': {
             'handlers': ['console'],
             'level': 'WARNING',
+            'propagate': False,
+        },
+        'error_alerts': {
+            'handlers': ['console'],
+            'level': 'INFO',
             'propagate': False,
         },
     },
@@ -425,13 +436,16 @@ if LOG_TO_FILE:
     LOGGING['loggers']['business']['handlers'].append('business_file')
     LOGGING['loggers']['security']['handlers'].append('security_file')
     LOGGING['root']['handlers'].append('django_file')
+    LOGGING['root']['handlers'].append('error_file')
+    LOGGING['loggers']['business']['handlers'].append('error_file')
+    LOGGING['loggers']['security']['handlers'].append('error_file')
+    LOGGING['loggers']['error_alerts']['handlers'].append('error_file')
 
-if not DEBUG and EMAIL_HOST_USER and EMAIL_HOST_PASSWORD and ADMINS:
+if ERROR_EMAIL_ENABLED:
     LOGGING['handlers']['mail_admins'] = {
-        'class': 'django.utils.log.AdminEmailHandler',
+        'class': 'config.error_email.ErrorEmailHandler',
         'level': 'ERROR',
         'filters': ['sanitize'],
-        'include_html': False,
     }
     for logger_name in ('django', 'business', 'security'):
         LOGGING['loggers'][logger_name]['handlers'].append('mail_admins')

@@ -6,7 +6,20 @@
     <a class="btn btn-light" href="{% url 'settings_app:index' %}">الإعدادات</a>
 </div>
 {% if backup_error %}
-<section class="card" role="alert"><p class="form-errors">{{ backup_error }}</p></section>
+<section class="card backup-error" role="alert" data-backup-error>
+    <h2>تعذر إكمال العملية</h2>
+    <p class="form-errors">{{ backup_error }}</p>
+    {% if error_reference %}<p>رقم المتابعة: <code dir="ltr">{{ error_reference }}</code></p>{% endif %}
+    <a class="btn btn-light" href="{% url 'settings_app:backups' %}">العودة إلى النسخ الاحتياطي</a>
+</section>
+{% endif %}
+{% if not error_email.ready %}
+<section class="card" role="status"><h2>تنبيهات البريد غير جاهزة</h2>
+    {% for issue in error_email.issues %}<p>{{ issue }}</p>{% endfor %}
+    <p class="muted">إعدادات البريد تؤخذ من ملف .env الخاص بالموقع المنشور، ولا تؤخذ من .env.example.</p>
+</section>
+{% elif error_email.last_failed %}
+<section class="card" role="status"><h2>تعذر إرسال تنبيه البريد</h2><p>{{ error_email.last_reason }}</p><p class="muted">حُفظ الخطأ في {{ error_email.log_destination }}.</p></section>
 {% endif %}
 <section class="card">
     <h2>تنزيل نسخة كاملة</h2>

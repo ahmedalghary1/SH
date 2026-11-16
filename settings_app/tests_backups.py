@@ -3,21 +3,28 @@ from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from io import BytesIO
+from io import StringIO
+import errno
 import json
 import logging
 from pathlib import Path
 import tempfile
+import smtplib
 import threading
 from unittest.mock import patch
 import zipfile
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core import mail
+from django.core.management import call_command
 from django.db import DatabaseError, connections, transaction
 from django.test import TestCase, TransactionTestCase, override_settings, skipUnlessDBFeature
 from django.urls import reverse
 from django.utils import timezone
 
 from accounts.models import Branch, User
+from audit.models import AuditLog
+from config import error_email
 from config.branching import reset_current_branch, set_current_branch
 from customers.models import Customer
 from finance.models import CashAccount, PaymentTransaction
@@ -320,6 +327,30 @@ class CompleteBackupTests(TestCase):
                 self.assertNotIn('sessions.session', manifest['counts'])
                 self.assertNotIn('.env', archive.namelist())
 
+    def test_json_path_key_is_not_treated_as_a_file_field(self):
+        value = {'path': '/orders/42/', 'message': 'ordinary audit JSON'}
+        log = AuditLog.objects.create(user=self.admin, action='update', section='settings',
+                                      changes_after=value)
+        with backups.build_backup() as stream:
+            manifest, records = backups.read_archive(stream)
+        record = next(r for r in records if r['model'] == 'audit.auditlog' and r['source_pk'] == str(log.pk))
+        self.assertEqual(record['fields']['changes_after'], value)
+        self.assertNotIn('/orders/42/', manifest['missing_media'])
+
+    def test_records_limit_is_checked_before_creating_identities(self):
+        with override_settings(BACKUP_MAX_RECORDS=1):
+            with self.assertRaises(backups.BackupError), patch.object(backups, '_global_uid') as assign:
+                backups.collect_snapshot()
+        assign.assert_not_called()
+
+    def test_diagnostic_command_builds_and_validates_without_importing(self):
+        output = StringIO()
+        count = Order.all_objects.count()
+        call_command('check_backups', create=True, stdout=output)
+        self.assertIn('ZIP verified:', output.getvalue())
+        self.assertEqual(Order.all_objects.count(), count)
+        self.assertEqual(BackupImport.objects.count(), 0)
+
     def test_expired_preview_and_other_owner_cannot_apply(self):
         data, _ = self.make_source()
         job = backups.stage_upload(self.upload(data), self.admin)
@@ -374,20 +405,96 @@ class CompleteBackupTests(TestCase):
         with patch.object(backups, 'MigrationExecutor') as executor:
             executor.return_value.migration_plan.return_value = [('settings_app.0009', False)]
             page = self.client.get(reverse('settings_app:backups'))
-            self.assertContains(page, 'python manage.py migrate')
-            self.assertNotContains(page, reverse('settings_app:backup_download'))
-            self.assertNotContains(page, 'name="archive"')
+            self.assertContains(page, 'python manage.py migrate', status_code=400)
+            self.assertNotContains(page, reverse('settings_app:backup_download'), status_code=400)
+            self.assertNotContains(page, 'name="archive"', status_code=400)
             result = self.client.get(reverse('settings_app:backup_download'), follow=True)
-            self.assertContains(result, 'python manage.py migrate')
+            self.assertContains(result, 'python manage.py migrate', status_code=400)
             self.assertNotIn('Content-Disposition', result)
 
-    def test_failed_download_redirects_to_a_visible_error_without_html_download_attribute(self):
+    def test_failed_download_displays_persistent_error_without_html_download_attribute(self):
         self.client.force_login(self.admin)
         with patch('settings_app.backup_views.build_backup', side_effect=backups.BackupError('تعذر تجهيز النسخة للاختبار')):
             result = self.client.get(reverse('settings_app:backup_download'), follow=True)
-        self.assertContains(result, 'تعذر تجهيز النسخة للاختبار')
+        self.assertContains(result, 'تعذر تجهيز النسخة للاختبار', status_code=400)
+        self.assertContains(result, 'data-backup-error', status_code=400)
+        self.assertContains(result, result['X-Request-ID'], status_code=400)
+        self.assertEqual(result.redirect_chain, [])
         self.assertNotIn('Content-Disposition', result)
-        self.assertNotContains(result, ' download')
+        self.assertNotContains(result, ' download', status_code=400)
+
+    def test_server_failures_show_actionable_messages_without_internal_secrets(self):
+        self.client.force_login(self.admin)
+        cases = [(OSError(errno.ENOSPC, 'private disk path'), 503, 'مساحة كافية'),
+                 (PermissionError(errno.EACCES, 'private disk path'), 503, 'صلاحية'),
+                 (DatabaseError('no such table: private_table'), 503, 'ترحيلات'),
+                 (KeyError('private internal value'), 500, 'KeyError')]
+        for failure, status, expected in cases:
+            with self.subTest(failure=type(failure).__name__), self.assertLogs('settings_app.backups', 'ERROR') as logs:
+                with patch('settings_app.backup_views.build_backup', side_effect=failure):
+                    result = self.client.get(reverse('settings_app:backup_download'))
+            self.assertContains(result, expected, status_code=status)
+            self.assertContains(result, 'data-backup-error', status_code=status)
+            self.assertNotContains(result, 'private ', status_code=status)
+            self.assertIn(result['X-Request-ID'], result.content.decode())
+            self.assertIn('Backup operation failed', '\n'.join(logs.output))
+            self.assertNotIn('Content-Disposition', result)
+
+    def test_layout_database_failure_falls_back_to_standalone_error_with_reference(self):
+        from .backup_views import backup_failure_response
+        from django.test import RequestFactory
+        request = RequestFactory().get('/settings/backups/download/')
+        with patch('settings_app.backup_views.render', side_effect=DatabaseError('database unavailable')):
+            with self.assertLogs('settings_app.backups', 'ERROR'):
+                response = backup_failure_response(request, DatabaseError('database unavailable'), 'download')
+        self.assertContains(response, 'قاعدة البيانات', status_code=503)
+        self.assertContains(response, response['X-Request-ID'], status_code=503)
+        self.assertIn('no-store', response['Cache-Control'])
+
+    @override_settings(ERROR_EMAIL_ENABLED=True, EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+                       ADMINS=[('Admin', 'admin@example.test')], SERVER_EMAIL='system@example.test')
+    def test_unexpected_download_error_sends_email_with_the_displayed_reference(self):
+        error_email._recent_alerts.clear()
+        self.addCleanup(error_email._recent_alerts.clear)
+        self.addCleanup(error_email._last_delivery.clear)
+        mail.get_connection()
+        mail.outbox.clear()
+        self.client.force_login(self.admin)
+        logger = logging.getLogger('settings_app.backups')
+        handler = error_email.ErrorEmailHandler()
+        handler.addFilter(logging.getLogger().handlers[0].filters[0])
+        logger.addHandler(handler)
+        self.addCleanup(logger.removeHandler, handler)
+        with patch('settings_app.backup_views.build_backup', side_effect=KeyError('unexpected')):
+            response = self.client.get(reverse('settings_app:backup_download'))
+        self.assertContains(response, 'KeyError', status_code=500)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(response['X-Request-ID'], mail.outbox[0].body)
+
+    @override_settings(ERROR_EMAIL_ENABLED=True, EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+                       ADMINS=[('Admin', 'admin@example.test')], SERVER_EMAIL='system@example.test')
+    def test_smtp_failure_does_not_hide_backup_error_and_explains_delivery_failure(self):
+        error_email._recent_alerts.clear()
+        self.addCleanup(error_email._recent_alerts.clear)
+        self.addCleanup(error_email._last_delivery.clear)
+        self.client.force_login(self.admin)
+        logger = logging.getLogger('settings_app.backups')
+        handler = error_email.ErrorEmailHandler()
+        logger.addHandler(handler)
+        self.addCleanup(logger.removeHandler, handler)
+        with patch('settings_app.backup_views.build_backup', side_effect=OSError(errno.ENOSPC, 'disk full')):
+            with patch('config.error_email.EmailMessage.send', side_effect=smtplib.SMTPAuthenticationError(535, b'bad login')):
+                response = self.client.get(reverse('settings_app:backup_download'))
+        self.assertContains(response, 'مساحة كافية', status_code=503)
+        self.assertContains(response, 'رفض خادم SMTP تسجيل الدخول', status_code=503)
+
+    @override_settings(BACKUP_MAX_UPLOAD_BYTES=0)
+    def test_invalid_backup_limits_do_not_crash_error_rendering(self):
+        self.client.force_login(self.admin)
+        with self.assertLogs('settings_app.backups', 'ERROR'):
+            response = self.client.get(reverse('settings_app:backups'))
+        self.assertContains(response, 'أعدادًا موجبة', status_code=400)
+        self.assertNotContains(response, 'name="archive"', status_code=400)
 
 
 @skipUnlessDBFeature('has_select_for_update')
