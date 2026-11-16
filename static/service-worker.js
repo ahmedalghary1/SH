@@ -1,5 +1,5 @@
 // Release all shell assets together; private pages require a verified scope.
-const CACHE_VERSION = "sh-pwa-v2026-11-16-backup-download-fix-02";
+const CACHE_VERSION = "sh-pwa-v2026-11-16-table-navigation-01";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_PREFIX = `${CACHE_VERSION}-pages-`;
 const META_CACHE = "sh-pwa-identity-v1";
@@ -10,7 +10,7 @@ const PREFETCH_FRESH_MS = 5 * 60 * 1000;
 const CORE_ASSETS = [
   OFFLINE_URL, "/manifest.json", "/static/css/main.css", "/static/js/main.js",
   "/static/css/ui-spacing.css",
-  "/static/css/table-controls.css", "/static/js/table-controls.js",
+  "/static/css/table-controls.css", "/static/js/table-controls.js", "/static/js/table-navigation.js",
   "/static/css/customer-statement.css", "/static/js/customer-statement.js",
   "/static/js/pwa/customer-ledger.js",
   "/static/js/internal-tabs.js", "/static/js/orders.js", "/static/js/inventory.js",

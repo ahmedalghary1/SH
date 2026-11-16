@@ -830,17 +830,6 @@ function setupStockWarehouseFilters(root = document) {
     });
 }
 
-document.addEventListener('click', (event) => {
-    const row = event.target.closest('[data-row-link]');
-    if (!row || event.target.closest('a, button, input, select, textarea')) return;
-    row.querySelector('a')?.click();
-});
-document.addEventListener('keydown', (event) => {
-    if (!['Enter', ' '].includes(event.key) || !event.target.matches('[data-row-link]')) return;
-    event.preventDefault();
-    event.target.querySelector('a')?.click();
-});
-
 document.addEventListener("click", (event) => {
     const historyToggle = event.target.closest("[data-audit-history-toggle]");
     if (historyToggle) {

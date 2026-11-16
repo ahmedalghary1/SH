@@ -397,4 +397,5 @@
     }
 }
 [data-row-link] { cursor: pointer; }
+[data-row-link]:hover { background-color: rgba(18, 60, 105, 0.06); }
 [data-row-link]:focus-visible { outline: 2px solid #123c69; outline-offset: -2px; }
