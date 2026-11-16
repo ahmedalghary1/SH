@@ -1609,7 +1609,7 @@ def _validate_operation(operation, user, branch_id):
             idempotency_key=operation['idempotency_key'], user=user,
             server_object_id=str(order.pk), status=SyncOperation.STATUS_SUCCESS,
         ).exists()
-        if (order and not original_receipt) or data.get('document_type', Order.DOCUMENT_SALE) != Order.DOCUMENT_SALE:
+        if (order and not original_receipt) or data.get('document_type', Order.DOCUMENT_SALE) not in {Order.DOCUMENT_SALE, Order.DOCUMENT_QUOTE}:
             raise ValidationError('المندوب يمكنه إنشاء فاتورة بيع جديدة فقط.')
         if order and order.created_by_id != user.pk:
             raise ValidationError('لا يمكنك تعديل فاتورة مستخدم آخر.')

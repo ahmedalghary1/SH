@@ -44,7 +44,7 @@ class RepresentativeAccessMiddleware:
     """Restrict the representative's HTTP surface; sync validates writes too."""
     allowed_views = {
         'dashboard:index', 'accounts:login', 'accounts:logout',
-        'orders:list', 'orders:create', 'orders:detail', 'orders:confirm', 'orders:delete_draft',
+        'orders:list', 'orders:quote_list', 'orders:create', 'orders:detail', 'orders:confirm', 'orders:delete_draft',
         'orders:ajax_search_products', 'orders:ajax_get_product_variants',
         'orders:ajax_get_variant_stock', 'orders:ajax_get_variant_price',
         'orders:ajax_search_customers', 'orders:ajax_calculate',
@@ -78,12 +78,13 @@ class RepresentativeAccessMiddleware:
                                'invoices:detail', 'invoices:print', 'invoices:payment_add', 'invoices:print_mark'}:
             from orders.models import Order
             query = Order.objects.filter(pk=view_kwargs['pk']) if match.namespace == 'orders' else Order.objects.filter(invoice__pk=view_kwargs['pk'])
-            if query.exclude(document_type=Order.DOCUMENT_SALE).exists():
+            allowed_documents = [Order.DOCUMENT_SALE, Order.DOCUMENT_QUOTE] if match.view_name == 'orders:detail' else [Order.DOCUMENT_SALE]
+            if query.exclude(document_type__in=allowed_documents).exists():
                 raise PermissionDenied
         if match.view_name == 'orders:create':
-            if (request.GET.get('document', 'sale') != 'sale'
-                    or request.GET.get('document_type', 'sale') != 'sale'
-                    or request.POST.get('document_type', 'sale') != 'sale'):
+            if any(value not in {'sale', 'quote'} for value in (
+                    request.GET.get('document', 'sale'), request.GET.get('document_type', 'sale'),
+                    request.POST.get('document_type', 'sale'))):
                 raise PermissionDenied
 
 

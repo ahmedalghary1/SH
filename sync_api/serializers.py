@@ -90,4 +90,8 @@ def serialize_order(order: Order):
         'created_by_name': order.created_by.get_full_name() or order.created_by.username if order.created_by else '',
         'created_at': order.created_at.isoformat() if order.created_at else '',
         'updated_at': order.updated_at.isoformat() if order.updated_at else '',
+        'invoice_id': getattr(getattr(order, 'invoice', None), 'pk', None),
+        'items': [{'product_name': item.variant.product.name, 'variant_id': item.variant_id,
+                   'quantity': item.quantity, 'unit_price': str(item.unit_price), 'total': str(item.total)}
+                  for item in order.items.all()],
     }

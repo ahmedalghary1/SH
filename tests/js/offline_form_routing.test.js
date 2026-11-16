@@ -49,6 +49,7 @@ test('a reachable collection is dispatched once after a read-only connectivity c
             SHUi: { markSaved() {} },
         },
         pendingSubmissions: new WeakSet(),
+        getAll: async () => [], STORE_NAMES: {syncQueue:'queue'},
         submitNormally() { serverSubmits += 1; },
         queueFormSubmission() { queued += 1; },
         serverIsReachable: async () => { probes += 1; return true; },
@@ -69,6 +70,7 @@ test('an unreachable server queues before dispatch even when navigator reports o
         navigator: { onLine: true }, CustomEvent: class {},
         window: { setTimeout(fn) { scheduled.push(fn); }, dispatchEvent() {} },
         pendingSubmissions: new WeakSet(), serverIsReachable: async () => false,
+        getAll: async () => [], STORE_NAMES: {syncQueue:'queue'},
         submitNormally() { submitted++; }, validateOfflineForm: () => true,
         queueFormSubmission: async () => { queued++; return true; },
         showOfflineNotice() {}, processQueue() {},
@@ -88,6 +90,6 @@ test('connectivity check performs a GET and returns false on a failed probe', as
     });
     vm.runInContext(source.match(/async function serverIsReachable\([^]*?\n\}/)[0], context);
     assert.equal(await context.serverIsReachable(), false);
-    assert.equal(request.url, '/api/sync/ping/');
+    assert.equal(request.url, '/api/sync/session/');
     assert.equal(request.options.method, undefined); // GET; no business POST was sent.
 });

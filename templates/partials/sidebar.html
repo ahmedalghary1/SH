@@ -14,6 +14,8 @@
         <a class="nav-link" href="{% url 'dashboard:index' %}">الرئيسية</a>
         <a class="nav-link" href="{% url 'orders:create' %}">حركة بيع</a>
         <a class="nav-link" href="{% url 'orders:list' %}">فواتير البيع</a>
+        <a class="nav-link" href="{% url 'orders:create' %}?document=quote">عرض سعر جديد</a>
+        <a class="nav-link" href="{% url 'orders:quote_list' %}">عروض الأسعار</a>
         <a class="nav-link" href="{% url 'finance:collection_create' %}">حركة قبض</a>
         <a class="nav-link" href="{% url 'finance:customer_statement' %}">كشف حساب عميل — عرض فقط</a>
         <a class="nav-link" href="{% url 'products:representative_create' %}">تسجيل منتج جديد</a>

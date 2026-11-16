@@ -17,7 +17,7 @@ function initializeStatement() {
     const results = picker.querySelector('#statement-customer-results');
     const host = document.querySelector('[data-offline-statement]');
     let timer, controller;
-    let offlineMode = !navigator.onLine;
+    let offlineMode = !navigator.onLine || Boolean(document.querySelector('[data-pwa-local]'));
     let renderVersion = 0;
 
     async function checkConnection() {

@@ -220,6 +220,9 @@ async function requestJson(url, options = {}) {
         if (error.name === 'AbortError') throw error;
         throw new Error(isRead ? 'تعذر الاتصال. تحقق من الإنترنت ثم حاول مرة أخرى.' : 'تعذر تأكيد نتيجة الحفظ. تحقق من السجلات قبل إعادة المحاولة.');
     }
+    if (isRead && (response.redirected || [502, 503, 504].includes(response.status)) && window.SHOffline?.handleJsonRequest) {
+        try { return await window.SHOffline.handleJsonRequest(url, options); } catch (_offlineError) { /* Unknown reads keep their server response. */ }
+    }
     if (!(response.headers.get('content-type') || '').includes('application/json')) {
         throw new Error(response.redirected ? 'انتهت الجلسة. حدّث الصفحة ثم سجّل الدخول مجددًا.' : 'تعذر الاتصال بالخادم. حاول مرة أخرى.');
     }

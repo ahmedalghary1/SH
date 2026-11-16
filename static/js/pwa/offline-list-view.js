@@ -565,8 +565,9 @@ function renderDriverActions(queue) {
 }
 
 async function renderOfflineRecords() {
+    if (document.querySelector('[data-local-data-view]')) return;
     if (window.location.pathname === '/inventory/stock/') {
-        if (!navigator.onLine) await renderLocalStock();
+        if (!navigator.onLine || document.querySelector('[data-pwa-local]')) await renderLocalStock();
         else if (stockTableSnapshot) {
             stockTableSnapshot.body.replaceChildren(...stockTableSnapshot.rows);
             stockTableSnapshot = null;
@@ -601,7 +602,7 @@ async function renderLocalStock() {
     const [stock, variants, warehouses] = await Promise.all([
         getAll(STORE_NAMES.stock), getAll(STORE_NAMES.productVariants), getAll(STORE_NAMES.warehouses),
     ]);
-    if (navigator.onLine || document.querySelector('.stock-table-wrap tbody') !== tbody) return;
+    if ((navigator.onLine && !document.querySelector('[data-pwa-local]')) || document.querySelector('.stock-table-wrap tbody') !== tbody) return;
     const variantById = new Map(variants.map(row => [String(row.server_id || row.id), row]));
     const warehouseById = new Map(warehouses.map(row => [String(row.server_id || row.id), row]));
     const params = new URLSearchParams(window.location.search);

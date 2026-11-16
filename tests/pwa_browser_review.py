@@ -262,7 +262,7 @@ def review_representative(browser, base):
     page.on('pageerror', lambda error: errors.append(str(error)))
     page.goto(base + '/orders/create/', wait_until='networkidle')
     wait_for(page, 'window.SHOffline && window.SHSync')
-    page.evaluate("async () => { window.db=await import('/static/js/pwa/db.js'); await window.SHSync.bootstrapNow(); }")
+    page.evaluate("async () => { window.db=await import('/static/js/pwa/db.js'); }")
     wait_for(page, "async () => !!await db.getMetadata('last_bootstrap_at')")
     wait_for(page, "async () => !!await db.getMetadata('offline_ready')")
     warehouse = Warehouse.objects.get(assigned_user=rep, warehouse_type='representative')
@@ -399,6 +399,53 @@ def review_representative(browser, base):
     page.wait_for_selector('[data-offline-balance]')
     assert page.locator('[data-offline-balance]').get_attribute('data-offline-balance') == f'{expected_balance:.2f}'
     print('PASS: cold offline restart, workspace navigation, real receipt submit, offline statement/search and synchronized balance', flush=True)
+    # All screens below must have been prepared automatically, without visiting
+    # the quote form or any order detail while online.
+    page.goto(base + '/orders/create/?document=quote', wait_until='domcontentloaded')
+    wait_for(page, 'window.SHOffline && window.SHSync')
+    quote = page.evaluate('''async (f) => {
+        const db=await import('/static/js/pwa/db.js');
+        await db.setMetadata('last_bootstrap_at', new Date(Date.now()-90*86400000).toISOString());
+        const form=document.querySelector('#order-form');
+        form.elements.customer.value=f.customer;
+        form.elements.warehouse.value=f.warehouse;
+        form.elements.payment_method.value='credit';
+        form.elements.items_json.value=JSON.stringify([{variant_id:f.variant,warehouse_id:f.warehouse,quantity:2,unit_price:'30'}]);
+        if (form.elements.document_type.value !== 'quote') throw new Error('Wrong cached quote form');
+        const before=(await db.stockForVariant(f.variant))[0].quantity;
+        await SHOffline.queueFormSubmission(form, form.querySelector('[name="action"][value="confirm"]'));
+        return {before, after:(await db.stockForVariant(f.variant))[0].quantity};
+    }''', dict(customer=customer.pk, warehouse=warehouse.pk, variant=existing.pk))
+    assert quote['before'] == quote['after'], quote
+    page.close()
+    page=context.new_page()
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.on('console', lambda message: print('BROWSER', message.type, message.text, flush=True) if message.type in {'error','warning'} else None)
+    page.goto(base + '/orders/quotes/?q=quote', wait_until='domcontentloaded')
+    page.wait_for_selector('[data-local-data-view]')
+    assert 'قيد المزامنة' in page.locator('[data-page-content]').inner_text()
+    existing_order=Order.objects.filter(created_by=rep,document_type='sale').first()
+    page.goto(base + f'/orders/{existing_order.pk}/', wait_until='domcontentloaded')
+    page.wait_for_selector('[data-local-data-view]')
+    assert existing_order.order_number in page.locator('h1').inner_text()
+    from django.contrib.sessions.models import Session
+    Session.objects.filter(session_key=client.cookies['sessionid'].value).delete()
+    context.set_offline(False)
+    wait_for(page,'navigator.onLine')
+    page.goto(base + '/orders/create/', wait_until='domcontentloaded')
+    page.wait_for_selector('#order-form')
+    assert '/accounts/login/' not in page.url
+    found=page.evaluate("async () => (await SHHttp.json('/orders/ajax/search-products/?q=PWA-TEST')).data")
+    assert found, found
+    assert page.evaluate("async () => (await (await import('/static/js/pwa/db.js')).getAll('sync_queue')).length") == 1
+    client.force_login(rep)
+    context.add_cookies([dict(name='sessionid',value=client.cookies['sessionid'].value,url=base)])
+    page.evaluate('window.SHSync.processQueue()')
+    wait_for(page,"async () => {await SHSync.processQueue(); return !(await (await import('/static/js/pwa/db.js')).getAll('sync_queue')).length;}")
+    assert Order.objects.filter(created_by=rep,document_type='quote').count() == 1
+    assert Stock.objects.get(warehouse=warehouse,variant=existing).quantity == quote['before']
+    assert build_customer_statement(customer)['current_balance'] == expected_balance
+    print('PASS: automatic preparation, 90-day-old snapshot, unseen local details/filters, offline quote, expired session, reauthentication and exactly-once quote sync without stock/cash effects',flush=True)
     assert not errors, errors
     context.close()
     print('PASS: representative new offline product, existing product negative sale, ordered dependency/retry and purchase settlement',flush=True)

@@ -1,11 +1,16 @@
 // Release all shell assets together; private pages require a verified scope.
-const CACHE_VERSION = "sh-pwa-v2026-11-16-table-navigation-01";
+const CACHE_VERSION = "sh-pwa-v2026-11-16-offline-durable-01";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
-const PAGE_PREFIX = `${CACHE_VERSION}-pages-`;
+const PAGE_PREFIX = 'sh-pwa-pages-v2-';
 const META_CACHE = "sh-pwa-identity-v1";
 const META_URL = "/__pwa_identity__";
 const OFFLINE_URL = "/offline/";
 const MAX_PAGES = 100;
+const PINNED_PATHS = new Set(['/', '/orders/', '/orders/quotes/', '/orders/create/', '/invoices/',
+  '/products/', '/products/create/', '/products/representative/create/', '/inventory/stock/',
+  '/customers/', '/customers/list/', '/finance/statements/customer/', '/finance/transactions/collection/']);
+const FILTERABLE_PATHS = new Set(['/orders/', '/orders/quotes/', '/invoices/', '/products/', '/customers/',
+  '/customers/list/', '/inventory/stock/']);
 const PREFETCH_FRESH_MS = 5 * 60 * 1000;
 const CORE_ASSETS = [
   OFFLINE_URL, "/manifest.json", "/static/css/main.css", "/static/js/main.js",
@@ -18,6 +23,7 @@ const CORE_ASSETS = [
   "/static/js/pwa/identity.js", "/static/js/pwa/db.js", "/static/js/pwa/sync-queue.js",
   "/static/js/pwa/sync-engine.js", "/static/js/pwa/offline-forms.js", "/static/js/pwa/offline-list-view.js",
   "/static/js/pwa/queue-view.js", "/static/js/bulk-transfer.js",
+  "/static/js/pwa/local-pages.js",
   "/static/images/sh-family-Logo.png", "/static/fonts/cairo/Cairo-400.ttf",
   "/static/fonts/cairo/Cairo-600.ttf", "/static/fonts/cairo/Cairo-700.ttf",
   "/static/icons/icon-192.png", "/static/icons/icon-512.png",
@@ -82,7 +88,7 @@ async function storeResponse(request, response, scope) {
   try {
     await cache.put(new Request(url.href), response.clone());
     if (name.startsWith(PAGE_PREFIX)) {
-      const keys = await cache.keys();
+      const keys = (await cache.keys()).filter(key => !PINNED_PATHS.has(new URL(key.url).pathname));
       await Promise.all(keys.slice(0, Math.max(0, keys.length - MAX_PAGES)).map((key) => cache.delete(key)));
     }
   } catch { /* A cache/quota error must never fail a successful network GET. */ }
@@ -101,11 +107,27 @@ async function cachedPage(request, clientId) {
   if (!scope || (clientScopes.has(clientId) && clientScopes.get(clientId) !== scope)) return null;
   const cache = await caches.open(`${PAGE_PREFIX}${scope}`);
   const exact = await cache.match(new Request(request.url), { ignoreVary: true });
-  if (exact) return exact;
+  const local = async response => {
+    if (!response) return null;
+    const headers = new Headers(response.headers);
+    headers.delete('Content-Length');
+    headers.delete('Content-Encoding');
+    headers.set('X-PWA-Local', '1');
+    // The renderer must know a cache was used even when the OS reports online.
+    const html = (await response.text()).replace('data-page-content', 'data-pwa-local="1" data-page-content');
+    return new Response(html, {status: 200, headers});
+  };
+  if (exact) return local(exact);
   // The customer is selected from the authorized local snapshot on this screen.
   const url = sameOriginUrl(request);
-  if (url?.pathname === '/finance/statements/customer/') {
-    return cache.match(new Request(new URL(url.pathname, self.location.origin)), { ignoreVary: true });
+  if (url?.pathname === '/finance/statements/customer/' || FILTERABLE_PATHS.has(url?.pathname)) {
+    return local(await cache.match(new Request(new URL(url.pathname, self.location.origin)), { ignoreVary: true }));
+  }
+  const metadata = await caches.open(META_CACHE);
+  const manifest = await metadata.match(`/__pwa_details__/${scope}`);
+  const details = await manifest?.json().catch(() => []);
+  if (details?.includes(url?.pathname)) {
+    return local(await cache.match(new Request(new URL('/', self.location.origin)), {ignoreVary:true}));
   }
   return null;
 }
@@ -127,7 +149,9 @@ async function networkNavigation(request, event) {
       if (event.resultingClientId) clientScopes.set(event.resultingClientId, scope);
       await storeResponse(request, response, scope);
     } else if (response.redirected && sameOriginUrl(response.url) && isAuthUrl(sameOriginUrl(response.url))) {
-      await clearScope();
+      // An expired session must not erase the working offline installation.
+      // Explicit login/logout still clear the active scope above.
+      return (await cachedPage(request, event.clientId)) || response;
     }
     if ([502, 503, 504].includes(response.status)) {
       return (await cachedPage(request, event.clientId)) || response;
@@ -167,7 +191,11 @@ async function cacheUrls(urls, scope) {
         }
         const request = new Request(url.href, { credentials: "same-origin", cache: "no-cache",
           headers: !isPublicAsset(url) ? { "X-PWA-Scope": scope } : {} });
-        const response = await fetch(request);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 20000);
+        let response;
+        try { response = await fetch(request, {signal: controller.signal}); }
+        finally { clearTimeout(timer); }
         if (!canStore(response, url, scope)) {
           result.failed.push(url.pathname + url.search);
           continue;
@@ -195,8 +223,22 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
+    // Preserve verified private pages across releases, including an update
+    // installed just before a long loss of connectivity.
+    for (const key of keys) {
+      const match = key.match(/-pages-(u\d+-b(?:\d+|all)-r[a-z_]+-s[01])$/);
+      if (!match || key.startsWith(PAGE_PREFIX)) continue;
+      const old = await caches.open(key);
+      const target = await caches.open(`${PAGE_PREFIX}${match[1]}`);
+      for (const request of await old.keys()) {
+        const response = await old.match(request, {ignoreVary:true});
+        if (canStore(response, sameOriginUrl(request), match[1]) && !await target.match(request, {ignoreVary:true})) {
+          await target.put(request, response);
+        }
+      }
+    }
     await Promise.all(keys.filter((key) => key.startsWith("sh-pwa-") && key !== META_CACHE
-      && !key.startsWith(CACHE_VERSION)).map((key) => caches.delete(key)));
+      && !key.startsWith(CACHE_VERSION) && !key.startsWith(PAGE_PREFIX)).map((key) => caches.delete(key)));
     await self.clients.claim();
   })());
 });
@@ -222,6 +264,10 @@ self.addEventListener("message", (event) => {
   }
   if (message.type === "CACHE_URLS" && validScope(message.scope)) {
     event.waitUntil((async () => {
+      if (Array.isArray(message.details)) {
+        const metadata = await caches.open(META_CACHE);
+        await metadata.put(`/__pwa_details__/${message.scope}`, new Response(JSON.stringify(message.details)));
+      }
       const assets = await cacheUrls(CORE_ASSETS, null);
       const pages = await cacheUrls(Array.isArray(message.urls) ? message.urls.slice(0, MAX_PAGES) : [], message.scope);
       event.ports?.[0]?.postMessage({ cached: pages.cached, failed: [...assets.failed, ...pages.failed] });

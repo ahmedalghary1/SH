@@ -37,78 +37,12 @@ const DEFAULT_ENTITY_TYPES = {
     purchases: "purchase",
 };
 
-const APP_SHELL_URLS = [
-    "/",
-    "/products/",
-    "/products/create/",
-    "/products/representative/create/",
-    "/products/categories/",
-    "/products/categories/create/",
-    "/products/sizes/",
-    "/products/sizes/create/",
-    "/products/colors/",
-    "/products/colors/create/",
-    "/products/variants/create/",
-    "/products/bulk-price-update/",
-    "/inventory/stock/",
-    "/inventory/movements/",
-    "/inventory/movements/in/",
-    "/inventory/movements/out/",
-    "/inventory/movements/transfer/",
-    "/inventory/movements/representative-issue/",
-    "/inventory/movements/representative-return/",
-    "/inventory/movements/adjustment/",
-    "/inventory/warehouses/",
-    "/inventory/warehouses/create/",
-    "/customers/",
-    "/customers/simple/create/",
-    "/customers/list/",
-    "/customers/create/",
-    "/orders/create/",
-    "/orders/",
-    "/orders/quotes/",
-    "/invoices/",
-    "/finance/cash/",
-    "/finance/shift/",
-    "/finance/accounts/",
-    "/finance/accounts/create/",
-    "/finance/transactions/",
-    "/finance/transactions/?type=customer_payment",
-    "/finance/transactions/?type=expense",
-    "/finance/transactions/expense/",
-    "/finance/transactions/collection/",
-    "/finance/statements/customer/",
-    "/finance/transactions/supplier-payment/",
-    "/finance/transactions/transfer/",
-    "/returns/",
-    "/returns/simple/",
-    "/returns/exchange/",
-    "/returns/create/",
-    "/sales-reps/",
-    "/sales-reps/assignments/",
-    "/sales-reps/assign/",
-    "/sales-reps/return-stock/",
-    "/sales-reps/record-sale/",
-    "/sales-reps/collection/",
-    "/sales-reps/handover/",
-    "/sales-reps/statement/",
-    "/purchases/suppliers/simple/",
-    "/purchases/suppliers/simple/create/",
-    "/purchases/suppliers/",
-    "/purchases/suppliers/create/",
-    "/purchases/suppliers/raw-purchase/",
-    "/purchases/orders/",
-    "/purchases/orders/create/",
-    "/purchases/orders/return/",
-    "/reports/",
-    "/settings/",
-];
-
 let syncInProgress = false;
 let bootstrapInProgress = false;
 let csrfToken = null;
 let shellCached = false;
 let lastBootstrapAt = 0;
+let shellPreparation = null;
 
 function getCookie(name) {
     let cookieValue = null;
@@ -147,15 +81,18 @@ function uniqueUrls(urls) {
 }
 
 export async function cacheAppShell(extraUrls = []) {
+    if (shellPreparation) return shellPreparation;
+    shellPreparation = prepareAppShell(extraUrls).finally(() => { shellPreparation = null; });
+    return shellPreparation;
+}
+
+async function prepareAppShell(extraUrls = []) {
     const scope = getOfflineScope();
     if (!("serviceWorker" in navigator) || !scope || !navigator.onLine) return;
-    const representativeUrls = new Set([
-        '/', '/products/representative/create/', '/inventory/stock/', '/orders/create/',
-        '/orders/', '/invoices/', '/finance/transactions/collection/', '/finance/statements/customer/',
-    ]);
+    const authorizedPages = await getMetadata('offline_pages');
+    if (!authorizedPages?.length) return;
     const urls = uniqueUrls([
-        ...(shellCached ? [] : APP_SHELL_URLS.filter((url) =>
-            document.body.dataset.pwaRole === 'sales' ? representativeUrls.has(url) : !["/reports/", "/settings/"].includes(url))),
+        ...authorizedPages,
         `${window.location.pathname}${window.location.search}`,
         ...extraUrls,
     ]);
@@ -163,27 +100,32 @@ export async function cacheAppShell(extraUrls = []) {
 
     try {
         // Don't wait forever on a browser where worker installation is disabled.
-        const registration = await navigator.serviceWorker.getRegistration("/");
+        const registration = await navigator.serviceWorker.ready;
         if (!registration) return;
         const worker = navigator.serviceWorker.controller || registration.active || registration.waiting || registration.installing;
         worker?.postMessage({ type: "PWA_SCOPE", scope });
         if (worker) {
+            document.querySelectorAll('[data-offline-ready]').forEach(node => { node.textContent = 'جارٍ تجهيز الصفحات والبيانات للعمل دون اتصال'; });
+            const details = await getMetadata('offline_details') || [];
             const result = await new Promise((resolve) => {
                 const channel = new MessageChannel();
-                const timeout = window.setTimeout(() => { channel.port1.close(); resolve(null); }, 30000);
+                const timeout = window.setTimeout(() => { channel.port1.close(); resolve(null); }, 180000);
                 channel.port1.onmessage = (event) => {
                     window.clearTimeout(timeout);
                     channel.port1.close();
                     resolve(event.data);
                 };
-                worker.postMessage({ type: "CACHE_URLS", urls, scope }, [channel.port2]);
+                worker.postMessage({ type: "CACHE_URLS", urls, scope,
+                    details }, [channel.port2]);
             });
             shellCached = Boolean(result && !result.failed.length);
-            if (document.body.dataset.pwaRole === 'sales') {
+            {
                 const ready = shellCached && Boolean(await getMetadata('last_bootstrap_at'));
                 await setMetadata('offline_ready', ready);
+                await setMetadata('offline_failed_pages', result?.failed || []);
                 document.querySelectorAll('[data-offline-ready]').forEach(node => {
                     node.textContent = ready ? 'جاهز للعمل دون اتصال' : 'تجهيز الأوفلاين غير مكتمل';
+                    node.title = (result?.failed || []).join('\n');
                 });
                 syncStatusEvent({ state: ready ? 'offline_ready' : 'offline_not_ready', failed: result?.failed || [] });
             }
@@ -207,7 +149,7 @@ async function jsonFetch(url, options = {}) {
     const csrf = csrfToken || getCookie("csrftoken");
     if (csrf) headers["X-CSRFToken"] = csrf;
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    const timeout = window.setTimeout(() => controller.abort(), url.includes('bootstrap') ? 60000 : 15000);
     let response;
     try { response = await fetch(url, {
         credentials: "same-origin",
@@ -385,8 +327,13 @@ export async function bootstrapNow() {
 }
 
 async function startOnlineWork() {
+    if (!await getMetadata('storage_persistence_requested') && navigator.storage?.persist) {
+        await setMetadata('storage_persistence_requested', true);
+        await setMetadata('storage_persistent', await navigator.storage.persist().catch(() => false));
+    }
     await processQueue();
     if (Date.now() - lastBootstrapAt > 60000) await bootstrapNow();
+    await cacheAppShell();
 }
 
 window.addEventListener("online", startOnlineWork);
@@ -420,3 +367,11 @@ if (!navigator.onLine) {
         node.textContent = ready ? 'جاهز للعمل دون اتصال' : 'افتح التطبيق بالإنترنت لإكمال التجهيز';
     }));
 }
+
+window.addEventListener('sh-sync-status', event => {
+    if (event.detail.state === 'authentication_required') {
+        document.querySelectorAll('[data-offline-ready]').forEach(node => {
+            node.textContent = 'العمل المحلي متاح؛ سجّل الدخول بالحساب نفسه لإتمام المزامنة';
+        });
+    }
+});

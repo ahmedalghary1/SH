@@ -23,7 +23,7 @@ function worker() {
         },
     };
     vm.runInNewContext(source, {
-        URL, Request, Response, Map, Set, Promise, AbortController, setTimeout, clearTimeout, caches,
+        URL, Request, Response, Headers, Map, Set, Promise, AbortController, setTimeout, clearTimeout, caches,
         fetch: (...args) => fetcher(...args),
         self: { location: { origin: 'https://erp.test' }, clients: { claim: async () => {}, matchAll: async () => [] }, addEventListener(type, callback) { handlers[type] = callback; }, skipWaiting: async () => {} },
     });
@@ -121,4 +121,49 @@ test('an unseen customer statement URL uses its generic shell within the verifie
     await w.navigate('/orders/');
     w.fetch(async () => { throw new Error('offline'); });
     assert.equal((await w.navigate('/finance/statements/customer/?customer=123')).status, 503);
+});
+
+test('worker updates retain verified pages from older releases', async () => {
+    const w = worker();
+    const scope = 'u1-b1-rsales-s0';
+    w.fetch(async () => privateResponse(scope));
+    await w.navigate('/');
+    w.stores.set(`sh-pwa-vold-pages-${scope}`, new Map([
+        ['https://erp.test/orders/create/', privateResponse(scope, 'old prepared form')],
+        ['https://erp.test/forbidden/', privateResponse('u9-b1-rsales-s0', 'wrong account')],
+    ]));
+    let done;
+    w.handlers.activate({waitUntil(value) { done = value; }});
+    await done;
+    w.fetch(async () => { throw new Error('long offline'); });
+    assert.equal(await (await w.navigate('/orders/create/')).text(), 'old prepared form');
+    assert.equal((await w.navigate('/forbidden/')).status, 503);
+});
+
+test('an expired session keeps offline work available and explicit logout still clears it', async () => {
+    const w = worker();
+    w.fetch(async () => privateResponse('u1-b1-rsales-s0', 'prepared form'));
+    await w.navigate('/orders/create/');
+    w.fetch(async () => {
+        const response = new Response('login page');
+        Object.defineProperty(response, 'redirected', {value:true});
+        Object.defineProperty(response, 'url', {value:'https://erp.test/accounts/login/'});
+        return response;
+    });
+    const offline = await w.navigate('/orders/create/');
+    assert.equal(await offline.text(), 'prepared form');
+    assert.equal(offline.headers.get('X-PWA-Local'), '1');
+    await w.navigate('/accounts/logout/');
+    w.fetch(async () => { throw new Error('offline'); });
+    assert.equal((await w.navigate('/orders/create/')).status, 503);
+});
+
+test('unseen list filters reuse the local shell without substituting a quote form', async () => {
+    const w = worker();
+    w.fetch(async () => privateResponse('u1-b1-rsales-s0', 'list shell'));
+    await w.navigate('/orders/');
+    await w.navigate('/orders/create/');
+    w.fetch(async () => { throw new Error('offline'); });
+    assert.equal(await (await w.navigate('/orders/?q=new-search&page=99')).text(), 'list shell');
+    assert.equal((await w.navigate('/orders/create/?document=quote')).status, 503);
 });

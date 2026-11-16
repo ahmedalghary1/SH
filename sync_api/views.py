@@ -55,7 +55,7 @@ def _allowed_products_and_variants(user):
 
 
 def _allowed_orders(user):
-    orders = Order.objects.select_related('customer', 'created_by').order_by('-created_at')
+    orders = Order.objects.select_related('customer', 'created_by', 'invoice').prefetch_related('items__variant__product').order_by('-created_at')
     if getattr(user, 'is_superuser', False) or getattr(user, 'is_manager', False) or getattr(user, 'is_director', False):
         return orders
     if getattr(user, 'is_sales', False):
@@ -84,6 +84,7 @@ def _allowed_cash_accounts(user):
 
 
 def _bootstrap_payload(user):
+    from .offline_manifest import offline_pages
     if getattr(user, 'is_sales', False) and not getattr(user, 'is_manager', False):
         from sales_reps.services import get_or_create_sales_rep_warehouse
         get_or_create_sales_rep_warehouse(user)
@@ -119,6 +120,7 @@ def _bootstrap_payload(user):
         'scope': offline_scope(user, get_current_branch_id()),
         'user': user_payload(user),
         'permissions': user_payload(user)['permissions'],
+        'offline_pages': offline_pages(user),
         'company': {
             'name': company.company_name,
             'phone': company.phone or '',
@@ -265,6 +267,8 @@ def browser_bootstrap_view(request):
         return method_not_allowed(['GET'])
     payload = _bootstrap_payload(request.user)
     payload['csrf_token'] = get_token(request)
+    from .offline_manifest import offline_detail_urls
+    payload['offline_details'] = offline_detail_urls(request.user, payload)
     response = JsonResponse(payload)
     response['Cache-Control'] = 'no-store'
     return response

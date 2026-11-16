@@ -355,7 +355,7 @@ async function queueFormSubmission(form, submitter = null) {
     if (document.body.dataset.pwaRole === 'sales' && document.body.dataset.pwaSuperuser !== '1') {
         const allowed = path === '/orders/create/' || path === '/products/representative/create/'
             || path === '/finance/transactions/collection/' || /^\/invoices\/\d+\/payments\/add\/$/.test(path);
-        if (!allowed || (classification.entity_name === 'sales' && (fields.document_type || 'sale') !== 'sale')) {
+        if (!allowed || (classification.entity_name === 'sales' && !['sale', 'quote'].includes(fields.document_type || 'sale'))) {
             throw new Error('صلاحيات المندوب تسمح بإنشاء البيع والقبض والصنف فقط.');
         }
         if (classification.entity_name === 'cash' && (Number(fields.amount) <= 0 || Number(fields.allowed_discount || 0) !== 0)) {
@@ -606,14 +606,23 @@ export async function handleJsonRequest(url, options = {}) {
     throw new Error("No offline handler for this request");
 }
 
-async function serverIsReachable() {
+async function serverIsReachable(form) {
     if (!navigator.onLine) return false;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 3000);
     try {
-        const response = await fetch('/api/sync/ping/', { cache: 'no-store', credentials: 'same-origin', signal: controller.signal });
-        return response.ok && (await response.json()).status === 'ok';
-    } catch { return false; }
+        const response = await fetch('/api/sync/session/', { cache: 'no-store', credentials: 'same-origin', signal: controller.signal });
+        if (!response.ok || response.redirected) return false;
+        const session = await response.json();
+        const { getOfflineScope } = await import('./identity.js');
+        if (session.scope !== getOfflineScope()) {
+            const error = new Error('تغير الحساب أو المعرض. أعد فتح التطبيق بالحساب الصحيح.');
+            error.code = 'scope_changed';
+            throw error;
+        }
+        form.querySelectorAll('[name="csrfmiddlewaretoken"]').forEach(input => { input.value = session.csrf_token; });
+        return true;
+    } catch (error) { if (error.code === 'scope_changed') throw error; return false; }
     finally { window.clearTimeout(timeout); }
 }
 
@@ -627,7 +636,8 @@ async function handleCapturedSubmit(form, submitter = null) {
             // GET can safely choose the local queue; a lost POST response cannot.
             const localProducts = form.id === 'order-form' && parseItemsJson(getField(form, 'items_json')?.value)
                 .some(item => item.product_local_uuid || !/^\d+$/.test(String(item.variant_id || item.variant_server_id || '')));
-            if (!localProducts && await serverIsReachable()) {
+            const pendingOperations = (await getAll(STORE_NAMES.syncQueue)).length > 0;
+            if (!localProducts && !pendingOperations && await serverIsReachable(form)) {
                 if (window.SHWorkspace?.canSubmitForm?.(form, submitter)) {
                     await window.SHWorkspace.submitForm(form, submitter);
                     return;

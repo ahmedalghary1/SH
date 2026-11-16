@@ -536,7 +536,7 @@ export async function importBootstrap(payload, { expectedQueueRevision } = {}) {
         const applySnapshot = () => {
             imported = true;
             const metadata = tx.objectStore(STORE_NAMES.metadata);
-            for (const key of ['user', 'company', 'cash']) {
+            for (const key of ['user', 'company', 'cash', 'offline_pages', 'offline_details']) {
                 if (payload[key]) metadata.put({ key, value: payload[key], updated_at: importedAt });
             }
             metadata.put({ key: 'last_bootstrap_at', value: importedAt, updated_at: importedAt });
