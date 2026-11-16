@@ -39,7 +39,7 @@ class DashboardView(RoleRequiredMixin, TemplateView):
             ]
             kpis = manager_dashboard_kpis()
             context.update(kpis)
-            context['today_gross_profit'] = kpis['gross_profit']
+            context['today_gross_profit'] = kpis['net_profit']
             context['cash_balance'] = sum(account.balance for account in kpis['cash_accounts'])
             context['paid_total'] = kpis['collections_total']
             context['remaining_total'] = kpis['customer_remaining_total']

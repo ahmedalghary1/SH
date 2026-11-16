@@ -28,7 +28,7 @@ def record_raw_material_purchase(*, raw_name, supplier, amount, user, notes=''):
     if notes:
         note = f'{note} - {notes}'
     return record_transaction(
-        transaction_type=PaymentTransaction.TYPE_SUPPLIER_PAYMENT,
+        transaction_type=PaymentTransaction.TYPE_RAW_MATERIAL_PURCHASE,
         direction=PaymentTransaction.DIRECTION_OUT,
         amount=amount,
         cash_account=CashAccount.get_default(),

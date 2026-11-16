@@ -123,6 +123,7 @@ class ExchangeItem(BranchOwnedModel):
     new_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     old_unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     price_difference = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    cost_total = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     notes = models.TextField(blank=True, null=True)
 
     def __str__(self):

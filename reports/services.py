@@ -115,47 +115,42 @@ def sales_report(request):
 
 def profitability_report(request):
     orders = apply_order_filters(
-        Order.objects.exclude(status__in=EXCLUDED_SALES_STATUSES).select_related('customer', 'created_by'),
+        Order.objects.filter(document_type=Order.DOCUMENT_SALE).exclude(status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED]).select_related('customer', 'created_by'),
         request,
     )
-    sales_total = _sum(orders, 'total')
-    gross_profit = _sum(orders, 'gross_profit')
+    from .financials import financial_sections, net_invoice_financials
+    financials = net_invoice_financials(orders)
+    sales_total = financials['total_sales']
+    gross_profit = financials['gross_profit']
     margin = (gross_profit / sales_total * 100) if sales_total else ZERO
     return {
         'title': 'تقرير الأرباح',
         'summary': {
             'total_sales': sales_total,
-            'total_cost': _sum(orders, 'total_cost'),
+            'total_cost': financials['total_cost'],
+            'gross_sales': financials['gross_sales'],
+            'returns_total': financials['returns_total'],
+            'estimated_exchange_lines': financials['estimated_exchange_lines'],
             'total_discounts': _sum(orders, 'discount'),
             'gross_profit': gross_profit,
             'profit_margin': round(margin, 2),
         },
-        'sections': {
-            'profit_by_product': list(OrderItem.objects.filter(order__in=orders).values(
-                'variant__product__name',
-            ).annotate(total=Sum('total'), cost=Sum('cost_total'), profit=Sum('profit_total')).order_by('-profit')[:50]),
-            'profit_by_category': list(OrderItem.objects.filter(order__in=orders).values(
-                'variant__product__category__name',
-            ).annotate(total=Sum('total'), cost=Sum('cost_total'), profit=Sum('profit_total')).order_by('-profit')[:50]),
-            'profit_by_employee': list(orders.values('created_by__username').annotate(
-                total=Sum('total'), cost=Sum('total_cost'), profit=Sum('gross_profit'), orders=Count('id'),
-            ).order_by('-profit')[:50]),
-            'profit_by_customer': list(orders.values('customer__name', 'customer__phone').annotate(
-                total=Sum('total'), cost=Sum('total_cost'), profit=Sum('gross_profit'), orders=Count('id'),
-            ).order_by('-profit')[:50]),
-        },
+        'sections': financial_sections(financials),
     }
 
 
 def net_profit_report(request):
-    orders = apply_order_filters(Order.objects.exclude(status__in=EXCLUDED_SALES_STATUSES), request)
+    orders = apply_order_filters(Order.objects.filter(document_type=Order.DOCUMENT_SALE).exclude(
+        status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED]), request)
     expenses = PaymentTransaction.objects.filter(transaction_type=PaymentTransaction.TYPE_EXPENSE)
     dates = date_range_from_request(request)
     if dates['parsed_from']:
-        expenses = expenses.filter(created_at__date__gte=dates['parsed_from'])
+        expenses = expenses.filter(transaction_date__gte=dates['parsed_from'])
     if dates['parsed_to']:
-        expenses = expenses.filter(created_at__date__lte=dates['parsed_to'])
-    gross_profit = _sum(orders, 'gross_profit')
+        expenses = expenses.filter(transaction_date__lte=dates['parsed_to'])
+    from .financials import net_invoice_financials
+    financials = net_invoice_financials(orders)
+    gross_profit = financials['gross_profit']
     expenses_total = _sum(expenses, 'amount')
     return {
         'title': 'تقرير صافي الربح',
@@ -163,21 +158,22 @@ def net_profit_report(request):
             'gross_profit': gross_profit,
             'expenses': expenses_total,
             'net_profit': gross_profit - expenses_total,
+            'returns_total': financials['returns_total'],
+            'estimated_exchange_lines': financials['estimated_exchange_lines'],
         },
         'rows': list(expenses.select_related('cash_account', 'created_by').values(
-            'created_at', 'amount', 'cash_account__name', 'notes', 'created_by__username',
+            'transaction_date', 'amount', 'cash_account__name', 'notes', 'created_by__username',
         )[:200]),
     }
 
 
 def customer_debt_report():
+    from customers.services import annotate_customer_balances
     valid_order_filter = ~Q(order__status__in=EXCLUDED_SALES_STATUSES)
-    qs = Customer.objects.filter(is_active=True).annotate(
+    qs = annotate_customer_balances(Customer.objects.filter(is_active=True)).annotate(
         purchases=Sum('order__total', filter=valid_order_filter),
-        remaining=Sum('order__remaining_amount', filter=valid_order_filter),
-    ).filter(
-        Q(opening_balance__gt=0) | Q(remaining__gt=0),
-    ).order_by('-remaining')
+        remaining=F('current_balance'),
+    ).filter(current_balance__gt=0).order_by('-current_balance')
     return {
         'title': 'مديونيات العملاء',
         'summary': {'total_debt': qs.aggregate(v=Sum('remaining'))['v'] or ZERO},
@@ -319,6 +315,8 @@ def supplier_dues_report():
 
 
 def manager_dashboard_kpis():
+    from .financials import net_invoice_financials
+    from customers.services import annotate_customer_balances
     today = timezone.localdate()
     month_start = today.replace(day=1)
     valid_orders = Order.objects.exclude(status__in=EXCLUDED_SALES_STATUSES)
@@ -334,18 +332,22 @@ def manager_dashboard_kpis():
         total_cost=Sum('total_cost'),
         discount=Sum('discount'),
     )
-    gross_profit = month_agg['gross_profit'] or ZERO
-    expenses_total = _sum(expenses.filter(created_at__date__gte=month_start), 'amount')
+    month_net = net_invoice_financials(Order.objects.filter(document_type=Order.DOCUMENT_SALE,
+        created_at__date__gte=month_start).exclude(status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED]))
+    gross_profit = month_net['gross_profit']
+    expenses_total = _sum(expenses.filter(transaction_date__gte=month_start), 'amount')
 
     sold_qty = month_order_items.aggregate(v=Sum('quantity'))['v'] or 0
-    returned_qty = SalesReturnItem.objects.filter(sales_return__in=completed_returns).aggregate(v=Sum('quantity'))['v'] or 0
+    returned_qty = SalesReturnItem.objects.filter(sales_return__in=completed_returns,
+        sales_return__created_at__date__gte=month_start).aggregate(v=Sum('quantity'))['v'] or 0
     return_rate = (Decimal(returned_qty) / Decimal(sold_qty) * 100) if sold_qty else ZERO
 
     today_agg = today_orders.aggregate(sales=Sum('total'), count=Count('id'))
     month_agg_count = month_orders.aggregate(count=Count('id'))
 
-    collections_in = PaymentTransaction.objects.filter(direction=PaymentTransaction.DIRECTION_IN)
-    today_collections = _sum(collections_in.filter(created_at__date=today), 'amount')
+    collections_in = PaymentTransaction.objects.filter(direction=PaymentTransaction.DIRECTION_IN, affects_cash=True,
+        transaction_type__in=[PaymentTransaction.TYPE_CUSTOMER_PAYMENT, PaymentTransaction.TYPE_SALES_REP_COLLECTION])
+    today_collections = _sum(collections_in.filter(transaction_date=today), 'amount')
     today_expenses = _sum(expenses.filter(transaction_date=today), 'amount')
 
     return {
@@ -353,13 +355,16 @@ def manager_dashboard_kpis():
         'month_sales': month_agg['total'] or ZERO,
         'today_orders': today_agg['count'],
         'month_orders': month_agg_count['count'],
-        'sales_cost_total': month_agg['total_cost'] or ZERO,
+        'sales_cost_total': month_net['total_cost'],
+        'net_sales_total': month_net['total_sales'],
+        'returns_total': month_net['returns_total'],
         'gross_profit': gross_profit,
         'expenses_total': expenses_total,
         'today_expenses': today_expenses,
         'net_profit': gross_profit - expenses_total,
         'collections_total': _sum(collections_in, 'amount'),
-        'customer_remaining_total': _sum(valid_orders, 'remaining_amount'),
+        'customer_remaining_total': _sum(annotate_customer_balances(Customer.objects.filter(is_active=True)).filter(
+            current_balance__gt=0), 'current_balance'),
         'supplier_dues_total': _sum(Supplier.objects.filter(is_active=True), 'current_balance'),
         'discount_total': month_agg['discount'] or ZERO,
         'returns_rate': round(return_rate, 2),

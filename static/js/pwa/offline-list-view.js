@@ -472,9 +472,12 @@ function renderPurchases(queue) {
                     return [];
                 }
             })();
-            const total = items.length
+            const subtotal = items.length
                 ? items.reduce((sum, row) => sum + (Number(row.quantity || 0) * Number(row.unit_cost || 0)), 0)
                 : Number(data.quantity || 0) * Number(data.unit_cost || 0);
+            const rawDiscount = data.discount_type === 'percent'
+                ? subtotal * Number(data.discount_value || 0) / 100 : Number(data.discount_value || 0);
+            const total = Math.max(0, subtotal - Math.round((rawDiscount + Number.EPSILON) * 100) / 100);
             return makeRow(item, [
                 td(localRef(item, "شراء")),
                 td(data.new_supplier_name || data.supplier_name || data.supplier || "مورد محلي"),

@@ -50,3 +50,19 @@ test('local invoice totals include item discounts, invoice discounts and remaini
     assert.equal(totals.total, '152.00');
     assert.equal(totals.remaining_amount, '102.00');
 });
+
+test('offline invoice rounds each discount in cents exactly like the server', () => {
+    const dbSource = fs.readFileSync('static/js/pwa/db.js', 'utf8');
+    const context = vm.createContext({});
+    vm.runInContext(dbSource.match(/export function calculateOrderTotals\([^]*?\n\}/)[0].replace('export ', ''), context);
+    const result = context.calculateOrderTotals({ items: [
+        { quantity: 1, unit_price: '1.01', discount_percentage: '50' },
+        { quantity: 1, unit_price: '1.01', discount_percentage: '50' },
+    ] });
+    assert.equal(result.total, '1.00');
+    assert.equal(result.discount, '1.02');
+    assert.equal(context.calculateOrderTotals({ items: [{ quantity: 100, unit_price: '9999999.99' }],
+        discount_percentage: '33.33' }).total, '666699999.33');
+    assert.equal(context.calculateOrderTotals({ items: [{ quantity: 1, unit_price: 100 }],
+        discount_amount: 0, discount: 10, discount_percentage: 10 }).total, '90.00');
+});

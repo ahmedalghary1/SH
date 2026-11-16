@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.db.models.deletion import ProtectedError, RestrictedError
 from django.shortcuts import redirect
 from django.views.generic import DeleteView
@@ -26,7 +27,8 @@ class ManagerDeleteView(ManagerRequiredMixin, DeleteView):
     def form_valid(self, form):
         success_url = self.get_success_url()
         try:
-            response = super().form_valid(form)
+            with transaction.atomic():
+                response = super().form_valid(form)
         except (ProtectedError, RestrictedError):
             messages.error(self.request, self.protected_message)
             return redirect(success_url)

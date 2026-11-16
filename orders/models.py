@@ -81,6 +81,9 @@ class Order(BranchOwnedModel):
     subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     discount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    # Preserve the fixed input separately from the computed combined discount.
+    # Null denotes a legacy invoice whose original input was not retained.
+    discount_input_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)])
     discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0), MaxValueValidator(100)])
     discount_reason = models.TextField(blank=True, null=True)
     discount_approved_by = models.ForeignKey(

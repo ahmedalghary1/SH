@@ -448,6 +448,9 @@ LABEL_TRANSLATIONS = {
     'profit_margin': 'هامش الربح',
     'expenses': 'المصروفات',
     'net_profit': 'صافي الربح',
+    'gross_sales': 'إجمالي البيع قبل المرتجعات',
+    'returns_total': 'مرتجعات فواتير الفترة المكتملة',
+    'estimated_exchange_lines': 'استبدالات ذات تكلفة تقديرية',
     'total_debt': 'إجمالي المديونية',
     'days': 'عدد الأيام',
     'customers': 'عدد العملاء',
@@ -505,8 +508,8 @@ VALUE_TRANSLATIONS = {
 
 REPORT_DESCRIPTIONS = {
     'تقرير المبيعات': 'يعرض مبيعات المحل أو مبيعاتك خلال فترة محددة.',
-    'تقرير الأرباح': 'يوضح الربح والتكلفة وهامش المكسب للمدير.',
-    'تقرير صافي الربح': 'يعرض صافي الربح بعد خصم المصروفات.',
+    'تقرير الأرباح': 'صافي فواتير الفترة بعد مرتجعاتها المكتملة، بما فيها الاستبدال، مع تكلفة البضاعة التي عادت للمخزون.',
+    'تقرير صافي الربح': 'ربح فواتير الفترة بعد مرتجعاتها المكتملة، مطروحًا منه المصروفات حسب تاريخ الحركة.',
     'مديونيات العملاء': 'يوضح العملاء الذين لديهم مبالغ مستحقة.',
     'تقرير العملاء غير النشطين': 'يعرض العملاء الذين لم يشتروا منذ فترة.',
     'تقرير الخصومات': 'يتابع الخصومات الممنوحة وتأثيرها على المبيعات.',
@@ -546,8 +549,8 @@ class DailySalesReportView(RoleRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         today = timezone.localdate()
         orders = Order.objects.filter(created_at__date=today).exclude(status__in=services.EXCLUDED_SALES_STATUSES)
-        returns = SalesReturn.objects.filter(created_at__date=today)
-        transactions = PaymentTransaction.objects.filter(transaction_date=today)
+        returns = SalesReturn.objects.filter(created_at__date=today, status=SalesReturn.STATUS_COMPLETED)
+        transactions = PaymentTransaction.objects.filter(transaction_date=today, affects_cash=True)
         if getattr(self.request.user, 'role', None) == 'sales' and not self.request.user.is_superuser:
             orders = orders.filter(created_by=self.request.user)
             returns = returns.filter(created_by=self.request.user)
@@ -571,7 +574,7 @@ class DailySalesReportView(RoleRequiredMixin, TemplateView):
             direction=PaymentTransaction.DIRECTION_OUT,
         ).aggregate(v=Sum('amount'))['v'] or 0
         context['supplier_payments_total'] = transactions.filter(
-            transaction_type=PaymentTransaction.TYPE_SUPPLIER_PAYMENT,
+            transaction_type__in=[PaymentTransaction.TYPE_SUPPLIER_PAYMENT, PaymentTransaction.TYPE_RAW_MATERIAL_PURCHASE],
             direction=PaymentTransaction.DIRECTION_OUT,
         ).aggregate(v=Sum('amount'))['v'] or 0
         context['net_cash'] = (
@@ -596,22 +599,14 @@ class MonthlySalesReportView(ManagerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        orders = Order.objects.exclude(status__in=services.EXCLUDED_SALES_STATUSES)
+        from .financials import financial_periods, net_invoice_financials
+        orders = Order.objects.filter(document_type=Order.DOCUMENT_SALE).exclude(status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED])
+        data = net_invoice_financials(orders)
         context['can_view_costs'] = can_view_costs(self.request.user)
-        if can_view_costs(self.request.user):
-            context['months'] = orders.annotate(month=TruncMonth('created_at')).values('month').annotate(
-                total=Sum('total'),
-                cost=Sum('total_cost'),
-                profit=Sum('gross_profit'),
-                count=Count('id'),
-            ).order_by('-month')
-        else:
-            context['months'] = orders.annotate(month=TruncMonth('created_at')).values('month').annotate(
-                total=Sum('total'),
-                count=Count('id'),
-            ).order_by('-month')
-        context['b2b_total'] = orders.filter(order_type=Order.TYPE_B2B).aggregate(v=Sum('total'))['v'] or 0
-        context['b2c_total'] = orders.filter(order_type=Order.TYPE_B2C).aggregate(v=Sum('total'))['v'] or 0
+        context['months'] = financial_periods(data, 'month')
+        context['estimated_exchange_lines'] = data['estimated_exchange_lines']
+        context['b2b_total'] = sum((row['total'] for row in data['orders'] if row['order'].order_type == Order.TYPE_B2B), 0)
+        context['b2c_total'] = sum((row['total'] for row in data['orders'] if row['order'].order_type == Order.TYPE_B2C), 0)
         return context
 
 
@@ -672,24 +667,12 @@ class YearlySalesReportView(ManagerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        orders = Order.objects.exclude(status__in=services.EXCLUDED_SALES_STATUSES)
+        from .financials import financial_periods, net_invoice_financials
+        orders = Order.objects.filter(document_type=Order.DOCUMENT_SALE).exclude(status__in=[Order.STATUS_DRAFT, Order.STATUS_CANCELLED])
+        data = net_invoice_financials(orders)
         context['can_view_costs'] = can_view_costs(self.request.user)
-        if can_view_costs(self.request.user):
-            context['years'] = orders.annotate(year=ExtractYear('created_at')).values('year').annotate(
-                total=Sum('total'),
-                cost=Sum('total_cost'),
-                profit=Sum('gross_profit'),
-                paid=Sum('paid_amount'),
-                remaining=Sum('remaining_amount'),
-                count=Count('id'),
-            ).order_by('-year')
-        else:
-            context['years'] = orders.annotate(year=ExtractYear('created_at')).values('year').annotate(
-                total=Sum('total'),
-                paid=Sum('paid_amount'),
-                remaining=Sum('remaining_amount'),
-                count=Count('id'),
-            ).order_by('-year')
+        context['years'] = financial_periods(data, 'year')
+        context['estimated_exchange_lines'] = data['estimated_exchange_lines']
         return context
 
 

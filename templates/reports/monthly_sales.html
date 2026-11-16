@@ -2,6 +2,7 @@
 {% block title %}تقرير المبيعات الشهرية{% endblock %}
 {% block content %}
 <div class="page-head"><h1>تقرير المبيعات الشهرية</h1></div>
+<p>صافي فواتير كل شهر بعد مرتجعاتها المكتملة. {% if estimated_exchange_lines %}تشمل بعض الاستبدالات تكلفة تقديرية.{% endif %}</p>
 {% include 'reports/report_links.html' %}
 <div class="stats-grid">
     <div class="stat-card"><span>مبيعات الجملة</span><strong>{{ b2b_total }}</strong></div>

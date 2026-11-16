@@ -115,6 +115,8 @@ class PaymentTransaction(BranchOwnedModel):
     branch_relations = ('cash_account', 'related_order', 'related_customer', 'related_supplier')
     TYPE_CUSTOMER_PAYMENT = 'customer_payment'
     TYPE_SUPPLIER_PAYMENT = 'supplier_payment'
+    TYPE_SUPPLIER_RETURN = 'supplier_return'
+    TYPE_RAW_MATERIAL_PURCHASE = 'raw_material_purchase'
     TYPE_EXPENSE = 'expense'
     TYPE_REFUND = 'refund'
     TYPE_SALES_REP_COLLECTION = 'sales_rep_collection'
@@ -125,6 +127,8 @@ class PaymentTransaction(BranchOwnedModel):
     TRANSACTION_TYPE_CHOICES = [
         (TYPE_CUSTOMER_PAYMENT, 'قبض'),
         (TYPE_SUPPLIER_PAYMENT, 'دفع لمورد'),
+        (TYPE_SUPPLIER_RETURN, 'مرتجع شراء للمورد'),
+        (TYPE_RAW_MATERIAL_PURCHASE, 'شراء خام نقدي'),
         (TYPE_EXPENSE, 'مصروف'),
         (TYPE_REFUND, 'استرداد للعميل'),
         (TYPE_SALES_REP_COLLECTION, 'تحصيل مندوب'),

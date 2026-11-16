@@ -115,7 +115,10 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
         current_balance = scoped_accounts.aggregate(v=Sum('balance'))['v'] or 0
         base_total_in = period_transactions.filter(direction=PaymentTransaction.DIRECTION_IN).aggregate(v=Sum('amount'))['v'] or 0
         base_total_out = period_transactions.filter(direction=PaymentTransaction.DIRECTION_OUT).aggregate(v=Sum('amount'))['v'] or 0
-        opening_balance = current_balance - (base_total_in - base_total_out)
+        later = transactions_base.filter(transaction_date__gt=date_to)
+        later_in = later.filter(direction=PaymentTransaction.DIRECTION_IN).aggregate(v=Sum('amount'))['v'] or 0
+        later_out = later.filter(direction=PaymentTransaction.DIRECTION_OUT).aggregate(v=Sum('amount'))['v'] or 0
+        opening_balance = current_balance - (base_total_in - base_total_out) - (later_in - later_out)
 
         cash_sales = transactions.filter(
             transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT,
@@ -128,7 +131,7 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
         ).aggregate(v=Sum('amount'))['v'] or 0
         
         supplier_payments = transactions.filter(
-            transaction_type=PaymentTransaction.TYPE_SUPPLIER_PAYMENT
+            transaction_type__in=[PaymentTransaction.TYPE_SUPPLIER_PAYMENT, PaymentTransaction.TYPE_RAW_MATERIAL_PURCHASE]
         ).aggregate(v=Sum('amount'))['v'] or 0
         
         expenses = transactions.filter(
@@ -546,10 +549,6 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
                     notes=form.cleaned_data.get('notes') or '',
                     transaction_date=form.cleaned_data.get('transaction_date'),
                 )
-                order.refresh_from_db(fields=['remaining_amount', 'payment_status'])
-                order.remaining_amount = max(order.remaining_amount - allowed_discount, 0)
-                order.payment_status = order.PAYMENT_PAID if order.remaining_amount == 0 else order.PAYMENT_PARTIAL
-                order.save(update_fields=['remaining_amount', 'payment_status'])
         else:
             amount = form.cleaned_data['amount']
             if amount < 0:

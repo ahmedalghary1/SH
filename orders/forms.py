@@ -49,6 +49,8 @@ class OrderForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if not self.is_bound and self.instance and self.instance.pk:
             self.initial['invoice_datetime'] = timezone.localtime(self.instance.created_at)
+            from .services import order_discount_input
+            self.initial['discount_amount'] = order_discount_input(self.instance)
         self.fields['customer'].required = False
         self.fields['customer'].queryset = visible_customers_for_user(user, self.fields['customer'].queryset)
         self.fields['warehouse'].required = False

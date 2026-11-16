@@ -57,10 +57,45 @@ def _return_cash_account(sales_return, cash_account=None):
     return cash_account
 
 
+def _line_refund_total(order_item):
+    """Allocate the invoice discount to lines, preserving its exact cent total."""
+    lines = list(order_item.order.items.order_by('pk').values_list('pk', 'total'))
+    subtotal = sum((total for _, total in lines), Decimal('0'))
+    if subtotal <= 0:
+        return Decimal('0')
+    net = min(subtotal, order_item.order.total)
+    preceding = Decimal('0')
+    for line_id, total in lines:
+        cumulative = preceding + total
+        if line_id == order_item.pk:
+            return ((net * cumulative / subtotal).quantize(Decimal('0.01'))
+                    - (net * preceding / subtotal).quantize(Decimal('0.01')))
+        preceding = cumulative
+    raise ValidationError('الصنف لا يتبع فاتورة المرتجع')
+
+
+def _line_refund_amount(order_item, quantity, *, start=0):
+    total = _line_refund_total(order_item)
+    count = Decimal(order_item.quantity)
+    return ((total * (start + quantity) / count).quantize(Decimal('0.01'))
+            - (total * start / count).quantize(Decimal('0.01')))
+
+
+def _remaining_return_value(order, *, excluding=None):
+    discounts = PaymentTransaction.objects.filter(related_order=order,
+        transaction_type=PaymentTransaction.TYPE_CUSTOMER_ALLOWED_DISCOUNT).aggregate(v=Sum('amount'))['v'] or Decimal('0')
+    completed = SalesReturn.objects.filter(order=order, status=SalesReturn.STATUS_COMPLETED).exclude(
+        return_type=SalesReturn.TYPE_EXCHANGE)
+    if excluding:
+        completed = completed.exclude(pk=excluding.pk)
+    refunded = completed.aggregate(v=Sum('refund_amount'))['v'] or Decimal('0')
+    return max(order.total - discounts - refunded, Decimal('0'))
+
+
 def _line_refund_unit_price(order_item):
     if order_item.quantity <= 0:
         return Decimal('0')
-    return (order_item.total / Decimal(order_item.quantity)).quantize(Decimal('0.01'))
+    return (_line_refund_total(order_item) / Decimal(order_item.quantity)).quantize(Decimal('0.01'))
 
 
 def calculate_available_return_quantity(order_item):
@@ -137,7 +172,7 @@ def create_customer_returns(*, customer, user, selections, reason='', return_dat
                 sales_return=drafts[item.order_id], original_order_item=item,
                 quantity=allocated, condition=selection['condition'],
                 return_to_stock=selection['return_to_stock'],
-                refund_unit_price=row['unit_price'],
+                refund_unit_price=(row['unit_price'] if row['unit_price'] != _line_refund_unit_price(item) else None),
                 notes='مرتجع من حساب العميل بآخر سعر شراء',
             )
             remaining -= allocated
@@ -205,7 +240,12 @@ def add_return_item(*, sales_return, original_order_item, quantity, condition='g
         unit_price = decimal_value(refund_unit_price, max_digits=12)
         if unit_price < 0:
             raise ValidationError('سعر المرتجع لا يمكن أن يكون سالبًا')
-    refund_amount = unit_price * quantity
+    completed = original_order_item.quantity - calculate_available_return_quantity(original_order_item)
+    refund_amount = (unit_price * quantity if refund_unit_price is not None else
+                     _line_refund_amount(original_order_item, quantity, start=completed + already_added))
+    if refund_unit_price is None and sales_return.return_type != SalesReturn.TYPE_EXCHANGE:
+        in_draft = sales_return.items.aggregate(v=Sum('refund_amount'))['v'] or Decimal('0')
+        refund_amount = min(refund_amount, max(_remaining_return_value(original_order_item.order) - in_draft, Decimal('0')))
     item = SalesReturnItem.objects.create(
         branch_id=sales_return.branch_id,
         sales_return=sales_return,
@@ -258,7 +298,9 @@ def add_exchange_item(*, sales_return, old_order_item, new_product_variant, quan
     new_unit_price = decimal_value(new_unit_price, max_digits=10)
     if new_unit_price < 0:
         raise ValidationError('سعر صنف الاستبدال لا يمكن أن يكون سالبًا')
-    price_difference = (new_unit_price - old_unit_price) * quantity
+    completed_quantity = old_order_item.quantity - calculate_available_return_quantity(old_order_item)
+    old_value = _line_refund_amount(old_order_item, quantity, start=completed_quantity + already_exchanged)
+    price_difference = new_unit_price * quantity - old_value
     item = ExchangeItem.objects.create(
         branch_id=sales_return.branch_id,
         sales_return=sales_return,
@@ -332,6 +374,11 @@ def complete_sales_return(*, sales_return, user, cash_account=None, return_wareh
     old_status = sales_return.status
     if sales_return.status != SalesReturn.STATUS_APPROVED:
         raise ValidationError('يجب اعتماد المرتجع قبل إكماله')
+    if sales_return.return_type == SalesReturn.TYPE_EXCHANGE:
+        returned = dict(sales_return.items.values('original_order_item_id').annotate(q=Sum('quantity')).values_list('original_order_item_id', 'q'))
+        exchanged = dict(sales_return.exchange_items.values('old_order_item_id').annotate(q=Sum('quantity')).values_list('old_order_item_id', 'q'))
+        if returned != exchanged:
+            raise ValidationError('كل كمية مرتجعة في الاستبدال يجب أن يقابلها صنف بديل؛ سجّل الباقي كمرتجع منفصل')
     if return_warehouse is not Ellipsis:
         sales_return.return_warehouse = return_warehouse
         sales_return.save(update_fields=['return_warehouse'])
@@ -470,7 +517,7 @@ def _process_refund(*, sales_return, order, user, cash_account, settlement_metho
 def _process_exchange_stock_and_money(*, sales_return, order, user, cash_account):
     for exchange in sales_return.exchange_items.select_related('new_product_variant', 'old_order_item__warehouse'):
         warehouse = get_order_item_warehouse(exchange.old_order_item, order=order)
-        sale_stock(
+        movement = sale_stock(
             variant=exchange.new_product_variant,
             warehouse=warehouse,
             quantity=exchange.quantity,
@@ -478,6 +525,8 @@ def _process_exchange_stock_and_money(*, sales_return, order, user, cash_account
             note=f'Exchange out for order {order.order_number}',
             user=user,
         )
+        exchange.cost_total = movement.consumed_cost_total
+        exchange.save(update_fields=['cost_total'])
         if warehouse.warehouse_type == warehouse.TYPE_REPRESENTATIVE and warehouse.assigned_user_id:
             from sales_reps.services import consume_sales_rep_assignments
 
@@ -639,13 +688,22 @@ def update_sales_return(*, sales_return, user, revision, items, exchanges=None,
         condition = row['condition']
         if condition not in dict(SalesReturnItem.CONDITION_CHOICES):
             raise ValidationError('حالة الصنف غير صحيحة')
+        prior_in_revision = quantities[original.pk]
         quantities[original.pk] += quantity
         unit_price = old.refund_amount / old.quantity if old else _line_refund_unit_price(original)
+        completed_elsewhere = SalesReturnItem.objects.filter(original_order_item=original,
+            sales_return__status=SalesReturn.STATUS_COMPLETED).exclude(sales_return=sales_return).aggregate(v=Sum('quantity'))['v'] or 0
+        default_amount = _line_refund_amount(original, quantity, start=completed_elsewhere + prior_in_revision)
+        if sales_return.return_type != SalesReturn.TYPE_EXCHANGE:
+            already_priced = sum((item.refund_amount for item in new_items), Decimal('0'))
+            default_amount = min(default_amount, max(_remaining_return_value(order, excluding=sales_return) - already_priced, Decimal('0')))
+        uses_default = old is None or old.refund_amount == _line_refund_amount(
+            original, old.quantity, start=completed_elsewhere)
         new_items.append(SalesReturnItem(
             pk=item_id, branch_id=sales_return.branch_id, sales_return=sales_return,
             original_order_item=original, product_variant=original.variant, quantity=quantity,
             condition=condition, return_to_stock=bool(row.get('return_to_stock')),
-            refund_amount=decimal_value(unit_price * quantity, max_digits=12), notes=row.get('notes', ''),
+            refund_amount=default_amount if uses_default else decimal_value(unit_price * quantity, max_digits=12), notes=row.get('notes', ''),
         ))
     if not new_items:
         raise ValidationError('أضف صنفًا واحدًا بكمية أكبر من صفر على الأقل')
@@ -657,7 +715,8 @@ def update_sales_return(*, sales_return, user, revision, items, exchanges=None,
             raise ValidationError('كمية المرتجع أكبر من المتاح للإرجاع')
     new_exchanges, exchanged = [], defaultdict(int)
     if sales_return.return_type == SalesReturn.TYPE_EXCHANGE:
-        old_exchange_ids = {item.pk for item in old_exchanges}
+        old_exchanges_by_id = {item.pk: item for item in old_exchanges}
+        old_exchange_ids = set(old_exchanges_by_id)
         exchange_ids = set()
         for row in exchanges or []:
             exchange_id = row.get('item_id')
@@ -677,13 +736,21 @@ def update_sales_return(*, sales_return, user, revision, items, exchanges=None,
             if price < 0:
                 raise ValidationError('السعر لا يمكن أن يكون سالبًا')
             old_price = _line_refund_unit_price(original)
+            previous_exchange = old_exchanges_by_id.get(exchange_id)
+            unchanged_stock = (previous_exchange and previous_exchange.new_product_variant_id == variant.pk
+                               and previous_exchange.quantity == quantity)
+            completed_qty = original.quantity - calculate_available_return_quantity(original)
+            if sales_return.status == SalesReturn.STATUS_COMPLETED:
+                completed_qty -= sum(item.quantity for item in old_items if item.original_order_item_id == original.pk)
+            old_value = _line_refund_amount(original, quantity, start=completed_qty + exchanged[original.pk] - quantity)
             new_exchanges.append(ExchangeItem(
                 pk=exchange_id, branch_id=sales_return.branch_id, sales_return=sales_return,
                 old_order_item=original, new_product_variant=variant, quantity=quantity,
                 old_unit_price=old_price, new_unit_price=price,
-                price_difference=(price - old_price) * quantity, notes=row.get('notes', ''),
+                price_difference=price * quantity - old_value,
+                cost_total=previous_exchange.cost_total if unchanged_stock else None, notes=row.get('notes', ''),
             ))
-        if ((not new_exchanges and sales_return.status == SalesReturn.STATUS_COMPLETED)
+        if ((sales_return.status == SalesReturn.STATUS_COMPLETED and dict(exchanged) != dict(quantities))
                 or any(qty > quantities[key] for key, qty in exchanged.items())):
             raise ValidationError('كميات الاستبدال يجب ألا تتجاوز كميات الأصناف المرتجعة')
     was_completed = sales_return.status == SalesReturn.STATUS_COMPLETED
@@ -855,7 +922,7 @@ def _update_order_return_status(order, *, fallback_status=None):
     returned_quantity = SalesReturnItem.objects.filter(
         original_order_item__order=order,
         sales_return__status=SalesReturn.STATUS_COMPLETED,
-    ).aggregate(v=Sum('quantity'))['v'] or 0
+    ).exclude(sales_return__return_type=SalesReturn.TYPE_EXCHANGE).aggregate(v=Sum('quantity'))['v'] or 0
     if returned_quantity >= total_quantity and total_quantity > 0:
         order.status = Order.STATUS_RETURNED
     elif returned_quantity > 0:

@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
@@ -177,22 +178,26 @@ class SimpleSupplierDetailView(ManagerRequiredMixin, DetailView):
         supplier = self.object
         
         # Get purchase orders
-        purchase_orders = supplier.purchase_orders.select_related('created_by').order_by('-created_at')
+        purchase_orders = supplier.purchase_orders.select_related('created_by').exclude(
+            status__in=[PurchaseOrder.STATUS_DRAFT, PurchaseOrder.STATUS_CANCELLED]).order_by('-created_at')
         
         # Get transactions
         transactions = PaymentTransaction.objects.filter(
             related_supplier=supplier,
-            direction=PaymentTransaction.DIRECTION_OUT,
-            transaction_type=PaymentTransaction.TYPE_SUPPLIER_PAYMENT,
+            transaction_type__in=[PaymentTransaction.TYPE_SUPPLIER_PAYMENT, PaymentTransaction.TYPE_SUPPLIER_RETURN,
+                                 PaymentTransaction.TYPE_RAW_MATERIAL_PURCHASE],
         ).select_related('cash_account', 'created_by').order_by('-created_at')
         
         # Calculate totals
-        total_purchases = purchase_orders.aggregate(v=Sum('total_amount'))['v'] or 0
-        total_paid = transactions.aggregate(v=Sum('amount'))['v'] or 0
+        raw_total = transactions.filter(transaction_type=PaymentTransaction.TYPE_RAW_MATERIAL_PURCHASE).aggregate(v=Sum('amount'))['v'] or 0
+        total_purchases = (purchase_orders.aggregate(v=Sum('total_amount'))['v'] or 0) + raw_total
+        total_paid = transactions.filter(transaction_type__in=[PaymentTransaction.TYPE_SUPPLIER_PAYMENT,
+            PaymentTransaction.TYPE_RAW_MATERIAL_PURCHASE]).aggregate(v=Sum('amount'))['v'] or 0
         
         # Get last order and payment
         last_order = purchase_orders.first()
-        last_payment = transactions.first()
+        last_payment = transactions.filter(transaction_type__in=[PaymentTransaction.TYPE_SUPPLIER_PAYMENT,
+            PaymentTransaction.TYPE_RAW_MATERIAL_PURCHASE]).first()
         
         # Generate statement
         statement = self._generate_statement(supplier, purchase_orders, transactions)
@@ -215,19 +220,19 @@ class SimpleSupplierDetailView(ManagerRequiredMixin, DetailView):
         statement = []
         
         # Opening balance
-        if supplier.opening_balance and supplier.opening_balance > 0:
+        if supplier.opening_balance:
             statement.append({
                 'date': supplier.created_at,
                 'type': 'رصيد افتتاحي',
                 'description': 'رصيد افتتاحي',
-                'debit': supplier.opening_balance,
-                'credit': '',
+                'debit': max(supplier.opening_balance, 0),
+                'credit': max(-supplier.opening_balance, 0),
                 'balance': supplier.opening_balance,
             })
         
         # Combine all transactions
         transactions_list = []
-        for order in purchase_orders.exclude(status=PurchaseOrder.STATUS_CANCELLED):
+        for order in purchase_orders.exclude(status__in=[PurchaseOrder.STATUS_DRAFT, PurchaseOrder.STATUS_CANCELLED]):
             transactions_list.append({
                 'date': order.created_at,
                 'type': 'فاتورة شراء',
@@ -239,10 +244,10 @@ class SimpleSupplierDetailView(ManagerRequiredMixin, DetailView):
         
         for payment in transactions:
             transactions_list.append({
-                'date': payment.created_at,
-                'type': 'دفع للمورد',
+                'date': timezone.make_aware(datetime.combine(payment.transaction_date, payment.transaction_time)),
+                'type': payment.get_transaction_type_display(),
                 'description': payment.notes or 'دفع',
-                'debit': '',
+                'debit': payment.amount if payment.transaction_type == PaymentTransaction.TYPE_RAW_MATERIAL_PURCHASE else '',
                 'credit': payment.amount,
                 'payment': payment,
             })

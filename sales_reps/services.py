@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from accounts.models import User
 from finance.models import CashAccount, PaymentTransaction
-from finance.services import record_customer_balance_adjustment, record_transaction
+from finance.services import _sync_order_payment_status, record_customer_balance_adjustment, record_transaction
 from finance.validation import decimal_value, integer_value
 from inventory.models import Stock, StockMovement, Warehouse
 from inventory.services import sale_stock, transfer_stock
@@ -199,8 +199,10 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, c
         raise ValidationError('مبلغ التحصيل لا يمكن أن يساوي صفر')
     if order:
         order = Order.objects.select_for_update().get(pk=order.pk)
-        if order.status == Order.STATUS_DRAFT or order.document_type == Order.DOCUMENT_QUOTE:
+        if order.status in {Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED} or order.document_type != Order.DOCUMENT_SALE:
             raise ValidationError('لا يمكن تسجيل تحصيل على فاتورة معلقة أو عرض سعر')
+        if customer and customer.pk != order.customer_id:
+            raise ValidationError('الفاتورة لا تخص العميل المحدد')
         customer = customer or order.customer
     cash_account = cash_account or get_or_create_sales_rep_cash_account(sales_rep)
     collection = SalesRepCollection.objects.create(
@@ -232,14 +234,7 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, c
             extra_customer_balance = refund_amount - paid_reversal
             order.paid_amount = current_paid - paid_reversal
             order.save(update_fields=['paid_amount'])
-            order.remaining_amount = max(order.total - order.paid_amount, Decimal('0'))
-            if order.paid_amount <= 0:
-                order.payment_status = Order.PAYMENT_UNPAID
-            elif order.paid_amount >= order.total:
-                order.payment_status = Order.PAYMENT_PAID
-            else:
-                order.payment_status = Order.PAYMENT_PARTIAL
-            order.save(update_fields=['remaining_amount', 'payment_status'])
+            _sync_order_payment_status(order, paid_delta=-paid_reversal)
             if extra_customer_balance > 0 and order.customer_id:
                 record_customer_balance_adjustment(
                     customer=order.customer,
@@ -273,14 +268,7 @@ def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, c
         order.paid_amount = F('paid_amount') + order_payment
         order.save(update_fields=['paid_amount'])
         order.refresh_from_db(fields=['paid_amount'])
-        order.remaining_amount = max(order.total - order.paid_amount, Decimal('0'))
-        if order.paid_amount <= 0:
-            order.payment_status = Order.PAYMENT_UNPAID
-        elif order.paid_amount >= order.total:
-            order.payment_status = Order.PAYMENT_PAID
-        else:
-            order.payment_status = Order.PAYMENT_PARTIAL
-        order.save(update_fields=['remaining_amount', 'payment_status'])
+        _sync_order_payment_status(order, paid_delta=order_payment)
     if extra_credit > 0:
         record_transaction(
             transaction_type=PaymentTransaction.TYPE_SALES_REP_COLLECTION,

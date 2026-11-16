@@ -2,6 +2,7 @@
 {% block title %}تقرير المبيعات السنوية{% endblock %}
 {% block content %}
 <div class="page-head"><h1>تقرير المبيعات السنوية</h1></div>
+<p>صافي فواتير كل سنة بعد مرتجعاتها المكتملة. {% if estimated_exchange_lines %}تشمل بعض الاستبدالات تكلفة تقديرية.{% endif %}</p>
 {% include 'reports/report_links.html' %}
 <div class="table-wrap">
     <table>

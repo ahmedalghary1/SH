@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -39,7 +39,7 @@ def recalculate_purchase_order(purchase_order):
         total += item.total_cost
     purchase_order.subtotal_amount = total
     discount = total * purchase_order.discount_value / Decimal('100') if purchase_order.discount_type == PurchaseOrder.DISCOUNT_PERCENT else purchase_order.discount_value
-    purchase_order.discount_amount = discount.quantize(Decimal('0.01'))
+    purchase_order.discount_amount = discount.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     if purchase_order.discount_amount < 0 or purchase_order.discount_amount > total:
         raise ValidationError('الخصم لا يمكن أن يتجاوز إجمالي الفاتورة')
     purchase_order.total_amount = total - purchase_order.discount_amount
@@ -61,6 +61,8 @@ def update_purchase_discount(*, purchase_order, discount_type, discount_value, u
     if purchase_order.discount_value < 0 or (discount_type == PurchaseOrder.DISCOUNT_PERCENT and purchase_order.discount_value > 100):
         raise ValidationError('قيمة الخصم غير صحيحة')
     recalculate_purchase_order(purchase_order)
+    if purchase_order.total_amount < purchase_order.paid_amount:
+        raise ValidationError('لا يمكن أن يصبح إجمالي الشراء أقل من المدفوع؛ سوِّ المدفوعات أولًا')
     if purchase_order.status != PurchaseOrder.STATUS_DRAFT:
         supplier.current_balance = F('current_balance') + (purchase_order.remaining_amount - old_remaining)
         supplier.save(update_fields=['current_balance'])
@@ -476,6 +478,14 @@ def create_purchase_return(*, supplier, product_variant, warehouse, quantity, un
     movement.movement_type = movement.TYPE_PURCHASE_RETURN
     movement.save(update_fields=['movement_type'])
     amount = unit_cost * quantity
+    if amount > 0:
+        record_transaction(
+            transaction_type=PaymentTransaction.TYPE_SUPPLIER_RETURN,
+            direction=PaymentTransaction.DIRECTION_IN, amount=amount,
+            related_supplier=supplier, related_supplier_name=str(supplier),
+            affects_cash=False, created_by=user, reference=f'PUR-RET-{movement.pk}',
+            notes=notes or f'مرتجع شراء للمورد {supplier}',
+        )
     supplier = Supplier.objects.select_for_update().get(pk=supplier.pk)
     supplier.current_balance = F('current_balance') - amount
     supplier.save(update_fields=['current_balance'])

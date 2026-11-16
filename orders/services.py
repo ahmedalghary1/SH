@@ -1,5 +1,5 @@
 from collections import defaultdict
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -77,7 +77,7 @@ def calculate_discount_amount(*, base_amount, discount_amount=0, discount_percen
     if discount_percentage < 0 or discount_percentage > 100:
         raise ValidationError('نسبة الخصم يجب أن تكون بين 0 و 100')
     calculated = discount_amount + (base_amount * discount_percentage / Decimal('100'))
-    return min(calculated, base_amount)
+    return min(calculated, base_amount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
 def _validate_discount_percentage(*, discount_amount, discount_percentage, base_amount, max_percentage):
@@ -134,10 +134,20 @@ def prepare_order_item_pricing(*, variant, quantity, user, customer=None, order_
     }
 
 
+def order_discount_input(order):
+    if order.discount_input_amount is not None:
+        return order.discount_input_amount
+    combined = order.discount_amount or order.discount or Decimal('0')
+    base = order.total + order.discount
+    percentage = base * order.discount_percentage / Decimal('100')
+    return max(combined - percentage, Decimal('0')).quantize(Decimal('0.01'))
+
+
 def calculate_order_totals(order):
     if not transaction.get_connection().in_atomic_block:
         raise RuntimeError('calculate_order_totals must be called within an active transaction.')
     subtotal = Decimal('0')
+    fixed_discount = order_discount_input(order)
     item_discounts = Decimal('0')
     total_cost = Decimal('0')
     items = list(order.items.all())
@@ -146,14 +156,17 @@ def calculate_order_totals(order):
         line_before_discount = base_price * item.quantity
         line_discount = calculate_discount_amount(
             base_amount=line_before_discount,
-            discount_amount=item.discount_amount or item.discount,
+            discount_amount=item.discount_amount,
             discount_percentage=item.discount_percentage,
         )
         item.final_unit_price = max((line_before_discount - line_discount) / item.quantity, Decimal('0'))
         item.unit_price = item.final_unit_price
         item.discount = line_discount
         item.total = max(line_before_discount - line_discount, Decimal('0'))
-        item.cost_total = item.unit_cost * item.quantity
+        # Confirmed invoices retain the exact FIFO line cost. The rounded unit
+        # cost cannot reconstruct a line consuming multiple differently priced batches.
+        if order.status == Order.STATUS_DRAFT:
+            item.cost_total = item.unit_cost * item.quantity
         item.profit_total = item.total - item.cost_total
         subtotal += line_before_discount
         item_discounts += line_discount
@@ -167,10 +180,11 @@ def calculate_order_totals(order):
         )
     order_discount = calculate_discount_amount(
         base_amount=max(subtotal - item_discounts, Decimal('0')),
-        discount_amount=order.discount_amount or order.discount,
+        discount_amount=fixed_discount,
         discount_percentage=order.discount_percentage,
     )
     order.discount_amount = order_discount
+    order.discount_input_amount = fixed_discount
     order.discount = order_discount
     total = max(subtotal - item_discounts - order_discount, Decimal('0'))
     order.subtotal = subtotal
@@ -178,15 +192,18 @@ def calculate_order_totals(order):
     order.total_cost = total_cost
     order.gross_profit = total - total_cost
     order.remaining_amount = max(total - order.paid_amount, Decimal('0'))
-    if order.paid_amount <= 0:
-        order.payment_status = Order.PAYMENT_UNPAID
-    elif order.paid_amount >= total:
+    if order.status != Order.STATUS_DRAFT:
+        from finance.reconciliation import expected_order_remaining
+        order.remaining_amount = max(expected_order_remaining(order), Decimal('0'))
+    if order.remaining_amount <= 0:
         order.payment_status = Order.PAYMENT_PAID
+    elif order.paid_amount <= 0:
+        order.payment_status = Order.PAYMENT_UNPAID
     else:
         order.payment_status = Order.PAYMENT_PARTIAL
     validate_money_fields(order, 'subtotal', 'discount', 'total', 'total_cost', 'gross_profit', 'remaining_amount')
     order.save(update_fields=[
-        'subtotal', 'discount', 'discount_amount', 'total', 'total_cost',
+        'subtotal', 'discount', 'discount_amount', 'discount_input_amount', 'total', 'total_cost',
         'gross_profit', 'remaining_amount', 'payment_status',
     ])
     return order
@@ -282,6 +299,7 @@ def create_order(*, order_data, items, user, confirm=False, auto_collect=True):
     order_discount_amount = Decimal('0') if document_type == Order.DOCUMENT_SAMPLE else _as_decimal(order_data.get('discount_amount', order_data.get('discount', 0)))
     order_discount_percentage = Decimal('0') if document_type == Order.DOCUMENT_SAMPLE else _as_decimal(order_data.get('discount_percentage', 0))
     order_data['discount_amount'] = order_discount_amount
+    order_data['discount_input_amount'] = order_discount_amount
     order_data['discount_percentage'] = order_discount_percentage
     order_data['discount'] = order_discount_amount
     if order_discount_amount > 0 or order_discount_percentage > 0:
@@ -370,6 +388,7 @@ def save_order_draft(*, order=None, order_data, items, user):
     order.wallet_from_number = order_data.get('wallet_from_number')
     order.wallet_to_number = order_data.get('wallet_to_number')
     order.discount_amount = order_discount_amount
+    order.discount_input_amount = order_discount_amount
     order.discount_percentage = order_discount_percentage
     order.discount = order_discount_amount
     order.discount_approved_by = user if order_discount_amount > 0 or order_discount_percentage > 0 else None
@@ -379,7 +398,7 @@ def save_order_draft(*, order=None, order_data, items, user):
     order.status = Order.STATUS_DRAFT
     order.save(update_fields=[
         'document_type', 'order_type', 'customer', 'warehouse', 'payment_method',
-        'wallet_from_number', 'wallet_to_number', 'discount_amount', 'discount_percentage',
+        'wallet_from_number', 'wallet_to_number', 'discount_amount', 'discount_input_amount', 'discount_percentage',
         'discount', 'discount_approved_by', 'paid_amount', 'remaining_amount',
         'payment_status', 'status', 'updated_at',
     ])
@@ -423,6 +442,9 @@ def confirm_order(*, order, user, auto_collect=True):
         raise ValidationError('هذه فاتورة مسعرة فقط ولا تخصم من المخزون')
     if order.status != Order.STATUS_DRAFT:
         raise ValidationError('يمكن تأكيد الطلبات المسودة فقط')
+    # Drafts imported or assembled outside the main form must also have a
+    # consistent header before either money or stock is posted.
+    calculate_order_totals(order)
     order_items = list(
         order.items.select_related('variant', 'warehouse', 'stock_batch')
         .order_by('warehouse_id', 'variant_id', 'pk')
@@ -461,6 +483,15 @@ def confirm_order(*, order, user, auto_collect=True):
             if batch_id not in locked_batches or locked_batches[batch_id].remaining_quantity < quantity:
                 raise ValidationError('الكمية الإجمالية المطلوبة غير متاحة في إحدى دفعات السعر')
     movement_type = StockMovement.TYPE_SAMPLE if order.document_type == Order.DOCUMENT_SAMPLE else StockMovement.TYPE_SALE
+    _, can_sell_below_cost = get_discount_limits(user, customer=order.customer)
+    priced_items = sorted(order_items, key=lambda item: item.pk)
+    line_base = sum((item.total for item in priced_items), Decimal('0'))
+    allocation, net_by_item = Decimal('0'), {}
+    for item in priced_items:
+        after = allocation + item.total
+        net_by_item[item.pk] = ((order.total * after / line_base).quantize(Decimal('0.01'))
+            - (order.total * allocation / line_base).quantize(Decimal('0.01'))) if line_base else Decimal('0')
+        allocation = after
     for item in order_items:
         warehouse = get_order_item_warehouse(item, order=order)
         movement = sale_stock(
@@ -473,6 +504,8 @@ def confirm_order(*, order, user, auto_collect=True):
             note=f'صرف من الطلب {order.order_number}',
         )
         actual_cost_total = Decimal(str(movement.consumed_cost_total)).quantize(Decimal('0.01'))
+        if order.document_type != Order.DOCUMENT_SAMPLE and not can_sell_below_cost and net_by_item[item.pk] < actual_cost_total:
+            raise ValidationError('صافي سعر الصنف بعد كل الخصومات أقل من تكلفة الدفعات الفعلية')
         item.unit_cost = (actual_cost_total / item.quantity).quantize(Decimal('0.01'))
         item.cost_total = actual_cost_total
         item.profit_total = item.total - actual_cost_total

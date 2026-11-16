@@ -19,7 +19,10 @@ def expected_order_remaining(order):
         order_id=order.pk, branch_id=order.branch_id, status=SalesReturn.STATUS_COMPLETED,
     ).exclude(return_type=SalesReturn.TYPE_EXCHANGE).aggregate(value=Sum('debt_reduction'))['value'] or Decimal(0)
     # A negative result indicates an unresolved overcollection, not a safe zero.
-    return order.total - order.paid_amount - reduction
+    discounts = PaymentTransaction.all_objects.filter(related_order_id=order.pk, branch_id=order.branch_id,
+        transaction_type=PaymentTransaction.TYPE_CUSTOMER_ALLOWED_DISCOUNT,
+        affects_customer_balance=False).aggregate(value=Sum('amount'))['value'] or Decimal(0)
+    return order.total - order.paid_amount - reduction - discounts
 
 
 def assert_order_return_balance(order):
@@ -101,6 +104,7 @@ def inspect_order_return_balance(order):
         })
 
     paid_from_ledger = Decimal(0)
+    allowed_discounts = Decimal(0)
     for payment in payments:
         if payment.pk in linked_ids:
             continue
@@ -111,6 +115,9 @@ def inspect_order_return_balance(order):
         if payment.affects_customer_balance:
             # Customer-level adjustments are accounted for outside this invoice.
             continue
+        if payment.transaction_type == PaymentTransaction.TYPE_CUSTOMER_ALLOWED_DISCOUNT:
+            allowed_discounts += payment.amount
+            continue
         if (payment.transaction_type in {PaymentTransaction.TYPE_CUSTOMER_PAYMENT, PaymentTransaction.TYPE_SALES_REP_COLLECTION}
                 and payment.direction == PaymentTransaction.DIRECTION_IN):
             paid_from_ledger += payment.amount
@@ -120,7 +127,7 @@ def inspect_order_return_balance(order):
             problems.append(f'payment_{payment.pk}:unclassified_invoice_movement')
     if paid_from_ledger != order.paid_amount:
         problems.append('paid_amount_does_not_match_receipts')
-    raw_remaining = order.total - order.paid_amount - debt
+    raw_remaining = order.total - order.paid_amount - debt - allowed_discounts
     if raw_remaining < 0:
         problems.append('paid_and_return_credit_exceed_invoice_total')
     expected = max(raw_remaining, Decimal(0))

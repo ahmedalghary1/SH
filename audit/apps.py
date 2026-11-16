@@ -6,3 +6,4 @@ class AuditConfig(AppConfig):
 
     def ready(self):
         import audit.signals  # noqa: F401
+        import config.lifecycle  # noqa: F401

@@ -95,13 +95,20 @@ does not reverse stock or cash twice. Editing/deletion requires a connection.
 
 ## Release Review And Offline Use
 
+The full November 16 business audit fixes discount recalculation, returns,
+representative collections, supplier statements, cash reporting and profit
+calculations. See the [full Arabic audit](docs/full-business-audit-2026-11-16-ar.md).
+Deploy this update with `python manage.py migrate` (orders 0011, finance 0014,
+returns 0006), collect static files and update the installed PWA. Historical
+balances are not automatically repaired. The read-only `audit_business` command
+reports records requiring review.
+
 The November 16 update groups warehouse movements by product, restricts the
 representative to sales, collections and read-only customer statements, and
 prepares those workflows for offline PWA use. See the
 [detailed Arabic review and update steps](docs/representative-warehouse-review-2026-11-16-ar.md).
 
 See [the Arabic review and deployment instructions](docs/review-2026-10-12-ar.md)
-and [PWA behavior and limitations](docs/pwa_offline_sync.md). This release adds no
-database schema migrations. Back up the production database and media, preserve
+and [PWA behavior and limitations](docs/pwa_offline_sync.md). Back up the production database and media, preserve
 the private environment, collect static files, and restart the application when
 deploying. A request reference is included on error pages and in application logs.

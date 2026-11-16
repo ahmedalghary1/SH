@@ -283,9 +283,19 @@ def record_customer_refund_payment(*, customer, amount, user, cash_account=None,
     return tx
 
 
+@transaction.atomic
 def record_customer_allowed_discount(*, customer, amount, user, order=None, cash_account=None, notes='', transaction_date=None):
     amount = _as_decimal(amount)
-    return PaymentTransaction.objects.create(
+    if order:
+        from orders.models import Order
+        order = Order.objects.select_for_update().get(pk=order.pk)
+        if (order.customer_id != getattr(customer, 'pk', None)
+                or order.status in {Order.STATUS_DRAFT, Order.STATUS_CANCELLED, Order.STATUS_RETURNED}
+                or order.document_type != Order.DOCUMENT_SALE):
+            raise ValidationError('الفاتورة غير متاحة لتسوية خصم العميل')
+        if amount > order.remaining_amount:
+            raise ValidationError('الخصم المسموح يتجاوز المتبقي على الفاتورة')
+    payment = record_transaction(
         transaction_type=PaymentTransaction.TYPE_CUSTOMER_ALLOWED_DISCOUNT,
         direction=PaymentTransaction.DIRECTION_OUT,
         amount=amount,
@@ -298,6 +308,9 @@ def record_customer_allowed_discount(*, customer, amount, user, order=None, cash
         affects_cash=False,
         affects_customer_balance=bool(customer and not order),
     )
+    if order:
+        _sync_order_payment_status(order, paid_delta=amount)
+    return payment
 
 
 def record_customer_balance_adjustment(
@@ -305,7 +318,7 @@ def record_customer_balance_adjustment(
 ):
     """Record a non-cash customer-level debit/credit in the account ledger."""
     amount = _as_decimal(amount)
-    return PaymentTransaction.objects.create(
+    return record_transaction(
         transaction_type=PaymentTransaction.TYPE_ADJUSTMENT,
         direction=direction,
         amount=amount,
@@ -846,6 +859,9 @@ def delete_transaction(*, payment_transaction, user=None):
     tx = PaymentTransaction.objects.select_for_update().select_related('cash_account').get(pk=payment_transaction.pk)
     if tx.sales_returns.exists() or tx.return_account_settlements.exists():
         raise ValidationError('هذه الحركة مرتبطة بمرتجع. عدّل المرتجع لتحديث أثره المالي')
+    if (tx.transaction_type not in {PaymentTransaction.TYPE_CUSTOMER_PAYMENT, PaymentTransaction.TYPE_EXPENSE}
+            or tx.direction != PaymentTransaction.DIRECTION_IN and tx.transaction_type == PaymentTransaction.TYPE_CUSTOMER_PAYMENT):
+        raise ValidationError('هذه الحركة مرتبطة بدورة محاسبية؛ اعكس المستند الأصلي بدل حذف حركة منفردة')
     account = CashAccount.objects.select_for_update().get(pk=tx.cash_account_id)
     old_balance = account.balance
     affects_cash = getattr(tx, 'affects_cash', True)
@@ -899,6 +915,8 @@ def delete_transaction(*, payment_transaction, user=None):
         from orders.models import Order
 
         order = Order.objects.select_for_update().get(pk=payment_row.related_order_id)
+        if order.status in {Order.STATUS_CANCELLED, Order.STATUS_RETURNED}:
+            raise ValidationError('لا يمكن حذف قبض مرتبط بفاتورة ملغاة أو مرتجعة بالكامل؛ راجع تسويتها أولًا')
         paid_reversal = min(Decimal(str(order.paid_amount or 0)), payment_row.amount)
         order.paid_amount = Decimal(str(order.paid_amount or 0)) - paid_reversal
         _sync_order_payment_status(order, paid_delta=-paid_reversal)
@@ -980,6 +998,9 @@ def replace_customer_payment(
 def transfer_between_accounts(*, from_account, to_account, amount, user, notes='', transaction_date=None):
     if from_account == to_account:
         raise ValidationError('لا يمكن التحويل إلى نفس الخزنة')
+    # Opposite transfers must acquire both accounts in one stable order.
+    list(CashAccount.objects.select_for_update().filter(
+        pk__in=[from_account.pk, to_account.pk]).order_by('pk'))
     reference = f'TRF-{uuid4().hex[:12].upper()}'
     out_tx = record_transaction(
         transaction_type=PaymentTransaction.TYPE_TRANSFER,
@@ -1006,59 +1027,33 @@ def transfer_between_accounts(*, from_account, to_account, amount, user, notes='
 
 @transaction.atomic
 def record_sales_rep_collection(*, sales_rep, amount, user, cash_account=None, order=None, customer=None, notes='', transaction_date=None):
+    # Keep the legacy finance entry point on the same accounting path as normal
+    # receipts. It returns a PaymentTransaction, as before.
+    from sales_reps.services import _validate_sales_rep
+    _validate_sales_rep(sales_rep)
+    if order and customer and customer.pk != order.customer_id:
+        raise ValidationError('الفاتورة لا تخص العميل المحدد')
     amount = decimal_value(amount, max_digits=14)
-    if amount == 0:
+    if not amount:
         raise ValidationError('مبلغ التحصيل لا يمكن أن يساوي صفر')
-    if amount < 0:
-        refund_amount = abs(amount)
-        if order:
-            from orders.models import Order
-
-            order = Order.objects.select_for_update().get(pk=order.pk)
-            customer = customer or order.customer
-        tx = record_transaction(
-            transaction_type=PaymentTransaction.TYPE_REFUND,
-            direction=PaymentTransaction.DIRECTION_OUT,
-            amount=refund_amount,
-            cash_account=cash_account,
-            related_order=order,
-            related_customer=customer,
-            related_sales_rep=sales_rep,
-            notes=notes,
-            created_by=user,
-            transaction_date=transaction_date,
-            affects_customer_balance=bool(customer and not order),
-        )
-        if order:
-            from customers.models import Customer
-
-            current_paid = Decimal(str(order.paid_amount or 0))
-            paid_reversal = min(refund_amount, current_paid)
-            extra_customer_balance = refund_amount - paid_reversal
-            order.paid_amount = current_paid - paid_reversal
-            order.save(update_fields=['paid_amount'])
-            _sync_order_payment_status(order, paid_delta=-paid_reversal)
-            if extra_customer_balance > 0 and order.customer_id:
-                record_customer_balance_adjustment(
-                    customer=order.customer,
-                    amount=extra_customer_balance,
-                    direction=PaymentTransaction.DIRECTION_OUT,
-                    user=user,
-                    cash_account=cash_account,
-                    notes=notes,
-                    transaction_date=transaction_date,
-                )
-        return tx
-    return record_transaction(
-        transaction_type=PaymentTransaction.TYPE_SALES_REP_COLLECTION,
-        direction=PaymentTransaction.DIRECTION_IN,
-        amount=amount,
-        cash_account=cash_account,
-        related_order=order,
-        related_customer=customer,
-        related_sales_rep=sales_rep,
-        notes=notes,
-        created_by=user,
-        transaction_date=transaction_date,
-        affects_customer_balance=bool(customer and not order),
-    )
+    reference = f'SRC-{uuid4().hex}'
+    if order:
+        result = collect_order_payment(order=order, amount=amount, user=user,
+            cash_account=cash_account, notes=notes, transaction_date=transaction_date,
+            reference=reference)
+        rows = PaymentTransaction.objects.filter(reference=reference)
+        if amount < 0:
+            rows = PaymentTransaction.objects.filter(pk=result.pk)
+    elif amount < 0:
+        result = record_customer_refund_payment(customer=customer, amount=-amount, user=user,
+            cash_account=cash_account, notes=notes, transaction_date=transaction_date)
+        rows = PaymentTransaction.objects.filter(pk=result.pk)
+    else:
+        result = record_customer_payment(order=None, customer=customer, amount=amount, user=user,
+            cash_account=cash_account, notes=notes, transaction_date=transaction_date, reference=reference)
+        rows = PaymentTransaction.objects.filter(reference=reference)
+    rows.update(related_sales_rep=sales_rep)
+    rows.filter(transaction_type=PaymentTransaction.TYPE_CUSTOMER_PAYMENT).update(
+        transaction_type=PaymentTransaction.TYPE_SALES_REP_COLLECTION)
+    result.refresh_from_db()
+    return result

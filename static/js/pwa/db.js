@@ -667,27 +667,32 @@ export async function updateStockQuantity({ variant_id, warehouse_id, delta }) {
 }
 
 export function calculateOrderTotals(payload = {}) {
-    const items = payload.items || [];
-    const subtotal = items.reduce((sum, item) => sum + (Number(item.unit_price || 0) * Number(item.quantity || 0)), 0);
-    const itemDiscount = items.reduce((sum, item) => {
-        const base = Number(item.unit_price || 0) * Number(item.quantity || 0);
-        const amount = Number(item.discount_amount || item.discount || 0);
-        const percentage = Number(item.discount_percentage || 0);
-        return sum + Math.min(base, amount + (base * percentage / 100));
-    }, 0);
-    const afterItems = Math.max(subtotal - itemDiscount, 0);
-    const orderDiscount = Math.min(
-        afterItems,
-        Number(payload.discount_amount || payload.discount || 0) + (afterItems * Number(payload.discount_percentage || 0) / 100),
-    );
-    const total = Math.max(afterItems - orderDiscount, 0);
-    const remaining = Math.max(total - Number(payload.paid_amount || 0), 0);
-    return {
-        subtotal: subtotal.toFixed(2),
-        discount: (itemDiscount + orderDiscount).toFixed(2),
-        total: total.toFixed(2),
-        remaining_amount: remaining.toFixed(2),
+    const cents = value => {
+        const match = String(value === '' || value == null ? 0 : value).trim().match(/^(\d+)(?:\.(\d{1,2}))?$/);
+        if (!match) throw new Error('أدخل مبلغًا صحيحًا بدقتين عشريتين كحد أقصى.');
+        return BigInt(match[1]) * 100n + BigInt((match[2] || '').padEnd(2, '0'));
     };
+    const minimum = (a, b) => a < b ? a : b;
+    const discount = (base, amount, percent) => {
+        const rate = cents(percent);
+        if (rate > 10000n) throw new Error('نسبة الخصم لا يمكن أن تتجاوز 100%.');
+        return minimum(base, cents(amount) + (base * rate + 5000n) / 10000n);
+    };
+    const format = value => `${value / 100n}.${String(value % 100n).padStart(2, '0')}`;
+    let subtotal = 0n, itemDiscount = 0n;
+    for (const item of payload.items || []) {
+        const quantity = String(item.quantity || 0);
+        if (!/^\d+$/.test(quantity)) throw new Error('الكمية يجب أن تكون عددًا صحيحًا.');
+        const base = cents(item.unit_price || 0) * BigInt(quantity);
+        subtotal += base;
+        itemDiscount += discount(base, item.discount_amount ?? item.discount ?? 0, item.discount_percentage || 0);
+    }
+    const afterItems = subtotal - itemDiscount;
+    const orderDiscount = discount(afterItems, payload.discount_amount ?? payload.discount ?? 0, payload.discount_percentage || 0);
+    const total = afterItems - orderDiscount;
+    const paid = cents(payload.paid_amount || 0);
+    return { subtotal: format(subtotal), discount: format(itemDiscount + orderDiscount),
+        total: format(total), remaining_amount: format(total > paid ? total - paid : 0n) };
 }
 
 export async function estimateOrderTotals(payload = {}) {

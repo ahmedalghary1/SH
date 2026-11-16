@@ -237,7 +237,7 @@ class OrderCreateView(SalesRequiredMixin, FormView):
         context['initial_discount_value'] = (
             current_draft.discount_percentage
             if current_draft and discount_percentage > 0
-            else getattr(current_draft, 'discount_amount', 0) if current_draft else 0
+            else context['form'].initial.get('discount_amount', 0) if current_draft else 0
         )
         context['is_quote_mode'] = self.request.GET.get('document') == 'quote' or (
             current_draft and current_draft.document_type == Order.DOCUMENT_QUOTE

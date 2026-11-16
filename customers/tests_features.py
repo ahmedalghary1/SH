@@ -40,10 +40,17 @@ class CustomerFeatureTests(TestCase):
         self.assertNotIn('الدائن', values)
 
     def test_manager_can_delete_customer(self):
+        self.customer.opening_balance = 0
+        self.customer.save(update_fields=['opening_balance'])
         response = self.client.post(reverse('customers:delete', args=[self.customer.pk]))
 
         self.assertRedirects(response, reverse('customers:simple_list'))
         self.assertFalse(Customer.objects.filter(pk=self.customer.pk).exists())
+
+    def test_manager_cannot_delete_customer_with_an_opening_debt(self):
+        response = self.client.post(reverse('customers:delete', args=[self.customer.pk]))
+        self.assertRedirects(response, reverse('customers:simple_list'))
+        self.assertTrue(Customer.objects.filter(pk=self.customer.pk).exists())
 
     def test_sales_user_cannot_delete_customer(self):
         sales_user = User.objects.create_user(username='customer-sales', password='x', role=User.ROLE_SALES)

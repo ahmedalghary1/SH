@@ -135,7 +135,7 @@
         const base = Number(item.unit_price) * Number(item.quantity);
         const amount = Number(item.discount_amount || 0);
         const percentage = Number(item.discount_percentage || 0);
-        return Math.min(base, amount + (base * percentage / 100));
+        return Math.min(base, Math.round((amount + (base * percentage / 100) + Number.EPSILON) * 100) / 100);
     }
 
     function updateLineTotal() {
@@ -201,7 +201,7 @@
         if (generalDiscount) generalDiscount.value = orderDiscountAmount;
         if (generalDiscountPercentage) generalDiscountPercentage.value = orderDiscountPercentage;
         if (discountInput) discountInput.name = discountType?.value === "percentage" ? "" : "discount_amount";
-        const orderDiscount = Math.min(afterItems, orderDiscountAmount + (afterItems * orderDiscountPercentage / 100));
+        const orderDiscount = Math.min(afterItems, Math.round((orderDiscountAmount + (afterItems * orderDiscountPercentage / 100) + Number.EPSILON) * 100) / 100);
         const discount = itemDiscount + orderDiscount;
         const total = Math.max(subtotal - discount, 0);
         document.getElementById("summary-subtotal").textContent = money(subtotal);

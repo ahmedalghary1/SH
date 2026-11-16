@@ -8,6 +8,7 @@ from decimal import Decimal
 from django.core.files.base import ContentFile
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models.deletion import ProtectedError, RestrictedError
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from config.branching import get_current_branch_id, reset_current_branch, set_current_branch
@@ -631,10 +632,6 @@ def process_payment(operation, user):
                 user=user, cash_account=cash_account,
                 notes=payment.get('notes') or '', transaction_date=transaction_date,
             )
-            order.refresh_from_db(fields=['remaining_amount', 'payment_status'])
-            order.remaining_amount = max(order.remaining_amount - allowed_discount, 0)
-            order.payment_status = order.PAYMENT_PAID if order.remaining_amount == 0 else order.PAYMENT_PARTIAL
-            order.save(update_fields=['remaining_amount', 'payment_status'])
     elif amount < 0:
         tx = record_customer_refund_payment(
             customer=customer,
@@ -1702,6 +1699,9 @@ def _process_operation(operation, user, branch_id):
             record.status = SyncOperation.STATUS_SUCCESS
         except ValidationError as exc:
             result = response_failed(local_uuid, exc.messages[0], 'failed_conflict')
+            record.status = SyncOperation.STATUS_CONFLICT
+        except (ProtectedError, RestrictedError):
+            result = response_failed(local_uuid, 'السجل مرتبط بحركات أو أرصدة. عطّله بدل حذفه.', 'failed_conflict')
             record.status = SyncOperation.STATUS_CONFLICT
         except PermissionDenied:
             result = response_failed(local_uuid, 'ليس لديك صلاحية تنفيذ هذه العملية.', 'failed_conflict')

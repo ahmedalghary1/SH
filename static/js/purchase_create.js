@@ -78,7 +78,8 @@
         }
         const subtotal = items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_cost || 0), 0);
         const entered = Math.max(0, Number(discountValue?.value || 0));
-        const discount = discountType?.value === 'percent' ? subtotal * Math.min(entered, 100) / 100 : Math.min(entered, subtotal);
+        const rawDiscount = discountType?.value === 'percent' ? subtotal * Math.min(entered, 100) / 100 : Math.min(entered, subtotal);
+        const discount = Math.round((rawDiscount + Number.EPSILON) * 100) / 100;
         const net = subtotal - discount;
         const paid = Math.max(0, Number(paidAmount?.value || 0));
         [
