@@ -266,6 +266,14 @@ for media_fallback_root in (BASE_DIR / 'media', PUBLIC_ROOT / 'media'):
     if media_fallback_root.resolve() != MEDIA_ROOT.resolve() and media_fallback_root not in MEDIA_FALLBACK_ROOTS:
         MEDIA_FALLBACK_ROOTS.append(media_fallback_root)
 
+# Full portable archives are staged outside any public media/static directory.
+BACKUP_PRIVATE_ROOT = env_path('BACKUP_PRIVATE_ROOT', BASE_DIR / 'private_backups')
+BACKUP_MAX_UPLOAD_BYTES = env_int('BACKUP_MAX_UPLOAD_BYTES', 512 * 1024 * 1024)
+BACKUP_MAX_EXPANDED_BYTES = env_int('BACKUP_MAX_EXPANDED_BYTES', 2 * 1024 * 1024 * 1024)
+BACKUP_MAX_JSON_BYTES = env_int('BACKUP_MAX_JSON_BYTES', 100 * 1024 * 1024)
+BACKUP_MAX_FILES = env_int('BACKUP_MAX_FILES', 50000)
+BACKUP_MAX_RECORDS = env_int('BACKUP_MAX_RECORDS', 250000)
+
 AUTH_USER_MODEL = 'accounts.User'
 LOGIN_URL = 'accounts:login'
 LOGIN_REDIRECT_URL = 'dashboard:index'

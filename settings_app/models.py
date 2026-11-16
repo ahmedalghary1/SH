@@ -1,3 +1,6 @@
+import uuid
+
+from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from config.branching import BranchOwnedModel
@@ -55,3 +58,34 @@ class CompanySettings(BranchOwnedModel):
         if settings is None:
             settings = cls.objects.create()
         return settings
+
+
+class BackupIdentity(models.Model):
+    """Portable record identities, separate from database-specific primary keys."""
+
+    uid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    model_label = models.CharField(max_length=100)
+    object_pk = models.CharField(max_length=100)
+    is_primary = models.BooleanField(default=False)
+
+    class Meta:
+        indexes = [models.Index(fields=['model_label', 'object_pk'], name='settings_ap_model_l_5fa9bf_idx')]
+        constraints = [models.UniqueConstraint(fields=['model_label', 'object_pk'], condition=models.Q(is_primary=True),
+                                               name='backup_one_primary_identity')]
+
+
+class BackupBranchHistory(models.Model):
+    branch = models.OneToOneField('accounts.Branch', on_delete=models.CASCADE)
+    digest = models.CharField(max_length=64)
+    ancestors = models.JSONField(default=list)
+
+
+class BackupImport(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    original_name = models.CharField(max_length=255)
+    archive_digest = models.CharField(max_length=64)
+    preview_digest = models.CharField(max_length=64)
+    summary = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)

@@ -41,6 +41,18 @@ function worker() {
 }
 const privateResponse = (scope, text = 'private') => new Response(text, { headers: { 'Content-Type': 'text/html', 'X-PWA-Scope': scope, 'X-PWA-Cacheable': '1', 'Vary': 'Cookie' } });
 
+test('backup previews and archive downloads never enter the private offline cache', async () => {
+    const w = worker();
+    w.fetch(async () => privateResponse('u1-ball-rmanager-s1', 'sensitive backup'));
+    for (const path of ['/settings/backups/', '/settings/backups/download/', '/settings/backups/74ecf151-89fa-4ebe-a16e-10993aa3b0a5/']) {
+        assert.equal(await (await w.navigate(path, 'GET', true)).text(), 'sensitive backup');
+    }
+    const pages = [...w.stores.entries()].filter(([key]) => key.includes('-pages-'));
+    assert.ok(pages.every(([, entries]) => entries.size === 0));
+    w.fetch(async () => { throw new Error('offline'); });
+    assert.equal((await w.navigate('/settings/backups/')).status, 503);
+});
+
 test('only verified private HTML is cached and another account cannot read it offline', async () => {
     const w = worker();
     w.fetch(async () => privateResponse('u1-b1-rmanager-s0', 'account A'));

@@ -2,6 +2,16 @@
 
 Complete guide for creating, encrypting, verifying, restoring, and automating database backups for the SH ERP system.
 
+## Complete ZIP download and merge from the application
+
+Superusers can open **Settings → Backups** to download all business data and
+uploaded media together, then upload a generated ZIP for a reviewed,
+transactional merge. Duplicate records are not replayed and divergent financial
+snapshots are blocked. See the [Arabic full-backup guide](docs/complete-backups-ar.md).
+This requires migration `settings_app.0009_backup_tools`. The database-only CLI
+commands below remain separate and their SQL/SQLite output is not accepted by
+the ZIP merge screen.
+
 ---
 
 ## Quick Start

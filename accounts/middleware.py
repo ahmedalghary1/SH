@@ -93,6 +93,10 @@ class DuplicateSubmissionMiddleware:
 
     def __call__(self, request):
         token = request.POST.get('_submission_token') if request.method == 'POST' else None
+        # Backup imports own their transaction, filesystem rollback and unique
+        # preview receipt. An outer transaction could commit after file cleanup.
+        if request.path.startswith('/settings/backups/'):
+            return self.get_response(request)
         if not token or not request.user.is_authenticated:
             return self.get_response(request)
         if len(token) > 64:

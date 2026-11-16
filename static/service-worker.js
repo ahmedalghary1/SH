@@ -1,5 +1,5 @@
 // Release all shell assets together; private pages require a verified scope.
-const CACHE_VERSION = "sh-pwa-v2026-11-16-business-audit-02";
+const CACHE_VERSION = "sh-pwa-v2026-11-16-complete-backups-01";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_PREFIX = `${CACHE_VERSION}-pages-`;
 const META_CACHE = "sh-pwa-identity-v1";
@@ -34,6 +34,7 @@ const sameOriginUrl = (input) => {
 const isAuthUrl = (url) => url.pathname.startsWith("/accounts/") || url.pathname.startsWith("/admin/");
 const isPublicAsset = (url) => url.pathname.startsWith("/static/") || [OFFLINE_URL, "/manifest.json"].includes(url.pathname);
 const isPrivatePage = (url) => !isAuthUrl(url) && !url.pathname.startsWith("/api/")
+  && !url.pathname.startsWith("/settings/backups/")
   && !url.pathname.startsWith("/media/") && !/\.(?:pdf|csv|xlsx?|zip)$/i.test(url.pathname)
   && !["export", "download", "format"].some((key) => url.searchParams.has(key));
 

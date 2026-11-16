@@ -37,7 +37,7 @@ class PwaScopeMiddleware:
             if request.method == 'GET' and 'text/html' in response.get('Content-Type', ''):
                 patch_cache_control(response, private=True, no_cache=True)
                 patch_vary_headers(response, ['Cookie'])
-                if response.status_code == 200 and not request.path.startswith(('/accounts/', '/admin/', '/api/')):
+                if response.status_code == 200 and not request.path.startswith(('/accounts/', '/admin/', '/api/', '/settings/backups/')):
                     response['X-PWA-Cacheable'] = '1'
         return response
 

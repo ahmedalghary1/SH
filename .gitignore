@@ -34,6 +34,7 @@ logs/
 staticfiles/
 media/
 backups/
+private_backups/
 
 # Environment and secrets
 .env

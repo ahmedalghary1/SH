@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block title %}معاينة دمج النسخة الاحتياطية{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>{% if job.completed_at %}اكتمل دمج النسخة{% else %}معاينة دمج النسخة{% endif %}</h1>
+    <a class="btn btn-light" href="{% url 'settings_app:backups' %}">النسخ الاحتياطي</a>
+</div>
+<section class="card">
+    <p><strong>الملف:</strong> {{ job.original_name }}</p>
+    <p><strong>تاريخ النسخة:</strong> <span dir="ltr">{{ summary.created_at }}</span></p>
+    <p><strong>المعارض:</strong> {% for branch in summary.branches %}{{ branch.name }} ({{ branch.code }}){% if not forloop.last %}، {% endif %}{% endfor %}</p>
+    <div class="summary-grid">
+        <div><strong>{{ summary.create }}</strong><p>سجل جديد</p></div>
+        <div><strong>{{ summary.update }}</strong><p>تحديث من نسخة أحدث متوافقة</p></div>
+        <div><strong>{{ summary.skip }}</strong><p>سجل موجود سيبقى محفوظًا</p></div>
+        <div><strong>{{ summary.conflict_count }}</strong><p>تعارض يحتاج مراجعة</p></div>
+    </div>
+    <p>الصور والمرفقات: {{ summary.media_count }}، منها {{ summary.media_new }} ملفًا يضاف و{{ summary.media_reused }} ملفًا موجودًا بالفعل.</p>
+    {% if summary.media_renamed %}<p>سيحفظ {{ summary.media_renamed }} ملفًا باسم مختلف لتبقى الصور الحالية دون استبدال.</p>{% endif %}
+    {% if summary.missing_media %}<p class="form-errors">يوجد {{ summary.missing_media }} رابط صورة لم يكن ملفه موجودًا عند إنشاء النسخة؛ لا يمكن استعادة ملف لم يكن متاحًا في المصدر.</p>{% endif %}
+    {% if summary.preserved_users %}<p class="muted">ستبقى كلمات مرور وصلاحيات {{ summary.preserved_users }} حسابًا موجودًا دون تغيير.</p>{% endif %}
+</section>
+<section class="card">
+    <h2>تفاصيل السجلات</h2>
+    <div class="table-wrap"><table>
+        <thead><tr><th>البيانات</th><th>إضافة</th><th>تحديث</th><th>موجود</th><th>تعارض</th></tr></thead>
+        <tbody>{% for row in summary.rows %}<tr><td>{{ row.label }}</td><td>{{ row.create }}</td><td>{{ row.update }}</td><td>{{ row.skip }}</td><td>{{ row.conflict }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+</section>
+{% if summary.conflict_count %}
+<section class="card">
+    <h2>لن يطبق الدمج قبل معالجة التعارضات</h2>
+    <p>لم تتغير البيانات. لا يتم استبدال مستندات مختلفة أو جمع أرصدة متعارضة تلقائيًا.</p>
+    <div class="table-wrap"><table><thead><tr><th>النوع</th><th>المرجع</th><th>السبب</th></tr></thead>
+        <tbody>{% for conflict in summary.conflicts %}<tr><td>{{ conflict.label }}</td><td>{{ conflict.reference }}</td><td>{{ conflict.reason }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% if summary.conflict_count > 100 %}<p class="muted">تعرض أول 100 حالة فقط.</p>{% endif %}
+</section>
+{% endif %}
+{% if job.completed_at %}
+<section class="card"><h2>تمت العملية</h2><p>اكتمل الدمج في {{ job.completed_at }}. إعادة إرسال الطلب نفسه لا تنفذ الحركات مرة أخرى.</p></section>
+{% else %}
+<section class="card">
+    <h2>تطبيق الدمج</h2>
+    <p>تراجع الخطة مرة أخرى عند التطبيق. إذا تغيرت البيانات أو الصور منذ المعاينة، يلزم رفع النسخة مجددًا. لا تعاد حركة بيع أو قبض؛ تحفظ السجلات وأرصدتها كوحدة واحدة.</p>
+    <form method="post" class="form-grid">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        {% if not summary.conflict_count %}
+        <label>{{ form.confirm }}<span>{{ form.confirm.label }}</span>{{ form.confirm.errors }}</label>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">تأكيد دمج البيانات والصور</button></div>
+        {% endif %}
+        <a class="btn btn-light" href="{% url 'settings_app:backups' %}">رفع نسخة أخرى</a>
+    </form>
+</section>
+{% endif %}
+{% endblock %}

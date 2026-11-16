@@ -43,7 +43,10 @@ SENSITIVE_FIELD_NAMES = {
 
 
 def _should_track(sender):
-    return sender._meta.app_label not in IGNORED_APP_LABELS
+    return (sender._meta.app_label not in IGNORED_APP_LABELS
+            and sender._meta.label_lower not in {
+                'settings_app.backupidentity', 'settings_app.backupbranchhistory', 'settings_app.backupimport',
+            })
 
 
 def _section_for(sender):

@@ -95,6 +95,11 @@ does not reverse stock or cash twice. Editing/deletion requires a connection.
 
 ## Release Review And Offline Use
 
+Superusers can download a complete data-and-media ZIP and preview merging a
+generated ZIP from **Settings → Backups**. Apply migration
+`settings_app.0009_backup_tools` and collect static files when deploying this
+feature. See the [Arabic backup and merge guide](docs/complete-backups-ar.md).
+
 The full November 16 business audit fixes discount recalculation, returns,
 representative collections, supplier statements, cash reporting and profit
 calculations. See the [full Arabic audit](docs/full-business-audit-2026-11-16-ar.md).

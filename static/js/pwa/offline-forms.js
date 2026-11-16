@@ -663,7 +663,7 @@ async function handleCapturedSubmit(form, submitter = null) {
 document.addEventListener("submit", (event) => {
     const form = event.target;
     if (form instanceof HTMLFormElement && !navigator.onLine && String(form.getAttribute('method')).toLowerCase() === "post"
-        && !classifyPath(formPath(form, event.submitter)) && /^(?:\/orders\/|\/invoices\/|\/finance\/|\/returns\/|\/products\/|\/purchases\/)/.test(formPath(form, event.submitter))) {
+        && !classifyPath(formPath(form, event.submitter)) && /^(?:\/orders\/|\/invoices\/|\/finance\/|\/returns\/|\/products\/|\/purchases\/|\/settings\/backups\/)/.test(formPath(form, event.submitter))) {
         event.preventDefault();
         showOfflineNotice("هذه العملية تحتاج إلى الاتصال بالإنترنت. البيانات في النموذج محفوظة حتى عودة الاتصال.", true);
         return;

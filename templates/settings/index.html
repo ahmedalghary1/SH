@@ -2,5 +2,12 @@
 {% block title %}الإعدادات{% endblock %}
 {% block content %}
 <div class="page-head"><h1>الإعدادات</h1></div>
+{% if request.user.is_superuser %}
+<section class="card">
+    <div class="section-head"><h2>النسخ الاحتياطي ودمج البيانات</h2></div>
+    <p>تنزيل نسخة كاملة لكل المعارض تشمل البيانات والصور والمرفقات، أو رفع نسخة لمعاينة دمجها.</p>
+    <a class="btn btn-secondary" href="{% url 'settings_app:backups' %}">النسخ الاحتياطي</a>
+</section>
+{% endif %}
 {% include 'partials/model_form.html' with button_text='حفظ الإعدادات' %}
 {% endblock %}
