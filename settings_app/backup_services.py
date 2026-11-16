@@ -25,6 +25,7 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.core.management.color import no_style
 from django.db import connection, models, transaction
 from django.db.models import Max
+from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
 from config.branching import reset_current_branch, set_current_branch
@@ -65,6 +66,12 @@ MODEL_LABELS = {
 
 class BackupError(ValueError):
     pass
+
+
+def ensure_backup_schema():
+    executor = MigrationExecutor(connection)
+    if executor.migration_plan(executor.loader.graph.leaf_nodes()):
+        raise BackupError('تحديث قاعدة البيانات غير مكتمل. نفّذ python manage.py migrate على الخادم ثم أعد المحاولة.')
 
 
 def limits():
@@ -329,6 +336,7 @@ def _remember_branch(branch_pk, current):
 
 def build_backup():
     """Return a rewound temporary ZIP stream; caller owns closing it."""
+    ensure_backup_schema()
     temporary = tempfile.TemporaryFile()
     nested = connection.in_atomic_block
     try:
@@ -737,6 +745,7 @@ def cleanup_archives():
 
 
 def stage_upload(upload, user):
+    ensure_backup_schema()
     job_id = uuid.uuid4()
     path = staged_path(job_id)
     try:

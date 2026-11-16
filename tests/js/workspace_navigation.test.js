@@ -78,6 +78,20 @@ function fixture() {
   return { context, bar, content, stored, events };
 }
 
+test('backup and ZIP downloads use native navigation instead of fetching them as workspace HTML', async () => {
+  const { context, events } = fixture();
+  let intercepted = 0, requests = 0;
+  context.fetch = async () => { requests++; throw new Error('archive treated as HTML'); };
+  for (const href of ['https://example.test/settings/backups/download/', 'https://example.test/backup.zip']) {
+    const link = { href, target: '', hasAttribute: () => false };
+    link.closest = () => link;
+    events.click({ target: link, button: 0, preventDefault() { intercepted++; } });
+  }
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(intercepted, 0);
+  assert.equal(requests, 0);
+});
+
 test('ordinary navigation reuses the active workspace tab; explicit action opens another', async () => {
   const { context, bar, stored, events } = fixture();
   await context.window.SHWorkspace.navigate('/customers/');

@@ -363,7 +363,7 @@
     if (!link || event.defaultPrevented || event.button !== 0 || link.target || link.hasAttribute('download') || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const url = new URL(link.href, location.origin);
     if (url.hash && normalizeUrl(url.href) === activeUrl) return;
-    if (/\.(pdf|xlsx?|csv)$/i.test(url.pathname) || url.pathname.includes('/export/') || url.pathname.includes('/print')) return;
+    if (/\.(pdf|xlsx?|csv|zip)$/i.test(url.pathname) || url.pathname.includes('/export/') || url.pathname.includes('/print') || url.pathname.includes('/download/')) return;
     if (url.pathname.includes('/logout')) { try { sessionStorage.removeItem(storageKey); } catch (_error) { /* Storage unavailable. */ } }
     if (url.origin !== location.origin || url.pathname.startsWith('/accounts/') || url.pathname.startsWith('/admin/')) return;
     event.preventDefault();

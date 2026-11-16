@@ -5,22 +5,25 @@
     <div><h1>النسخ الاحتياطي ودمج البيانات</h1><p class="muted">نسخة واحدة لكل المعارض، متاحة للحساب الأعلى فقط.</p></div>
     <a class="btn btn-light" href="{% url 'settings_app:index' %}">الإعدادات</a>
 </div>
+{% if backup_error %}
+<section class="card" role="alert"><p class="form-errors">{{ backup_error }}</p></section>
+{% endif %}
 <section class="card">
     <h2>تنزيل نسخة كاملة</h2>
     <p>ملف ZIP يشمل المنتجات والعملاء والموردين والفواتير والمخزون والأرصدة والحركات والإعدادات والمستخدمين وسجل المراجعة، وجميع الصور والمرفقات الموجودة في مجلدات رفع الملفات.</p>
     <p class="muted">النسخة تخص البيانات المحفوظة على الخادم. زامن عمليات أجهزة المندوبين أولًا لتضمينها. لا تشمل ملفات البرنامج أو كلمات اتصال الخادم أو جلسات تسجيل الدخول.</p>
-    <a class="btn btn-primary" href="{% url 'settings_app:backup_download' %}" download>تنزيل البيانات والصور</a>
+    {% if backup_ready %}<a class="btn btn-primary" href="{% url 'settings_app:backup_download' %}">تنزيل البيانات والصور</a>{% endif %}
 </section>
 <section class="card">
     <h2>رفع نسخة ودمجها</h2>
     <p>اختر نسخة ZIP أنشأها هذا النظام. ستظهر معاينة بالسجلات الجديدة والموجودة والتحديثات والتعارضات قبل التطبيق.</p>
     <p>الدمج لا يحذف بياناتك، ولا يكرر النسخة نفسها، ولا يجمع الأرصدة مرتين. تبقى حسابات الدخول الموجودة بصلاحياتها وكلمات مرورها الحالية. إذا اختلفت البيانات المالية دون نقطة سابقة مطابقة، يتوقف الدمج للمراجعة.</p>
-    <form method="post" enctype="multipart/form-data" class="form-grid">
+    {% if backup_ready %}<form method="post" enctype="multipart/form-data" class="form-grid">
         {% csrf_token %}
         {{ form.non_field_errors }}
         <label><span>{{ form.archive.label }}</span>{{ form.archive }}{{ form.archive.errors }}</label>
         <p class="muted span-all">الحد الأقصى: {{ max_upload_mb }} ميجابايت. تحتاج هذه العملية إلى اتصال. تبقى المعاينة متاحة لمدة ساعة.</p>
         <div class="form-actions"><button class="btn btn-secondary" type="submit">رفع ومعاينة الدمج</button></div>
-    </form>
+    </form>{% endif %}
 </section>
 {% endblock %}

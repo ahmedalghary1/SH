@@ -5,6 +5,8 @@ from pathlib import Path
 import sys
 import tempfile
 import threading
+import time
+from unittest.mock import patch
 from wsgiref.simple_server import make_server, WSGIRequestHandler
 import zipfile
 
@@ -32,6 +34,7 @@ def main():
         from django.test import override_settings
         from accounts.models import User
         from products.models import Product
+        from settings_app.backup_services import BackupError
         from playwright.sync_api import sync_playwright
         cleanup.callback(connections.close_all)
         isolated_media = override_settings(MEDIA_FALLBACK_ROOTS=[])
@@ -50,7 +53,19 @@ def main():
             def log_message(self, *unused):
                 pass
 
-        server = make_server('127.0.0.1', 0, StaticFilesHandler(get_wsgi_application()), handler_class=QuietHandler)
+        application = StaticFilesHandler(get_wsgi_application())
+        slow_download, fail_download = threading.Event(), threading.Event()
+
+        def test_application(environ, start_response):
+            if environ.get('PATH_INFO') == '/settings/backups/download/':
+                if slow_download.is_set():
+                    time.sleep(9)
+                if fail_download.is_set():
+                    with patch('settings_app.backup_views.build_backup', side_effect=BackupError('تعذر تجهيز النسخة للاختبار')):
+                        return application(environ, start_response)
+            return application(environ, start_response)
+
+        server = make_server('127.0.0.1', 0, test_application, handler_class=QuietHandler)
 
         def serve():
             try:
@@ -78,13 +93,27 @@ def main():
             page.goto(base + '/settings/', wait_until='networkidle')
             page.locator('a[href="/settings/backups/"]').click()
             page.wait_for_selector('input[type=file]')
+            page.evaluate('() => navigator.serviceWorker.ready')
+            if not page.evaluate('!!navigator.serviceWorker.controller'):
+                page.reload(wait_until='networkidle')
+            page.wait_for_function('!!navigator.serviceWorker.controller')
             page.screenshot(path=str(screenshots / 'backups-desktop.png'), full_page=True)
+            slow_download.set()
             with page.expect_download() as downloaded:
-                page.locator('a[download]').click()
+                page.locator('a[href="/settings/backups/download/"]').click()
             archive = task_root / 'download.zip'
             downloaded.value.save_as(str(archive))
             with zipfile.ZipFile(archive) as zipped:
+                assert zipped.testzip() is None
                 assert zipped.read('media/attachment.txt') == b'all attachments are included'
+            slow_download.clear()
+            fail_download.set()
+            unexpected = []
+            page.on('download', lambda download: unexpected.append(download.suggested_filename))
+            page.locator('a[href="/settings/backups/download/"]').click()
+            page.wait_for_selector('.toast:has-text("تعذر تجهيز النسخة للاختبار")')
+            assert not unexpected, unexpected
+            fail_download.clear()
             page.locator('input[type=file]').set_input_files(str(archive))
             page.locator('button[type=submit]').filter(has_text='رفع').click()
             page.wait_for_selector('input[name=confirm]')
@@ -100,7 +129,7 @@ def main():
             page.wait_for_selector('h1:has-text("اكتمل دمج النسخة")')
             assert Product.all_objects.filter(sku='BROWSER-BACKUP').count() == 1
             assert not errors, errors
-            print('PASS: real Chromium download, ZIP contents, upload preview, confirmation, no duplication, four viewport widths, no JS errors')
+            print('PASS: real Chromium controlled by service worker, download longer than eight seconds, valid ZIP contents, visible failures without HTML downloads, upload/merge, four viewport widths, no JS errors')
 
 
 if __name__ == '__main__':

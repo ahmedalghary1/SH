@@ -11,7 +11,7 @@ from django.views.decorators.cache import never_cache
 
 from accounts.permissions import SuperuserRequiredMixin
 from .backup_forms import BackupConfirmForm, BackupUploadForm
-from .backup_services import BackupError, apply_import, build_backup, cleanup_archives, limits, stage_upload
+from .backup_services import BackupError, apply_import, build_backup, cleanup_archives, ensure_backup_schema, limits, stage_upload
 from .models import BackupImport
 
 
@@ -23,20 +23,29 @@ class BackupAccessView(SuperuserRequiredMixin, View):
     pass
 
 
-def page_context(form=None):
+def page_context(form=None, backup_error=''):
     return {
         'form': form if form is not None else BackupUploadForm(),
         'max_upload_mb': limits()['upload'] // (1024 * 1024),
+        'backup_error': backup_error,
+        'backup_ready': not backup_error,
     }
 
 
 class BackupPageView(BackupAccessView):
     def get(self, request):
+        backup_error = ''
         try:
+            ensure_backup_schema()
             cleanup_archives()
+        except BackupError as exc:
+            backup_error = str(exc)
+        except DatabaseError:
+            logger.exception('Backup schema is unavailable')
+            backup_error = 'تعذر قراءة بيانات النسخ الاحتياطي. تحقق من تحديث قاعدة البيانات واتصال الخادم.'
         except OSError:
             logger.exception('Could not remove an expired staged backup')
-        return render(request, 'settings/backups.html', page_context())
+        return render(request, 'settings/backups.html', page_context(backup_error=backup_error))
 
     def post(self, request):
         form = BackupUploadForm(request.POST, request.FILES)

@@ -1,5 +1,5 @@
 // Release all shell assets together; private pages require a verified scope.
-const CACHE_VERSION = "sh-pwa-v2026-11-16-complete-backups-01";
+const CACHE_VERSION = "sh-pwa-v2026-11-16-backup-download-fix-02";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_PREFIX = `${CACHE_VERSION}-pages-`;
 const META_CACHE = "sh-pwa-identity-v1";
@@ -206,6 +206,9 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = sameOriginUrl(request);
   if (!url) return;
+  // Backup generation can exceed the page timeout. Let the browser own the
+  // request and its attachment/error response; never turn it into offline HTML.
+  if (url.pathname.startsWith('/settings/backups/')) return;
   if (request.mode === "navigate" || request.destination === "document" || request.headers?.get('X-Workspace-Tab') === '1') {
     event.respondWith(networkNavigation(request, event));
   } else if (isPublicAsset(url)) event.respondWith(staticAsset(request));

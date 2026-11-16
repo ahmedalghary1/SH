@@ -350,7 +350,11 @@ class CompleteBackupTests(TestCase):
         self.assertIn('no-store', download['Cache-Control'])
         self.assertNotIn('X-PWA-Cacheable', download)
         raw = b''.join(download.streaming_content)
+        self.assertEqual(int(download['Content-Length']), len(raw))
+        self.assertTrue(raw.startswith(b'PK'))
         self.assertTrue(zipfile.is_zipfile(BytesIO(raw)))
+        with zipfile.ZipFile(BytesIO(raw)) as archive:
+            self.assertIsNone(archive.testzip())
         response = self.client.post(reverse('settings_app:backups'), {'archive': self.upload(data)})
         self.assertEqual(response.status_code, 302)
         self.assertFalse(Product.all_objects.filter(sku='SOURCE-P').exists())
@@ -364,6 +368,26 @@ class CompleteBackupTests(TestCase):
         self.assertEqual(applied.status_code, 302)
         self.assertTrue(Product.all_objects.filter(sku='SOURCE-P').exists())
         self.assertEqual(self.client.post(url, {'confirm': 'on', '_submission_token': 'backup-repeat'}).status_code, 302)
+
+    def test_missing_migrations_show_an_actionable_page_without_a_download_link(self):
+        self.client.force_login(self.admin)
+        with patch.object(backups, 'MigrationExecutor') as executor:
+            executor.return_value.migration_plan.return_value = [('settings_app.0009', False)]
+            page = self.client.get(reverse('settings_app:backups'))
+            self.assertContains(page, 'python manage.py migrate')
+            self.assertNotContains(page, reverse('settings_app:backup_download'))
+            self.assertNotContains(page, 'name="archive"')
+            result = self.client.get(reverse('settings_app:backup_download'), follow=True)
+            self.assertContains(result, 'python manage.py migrate')
+            self.assertNotIn('Content-Disposition', result)
+
+    def test_failed_download_redirects_to_a_visible_error_without_html_download_attribute(self):
+        self.client.force_login(self.admin)
+        with patch('settings_app.backup_views.build_backup', side_effect=backups.BackupError('تعذر تجهيز النسخة للاختبار')):
+            result = self.client.get(reverse('settings_app:backup_download'), follow=True)
+        self.assertContains(result, 'تعذر تجهيز النسخة للاختبار')
+        self.assertNotIn('Content-Disposition', result)
+        self.assertNotContains(result, ' download')
 
 
 @skipUnlessDBFeature('has_select_for_update')
