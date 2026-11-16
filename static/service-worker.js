@@ -1,5 +1,5 @@
 // Release all shell assets together; private pages require a verified scope.
-const CACHE_VERSION = "sh-pwa-v2026-11-09-negative-stock-02";
+const CACHE_VERSION = "sh-pwa-v2026-11-16-representative-01";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_PREFIX = `${CACHE_VERSION}-pages-`;
 const META_CACHE = "sh-pwa-identity-v1";
@@ -10,6 +10,9 @@ const PREFETCH_FRESH_MS = 5 * 60 * 1000;
 const CORE_ASSETS = [
   OFFLINE_URL, "/manifest.json", "/static/css/main.css", "/static/js/main.js",
   "/static/css/ui-spacing.css",
+  "/static/css/table-controls.css", "/static/js/table-controls.js",
+  "/static/css/customer-statement.css", "/static/js/customer-statement.js",
+  "/static/js/pwa/customer-ledger.js",
   "/static/js/internal-tabs.js", "/static/js/orders.js", "/static/js/inventory.js",
   "/static/js/product_create.js", "/static/js/purchase_create.js", "/static/js/purchase_return.js",
   "/static/js/pwa/identity.js", "/static/js/pwa/db.js", "/static/js/pwa/sync-queue.js",
@@ -96,7 +99,14 @@ async function cachedPage(request, clientId) {
   const scope = await readActiveScope();
   if (!scope || (clientScopes.has(clientId) && clientScopes.get(clientId) !== scope)) return null;
   const cache = await caches.open(`${PAGE_PREFIX}${scope}`);
-  return cache.match(new Request(request.url), { ignoreVary: true });
+  const exact = await cache.match(new Request(request.url), { ignoreVary: true });
+  if (exact) return exact;
+  // The customer is selected from the authorized local snapshot on this screen.
+  const url = sameOriginUrl(request);
+  if (url?.pathname === '/finance/statements/customer/') {
+    return cache.match(new Request(new URL(url.pathname, self.location.origin)), { ignoreVary: true });
+  }
+  return null;
 }
 
 async function networkNavigation(request, event) {
@@ -139,6 +149,7 @@ async function staticAsset(request) {
 async function cacheUrls(urls, scope) {
   // A bounded pool avoids flooding PostgreSQL with every screen at startup.
   const pending = [...new Set(urls)].map(sameOriginUrl).filter(Boolean);
+  const result = { cached: [], failed: [] };
   async function run() {
     while (pending.length) {
       const url = pending.shift();
@@ -149,17 +160,31 @@ async function cacheUrls(urls, scope) {
         const cache = await caches.open(isPublicAsset(url) ? STATIC_CACHE : `${PAGE_PREFIX}${scope}`);
         const cached = await cache.match(url.href, { ignoreVary: true });
         const age = Date.now() - Date.parse(cached?.headers.get("Date") || "");
-        if (cached && (isPublicAsset(url) || (age >= 0 && age < PREFETCH_FRESH_MS))) continue;
+        if (cached && (isPublicAsset(url) || (age >= 0 && age < PREFETCH_FRESH_MS))) {
+          result.cached.push(url.pathname + url.search);
+          continue;
+        }
         const request = new Request(url.href, { credentials: "same-origin", cache: "no-cache",
           headers: !isPublicAsset(url) ? { "X-PWA-Scope": scope } : {} });
         const response = await fetch(request);
-        if (!isPublicAsset(url) && response.headers.get("X-PWA-Scope") !== scope) continue;
+        if (!canStore(response, url, scope)) {
+          result.failed.push(url.pathname + url.search);
+          continue;
+        }
         if (!isPublicAsset(url)) await setActiveScope(scope);
         await storeResponse(request, response, scope);
-      } catch { /* Failures are isolated per URL. */ }
+        if (await cache.match(url.href, { ignoreVary: true })) result.cached.push(url.pathname + url.search);
+        else result.failed.push(url.pathname + url.search);
+      } catch {
+        // A failed refresh does not remove an already prepared offline page.
+        const cache = await caches.open(isPublicAsset(url) ? STATIC_CACHE : `${PAGE_PREFIX}${scope}`);
+        if (await cache.match(url.href, { ignoreVary: true })) result.cached.push(url.pathname + url.search);
+        else result.failed.push(url.pathname + url.search);
+      }
     }
   }
   await Promise.all([run(), run(), run()]);
+  return result;
 }
 
 self.addEventListener("install", (event) => {
@@ -180,7 +205,7 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = sameOriginUrl(request);
   if (!url) return;
-  if (request.mode === "navigate" || request.destination === "document") {
+  if (request.mode === "navigate" || request.destination === "document" || request.headers?.get('X-Workspace-Tab') === '1') {
     event.respondWith(networkNavigation(request, event));
   } else if (isPublicAsset(url)) event.respondWith(staticAsset(request));
 });
@@ -192,7 +217,11 @@ self.addEventListener("message", (event) => {
     clientScopes.set(event.source.id, message.scope);
   }
   if (message.type === "CACHE_URLS" && validScope(message.scope)) {
-    event.waitUntil(cacheUrls(Array.isArray(message.urls) ? message.urls.slice(0, MAX_PAGES) : [], message.scope));
+    event.waitUntil((async () => {
+      const assets = await cacheUrls(CORE_ASSETS, null);
+      const pages = await cacheUrls(Array.isArray(message.urls) ? message.urls.slice(0, MAX_PAGES) : [], message.scope);
+      event.ports?.[0]?.postMessage({ cached: pages.cached, failed: [...assets.failed, ...pages.failed] });
+    })());
   }
 });
 self.addEventListener("sync", (event) => {

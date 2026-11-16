@@ -84,7 +84,7 @@ def _allowed_cash_accounts(user):
 
 
 def _bootstrap_payload(user):
-    if getattr(user, 'is_sales', False):
+    if getattr(user, 'is_sales', False) and not getattr(user, 'is_manager', False):
         from sales_reps.services import get_or_create_sales_rep_warehouse
         get_or_create_sales_rep_warehouse(user)
     can_view_costs = bool(getattr(user, 'is_manager', False))
@@ -95,6 +95,26 @@ def _bootstrap_payload(user):
     company = CompanySettings.load()
     accounts = _allowed_cash_accounts(user)
     cash_account = CashAccount.get_default() if getattr(user, 'is_manager', False) else accounts.first()
+    customer_records = []
+    for customer in customers:
+        record = serialize_customer(customer)
+        if getattr(user, 'is_sales', False) and not getattr(user, 'is_manager', False):
+            from finance.services import build_customer_statement
+            from finance.models import PaymentTransaction
+            from django.utils import timezone
+            statement = build_customer_statement(customer)
+            record['statement_snapshot'] = {
+                'downloaded_at': timezone.now().isoformat(),
+                # A receipt can allocate to several non-cash ledger entries.
+                # Its own ID may not appear among statement entries.
+                'payment_ids': list(PaymentTransaction.objects.filter(
+                    related_customer=customer).values_list('pk', flat=True)),
+                'entries': [{**{key: str(entry[key]) for key in ('date', 'type', 'description', 'debit', 'credit', 'balance')},
+                             'order_id': entry['order'].pk if entry.get('order') else None,
+                             'payment_id': entry['payment'].pk if entry.get('payment') else None}
+                            for entry in statement['entries']],
+            }
+        customer_records.append(record)
     return {
         'scope': offline_scope(user, get_current_branch_id()),
         'user': user_payload(user),
@@ -112,7 +132,7 @@ def _bootstrap_payload(user):
         },
         'products': [serialize_product(product) for product in products],
         'variants': [serialize_variant(variant, can_view_costs=can_view_costs) for variant in variants],
-        'customers': [serialize_customer(customer) for customer in customers],
+        'customers': customer_records,
         'orders': [serialize_order(order) for order in _allowed_orders(user)],
         'stock': [serialize_stock(stock) for stock in _allowed_stock(user)],
         'warehouses': [

@@ -29,9 +29,12 @@ function worker() {
     });
     return {
         stores, handlers, fetch(fn) { fetcher = fn; },
-        async navigate(path, method = 'GET') {
+        async navigate(path, method = 'GET', workspace = false) {
             let result;
-            handlers.fetch({ request: { url: 'https://erp.test' + path, method, mode: 'navigate', destination: 'document' }, clientId: 'page-1', resultingClientId: 'page-1', respondWith(promise) { result = promise; } });
+            handlers.fetch({ request: { url: 'https://erp.test' + path, method,
+                mode: workspace ? 'cors' : 'navigate', destination: workspace ? '' : 'document',
+                headers: new Headers(workspace ? { 'X-Workspace-Tab': '1' } : {}),
+            }, clientId: 'page-1', resultingClientId: 'page-1', respondWith(promise) { result = promise; } });
             return result;
         },
     };
@@ -87,4 +90,24 @@ test('HTML without scope or with no-store is never cached', async () => {
     await w.navigate('/orders/');
     w.fetch(async () => { throw new Error('offline'); });
     assert.equal((await w.navigate('/orders/')).status, 503);
+});
+
+test('workspace navigation uses scoped cached HTML when offline', async () => {
+    const w = worker();
+    w.fetch(async () => privateResponse('u1-b1-rsales-s0', 'collection form'));
+    await w.navigate('/finance/transactions/collection/', 'GET', true);
+    w.fetch(async () => { throw new Error('offline'); });
+    assert.equal(await (await w.navigate('/finance/transactions/collection/', 'GET', true)).text(), 'collection form');
+});
+
+test('an unseen customer statement URL uses its generic shell within the verified scope only', async () => {
+    const w = worker();
+    w.fetch(async () => privateResponse('u1-b1-rsales-s0', 'statement shell'));
+    await w.navigate('/finance/statements/customer/');
+    w.fetch(async () => { throw new Error('offline'); });
+    assert.equal(await (await w.navigate('/finance/statements/customer/?customer=123')).text(), 'statement shell');
+    w.fetch(async () => privateResponse('u2-b1-rsales-s0', 'other user'));
+    await w.navigate('/orders/');
+    w.fetch(async () => { throw new Error('offline'); });
+    assert.equal((await w.navigate('/finance/statements/customer/?customer=123')).status, 503);
 });

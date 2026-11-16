@@ -36,12 +36,48 @@ class MovementBalanceTests(TestCase):
 
     def test_report_filters_dates_and_types_without_resetting_balance(self):
         self.client.force_login(self.user)
-        response = self.client.get(reverse('reports:stock_movement'), {'warehouse': self.source.pk, 'movement_type': 'sale'})
+        response = self.client.get(reverse('inventory:product_movements', args=[self.variant.product_id]), {'warehouse': self.source.pk, 'movement_type': 'sale'})
         self.assertEqual(response.status_code, 200)
         row = response.context['movements'][0]
         self.assertEqual((row.previous_balance, row.current_balance), (15, 12))
         self.assertContains(response, 'رصيد سابق')
-        self.assertContains(response, 'الرصيد الحالي')
+        self.assertContains(response, 'الرصيد بعد الحركة')
+
+    def test_report_groups_all_variants_and_warehouses_once_per_product(self):
+        second = ProductVariant.objects.create(product=self.variant.product, variant_sku='BALANCE-SECOND')
+        stock_in(variant=second, warehouse=self.source, quantity=7, user=self.user)
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('reports:stock_movement'))
+        rows = list(response.context['products'])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]['movement_count'], rows[0]['incoming'], rows[0]['outgoing'], rows[0]['current_balance']), (5, 23, 7, 21))
+        detail = self.client.get(rows[0]['detail_url'])
+        self.assertEqual(detail.context['page_obj'].paginator.count, 5)
+        self.assertEqual(len(detail.context['movements']), 6)  # Both transfer legs.
+
+    def test_summary_preserves_warehouse_and_type_filters_in_detail_link(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('reports:stock_movement'), {'warehouse': self.source.pk, 'movement_type': 'sale'})
+        row = response.context['products'][0]
+        self.assertEqual((row['incoming'], row['outgoing'], row['current_balance']), (0, 3, 10))
+        detail = self.client.get(row['detail_url'])
+        self.assertEqual([movement.pk for movement in detail.context['movements']], [self.sale.pk])
+
+    def test_summary_and_details_include_history_beyond_500_events(self):
+        from inventory.models import StockMovement
+        StockMovement.objects.bulk_create([StockMovement(variant=self.variant, to_warehouse=self.source,
+            quantity=1, movement_type='in', created_by=self.user) for _ in range(505)])
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('reports:stock_movement'))
+        self.assertEqual(response.context['products'][0]['movement_count'], 509)
+        detail = self.client.get(reverse('inventory:product_movements', args=[self.variant.product_id]), {'page': 11})
+        self.assertEqual(detail.context['page_obj'].paginator.count, 509)
+        self.assertEqual(detail.context['page_obj'].number, 11)
+
+    def test_invalid_warehouse_does_not_expose_all_movements(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('reports:stock_movement'), {'warehouse': 'bad'})
+        self.assertFalse(response.context['products'])
 
     def test_equal_timestamps_have_deterministic_order(self):
         from inventory.models import StockMovement

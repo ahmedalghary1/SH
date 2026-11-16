@@ -2,7 +2,7 @@
 
 {% block title %}حركة مخزن{% endblock %}
 {% block content %}
-<div class="page-head"><h1>حركة مخزن</h1><p class="page-description">رصيد الصنف قبل كل حركة وبعدها في المخزن. تُعرض أحدث 500 حركة، والتحويل يظهر بسطر لكل مخزن.</p></div>
+<div class="page-head"><h1>حركة مخزن</h1><p class="page-description">كل منتج يظهر مرة واحدة مع إجمالي دخوله وخروجه. اضغط على صفه لعرض جميع حركاته في المخزن، بما يشمل الألوان والمقاسات.</p></div>
 {% include 'reports/report_links.html' %}
 <div class="reports-page">
     
@@ -49,48 +49,23 @@
     </section>
     
     <section class="card">
-            {% if movements %}
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>التاريخ</th>
-                            <th>المنتج</th>
-                            <th>كود اللون/المقاس</th>
-                            <th>المخزن</th>
-                            <th>رصيد سابق</th>
-                            <th>نوع الحركة</th>
-                            <th>من مخزن</th>
-                            <th>إلى مخزن</th>
-                            <th>التغير في الرصيد</th>
-                            <th>الرصيد الحالي</th>
-                            <th>المستخدم</th>
-                            <th>ملاحظات</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for movement in movements %}
-                        <tr>
-                            <td>{{ movement.created_at|date:'Y-m-d H:i' }}</td>
-                            <td>{{ movement.variant.product.name|default:"-" }}</td>
-                            <td>{{ movement.variant.variant_sku|default:"-" }}</td>
-                            <td>{{ movement.report_warehouse }}</td>
-                            <td>{{ movement.previous_balance }}</td>
-                            <td>{{ movement.report_movement_type|default:"-" }}</td>
-                            <td>{{ movement.from_warehouse.name|default:"-" }}</td>
-                            <td>{{ movement.to_warehouse.name|default:"-" }}</td>
-                            <td>{{ movement.quantity_change }}</td>
-                            <td>{{ movement.current_balance }}</td>
-                            <td>{{ movement.created_by.username|default:"-" }}</td>
-                            <td>{{ movement.note|default:"-" }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <p>لا توجد حركات مخزون مطابقة للفلاتر الحالية.</p>
-            {% endif %}
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>المنتج</th><th>كود المنتج</th><th>عدد الحركات</th><th>إجمالي الدخول</th><th>إجمالي الخروج</th><th>الرصيد الحالي</th><th>آخر حركة</th></tr></thead>
+                <tbody>
+                {% for product in products %}
+                    <tr data-row-link="{{ product.detail_url }}" tabindex="0">
+                        <td><a href="{{ product.detail_url }}">{{ product.variant__product__name }}</a></td>
+                        <td>{{ product.variant__product__sku }}</td><td>{{ product.movement_count }}</td>
+                        <td>{{ product.incoming }}</td><td>{{ product.outgoing }}</td><td>{{ product.current_balance }}</td>
+                        <td>{{ product.last_movement|date:'Y-m-d H:i' }}</td>
+                    </tr>
+                {% empty %}<tr><td colspan="7">لا توجد حركات مخزون مطابقة للفلاتر الحالية.</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p>إجماليات الدخول والخروج تخص الفلاتر المختارة. الرصيد الحالي هو الرصيد الفعلي الآن في المخزن المختار، أو مجموع المخازن عند عرض الكل.</p>
+        {% include 'partials/pagination.html' %}
     </section>
 </div>
 {% endblock %}

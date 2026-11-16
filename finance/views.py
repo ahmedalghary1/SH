@@ -520,6 +520,9 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
 
     @transaction.atomic
     def save_collection(self, form):
+        if self.request.user.is_sales and not self.request.user.is_superuser:
+            if form.cleaned_data['amount'] <= 0 or form.cleaned_data.get('allowed_discount'):
+                raise ValidationError('المندوب يمكنه تسجيل قبض بمبلغ موجب فقط دون رد مبالغ أو تسوية خصومات.')
         order = form.cleaned_data.get('order')
         cash_account = form.cleaned_data.get('cash_account')
         allowed_discount = form.cleaned_data.get('allowed_discount') or 0
@@ -744,7 +747,8 @@ class SupplierPaymentView(ManagerRequiredMixin, FormView):
             return self.form_invalid(form)
 
 
-class CustomerStatementView(ManagerRequiredMixin, TemplateView):
+class CustomerStatementView(RoleRequiredMixin, TemplateView):
+    allowed_roles = ('manager', 'sales')
     template_name = 'finance/statements/customer.html'
 
     def get_context_data(self, **kwargs):
@@ -765,7 +769,8 @@ class CustomerStatementView(ManagerRequiredMixin, TemplateView):
             from customers.models import Customer
 
             try:
-                customer = Customer.objects.select_related('created_by').filter(pk=positive_id(customer_id)).first()
+                from customers.services import visible_customers_for_user
+                customer = visible_customers_for_user(self.request.user).select_related('created_by').filter(pk=positive_id(customer_id)).first()
             except (TypeError, ValueError):
                 customer = None
             if customer:

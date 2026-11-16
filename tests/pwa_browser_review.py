@@ -21,7 +21,12 @@ def wait_for(page, expression):
         if page.evaluate(expression):
             return
         page.wait_for_timeout(100)
-    raise AssertionError('Timed out: ' + expression)
+    details = page.evaluate("""async () => {
+        const db=await import('/static/js/pwa/db.js');
+        return {url:location.href,queue:(await db.getAll(db.STORE_NAMES.syncQueue)).map(x=>({entity:x.entity_name,status:x.status,error:x.error})),
+            notices:Array.from(document.querySelectorAll('[role="status"], .pwa-notice')).map(x=>x.textContent)};
+    }""")
+    raise AssertionError('Timed out: ' + expression + ' State: ' + ascii(details))
 
 
 def main():
@@ -78,6 +83,9 @@ def main():
             browser = playwright.chromium.launch(headless=True)
             browser_cleanup.callback(browser.close)
             browser_cleanup.callback(connections.close_all)
+            if '--representative-only' in sys.argv:
+                review_representative(browser, base)
+                return
             context = browser.new_context()
             context.add_cookies([dict(name='sessionid', value=client.cookies['sessionid'].value, url=base)])
             page = context.new_page()
@@ -222,6 +230,12 @@ def main():
             assert page.locator('.stock-table-wrap tbody tr').count() == 2
             assert not errors, errors
             print('PASS: offline bulk form, cached reload, reconnect and server balances', flush=True)
+            page.goto(base + '/reports/stock-movement/', wait_until='networkidle')
+            assert page.locator('tr[data-row-link]').count() == 1
+            page.locator('tr[data-row-link] td').nth(2).click()
+            page.wait_for_url(base + f'/inventory/movements/products/{product.pk}/**')
+            assert page.locator('table tbody tr').count() > 1
+            print('PASS: grouped product report and clicking a non-link cell opens inventory history', flush=True)
             review_representative(browser, base)
 
 
@@ -234,8 +248,11 @@ def review_representative(browser, base):
     from purchases.models import Supplier
     from purchases.services import create_purchase_order, receive_purchase_order_items
     from orders.models import Order
+    from finance.models import CashAccount
+    from finance.services import build_customer_statement
     rep = User.objects.create_user(username='pwa-negative-rep', role='sales')
     customer = Customer.objects.create(name='Negative rep customer', created_by=rep)
+    cash = CashAccount.objects.create(name='Offline rep cash', assigned_user=rep, account_type=CashAccount.TYPE_SALES_REP_CASH)
     client = Client()
     client.force_login(rep)
     context = browser.new_context()
@@ -247,6 +264,7 @@ def review_representative(browser, base):
     wait_for(page, 'window.SHOffline && window.SHSync')
     page.evaluate("async () => { window.db=await import('/static/js/pwa/db.js'); await window.SHSync.bootstrapNow(); }")
     wait_for(page, "async () => !!await db.getMetadata('last_bootstrap_at')")
+    wait_for(page, "async () => !!await db.getMetadata('offline_ready')")
     warehouse = Warehouse.objects.get(assigned_user=rep, warehouse_type='representative')
     existing = ProductVariant.objects.get(variant_sku='PWA-V')
     page.goto(base + '/products/representative/create/', wait_until='networkidle')
@@ -311,7 +329,7 @@ def review_representative(browser, base):
         for (const row of await db.getAll(db.STORE_NAMES.syncQueue)) if (row.status==='failed') await db.putRecord(db.STORE_NAMES.syncQueue,{...row,status:'pending',next_attempt_at:db.nowIso()});
         await window.SHSync.processQueue();
     }""")
-    wait_for(page,"async () => {const db=await import('/static/js/pwa/db.js');return (await db.getAll(db.STORE_NAMES.syncQueue)).some(x=>x.entity_name==='sales' && x.status==='failed');}")
+    wait_for(page,"async () => {await window.SHSync.processQueue();const db=await import('/static/js/pwa/db.js');return (await db.getAll(db.STORE_NAMES.syncQueue)).some(x=>x.entity_name==='sales' && x.status==='failed');}")
     result = page.evaluate("""async (f) => {
         const db=await import('/static/js/pwa/db.js');
         const product=(await db.searchProducts('REP-PWA-NEW'))[0];
@@ -346,6 +364,41 @@ def review_representative(browser, base):
         return (await db.stockForVariant(f.variant)).find(row=>row.warehouse_id===f.warehouse).quantity;
     }""",dict(variant=variant.pk,warehouse=warehouse.pk))
     assert result == 6, result
+    # Navigate through the actual workspace links, close every page, and reopen
+    # from the installed app's cached start URL with the network still disabled.
+    page.close()
+    page = context.new_page()
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.goto(base + '/', wait_until='domcontentloaded')
+    page.locator('.side-nav a[href="/finance/transactions/collection/"]').click()
+    page.wait_for_selector('form [name="amount"]')
+    page.locator('form:has([name="amount"]) [name="customer"]').select_option(str(customer.pk))
+    page.locator('form [name="amount"]').fill('20')
+    page.locator('form:has([name="amount"]) [name="cash_account"]').select_option(str(cash.pk))
+    page.locator('form:has([name="amount"]) button[type="submit"]').click()
+    wait_for(page, "async () => {const db=await import('/static/js/pwa/db.js');return (await db.getAll(db.STORE_NAMES.syncQueue)).length===1;}")
+    page.locator('.side-nav a[href="/finance/statements/customer/"]').click()
+    page.wait_for_selector('[data-customer-picker]')
+    page.locator('#statement-customer-search').fill('Negative rep')
+    page.locator('#statement-customer-results button').first.click()
+    page.wait_for_selector('[data-offline-balance]')
+    expected_balance = build_customer_statement(customer)['current_balance'] - 20
+    assert page.locator('[data-offline-balance]').get_attribute('data-offline-balance') == f'{expected_balance:.2f}'
+    assert page.locator('[data-local-statement-entry]').count() == 1
+    # The cached generic statement must also handle a customer URL never opened online.
+    page.goto(base + f'/finance/statements/customer/?customer={customer.pk}', wait_until='domcontentloaded')
+    page.wait_for_selector('[data-offline-balance]')
+    assert page.locator('[data-offline-balance]').get_attribute('data-offline-balance') == f'{expected_balance:.2f}'
+    context.set_offline(False)
+    wait_for(page, 'navigator.onLine')
+    page.evaluate('window.SHSync.processQueue()')
+    wait_for(page, "async () => {const db=await import('/static/js/pwa/db.js');return !(await db.getAll(db.STORE_NAMES.syncQueue)).length;}")
+    assert build_customer_statement(customer)['current_balance'] == expected_balance
+    context.set_offline(True)
+    page.reload(wait_until='domcontentloaded')
+    page.wait_for_selector('[data-offline-balance]')
+    assert page.locator('[data-offline-balance]').get_attribute('data-offline-balance') == f'{expected_balance:.2f}'
+    print('PASS: cold offline restart, workspace navigation, real receipt submit, offline statement/search and synchronized balance', flush=True)
     assert not errors, errors
     context.close()
     print('PASS: representative new offline product, existing product negative sale, ordered dependency/retry and purchase settlement',flush=True)

@@ -700,44 +700,23 @@ class StockMovementReportView(RoleRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['can_view_costs'] = can_view_costs(self.request.user)
-        movements = StockMovement.objects.select_related(
-            'variant__product', 'variant__color', 'variant__size',
-            'from_warehouse', 'to_warehouse', 'created_by'
-        ).order_by('-created_at', '-pk')
-        
-        # Filtering
-        date_from = self.request.GET.get('date_from')
-        date_to = self.request.GET.get('date_to')
-        warehouse_id = self.request.GET.get('warehouse')
-        movement_type = self.request.GET.get('movement_type')
-        q = self.request.GET.get('q', '').strip()
-        
-        if parse_date(date_from):
-            movements = movements.filter(created_at__date__gte=parse_date(date_from))
-        if parse_date(date_to):
-            movements = movements.filter(created_at__date__lte=parse_date(date_to))
-        if warehouse_id:
-            parsed_warehouse_id = positive_id(warehouse_id)
-            movements = movements.filter(
-                models.Q(from_warehouse_id=parsed_warehouse_id) | models.Q(to_warehouse_id=parsed_warehouse_id)
-            ) if parsed_warehouse_id is not None else movements.none()
-        if movement_type:
-            movements = movements.filter(movement_type=movement_type)
-        if q:
-            movements = movements.filter(
-                models.Q(variant__product__name__icontains=q) |
-                models.Q(variant__product__sku__icontains=q) |
-                models.Q(variant__variant_sku__icontains=q)
-            )
-        
-        movement_rows = list(movements[:500])
-        for movement in movement_rows:
-            movement.report_movement_type = MOVEMENT_TYPE_LABELS.get(
-                movement.movement_type,
-                movement.get_movement_type_display(),
-            )
-        context['movements'] = services.movement_balance_rows(
-            movement_rows, positive_id(warehouse_id) if warehouse_id else None)
+        from django.core.paginator import Paginator
+        from django.urls import reverse
+
+        params = self.request.GET
+        date_from, date_to = params.get('date_from', ''), params.get('date_to', '')
+        warehouse_id, movement_type = params.get('warehouse', ''), params.get('movement_type', '')
+        q = params.get('q', '').strip()
+        summaries = services.movement_product_summaries(
+            services.filtered_stock_movements(params), positive_id(warehouse_id))
+        page = Paginator(summaries, 50).get_page(params.get('page'))
+        query = params.copy()
+        query.pop('page', None)
+        for row in page.object_list:
+            row['detail_url'] = reverse('inventory:product_movements', args=[row['variant__product_id']]) + '?' + query.urlencode()
+        context['products'] = page.object_list
+        context['page_obj'] = page
+        context['pagination_query'] = query.urlencode()
         context['warehouses'] = Warehouse.objects.filter(is_active=True)
         context['movement_types'] = [
             (value, MOVEMENT_TYPE_LABELS.get(value, label))

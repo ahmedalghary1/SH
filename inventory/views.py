@@ -173,6 +173,31 @@ class StockMovementListView(RoleRequiredMixin, ExportListMixin, ListView):
         ).filter(movement_type__in=allowed_types).order_by('-created_at')
 
 
+class ProductMovementListView(RoleRequiredMixin, ListView):
+    allowed_roles = ('manager', 'warehouse')
+    template_name = 'inventory/movements/product_detail.html'
+    context_object_name = 'movements'
+    paginate_by = 50
+
+    def get_queryset(self):
+        from products.models import Product
+        from reports.services import filtered_stock_movements
+        self.product = get_object_or_404(Product, pk=self.kwargs['pk'])
+        return filtered_stock_movements(self.request.GET).filter(variant__product=self.product)
+
+    def get_context_data(self, **kwargs):
+        from reports.services import movement_balance_rows
+        context = super().get_context_data(**kwargs)
+        params = self.request.GET.copy()
+        params.pop('page', None)
+        context.update(product=self.product, pagination_query=params.urlencode(),
+                       filters=params, warehouses=Warehouse.objects.all(),
+                       movement_types=StockMovement.MOVEMENT_TYPE_CHOICES)
+        context['movements'] = movement_balance_rows(
+            list(context['movements']), positive_id(params.get('warehouse')))
+        return context
+
+
 class StockInView(WarehouseRequiredMixin, FormView):
     template_name = 'inventory/movements/stock_in.html'
     form_class = StockMovementForm

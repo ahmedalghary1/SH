@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-head">
     <h1>العملاء</h1>
-    <a class="btn btn-accent" href="{% url 'customers:create' %}">إضافة عميل</a>
+    {% if request.user.is_manager %}<a class="btn btn-accent" href="{% url 'customers:create' %}">إضافة عميل</a>{% endif %}
 </div>
 {% include 'partials/export_buttons.html' %}
 <form class="filters">

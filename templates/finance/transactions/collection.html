@@ -104,8 +104,6 @@
                     {% if request.user.is_manager %}
                         <a class="btn btn-light btn-small" href="{% url 'finance:collection_update' payment.pk %}">تعديل</a>
                         {% if request.user.can_hard_delete %}<a class="btn btn-danger btn-small" href="{% url 'finance:transaction_delete' payment.pk %}">حذف</a>{% endif %}
-                    {% elif payment.created_by_id == request.user.id %}
-                        <a class="btn btn-light btn-small" href="{% url 'finance:collection_update' payment.pk %}">تعديل</a>
                     {% else %}-{% endif %}
                 </td>
             </tr>

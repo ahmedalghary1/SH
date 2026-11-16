@@ -98,6 +98,14 @@ test('download/export forms remain usable after producing a file', () => {
     assert.equal(Boolean(button.disabled), false);
 });
 
+test('a successful local save clears the unsaved state used by workspace navigation', () => {
+    const fixture = mainFixture();
+    const { form } = guardedForm(fixture);
+    form.dataset.unsaved = '1';
+    fixture.window.SHUi.markSaved(form);
+    assert.equal(form.dataset.unsaved, undefined);
+});
+
 test('an ambiguous failed POST is never queued again; offline POST is queued before dispatch', async () => {
     let offlineCalls = 0;
     let networkCalls = 0;

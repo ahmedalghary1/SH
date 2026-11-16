@@ -15,9 +15,9 @@
         <thead><tr><th>نوع الحركة</th><th>المنتج</th><th>اللون</th><th>المقاس</th><th>من</th><th>إلى</th><th>الكمية</th><th>الموظف</th><th>التاريخ والوقت</th><th>الملاحظات</th></tr></thead>
         <tbody>
             {% for movement in movements %}
-                <tr>
+                <tr data-row-link="{% url 'inventory:product_movements' movement.variant.product_id %}" tabindex="0">
                     <td>{{ movement.get_movement_type_display }}</td>
-                    <td>{{ movement.variant.product.name }}</td>
+                    <td><a href="{% url 'inventory:product_movements' movement.variant.product_id %}">{{ movement.variant.product.name }}</a></td>
                     <td>{{ movement.variant.color|default:'-' }}</td>
                     <td>{{ movement.variant.size|default:'-' }}</td>
                     <td>{{ movement.from_warehouse|default:'-' }}</td>

@@ -381,6 +381,49 @@ def manager_dashboard_kpis():
     }
 
 
+def filtered_stock_movements(params):
+    from inventory.models import StockMovement
+    from finance.validation import positive_id, parse_date
+
+    movements = StockMovement.objects.select_related(
+        'variant__product', 'variant__color', 'variant__size',
+        'from_warehouse', 'to_warehouse', 'created_by',
+    ).order_by('-created_at', '-pk')
+    for key, lookup in [('date_from', 'created_at__date__gte'), ('date_to', 'created_at__date__lte')]:
+        value = parse_date(params.get(key) or '')
+        if value:
+            movements = movements.filter(**{lookup: value})
+    if params.get('warehouse'):
+        warehouse = positive_id(params['warehouse'])
+        movements = movements.filter(Q(from_warehouse_id=warehouse) | Q(to_warehouse_id=warehouse)) if warehouse else movements.none()
+    if params.get('movement_type'):
+        movements = movements.filter(movement_type=params['movement_type'])
+    if params.get('q', '').strip():
+        query = params['q'].strip()
+        movements = movements.filter(Q(variant__product__name__icontains=query) |
+                                     Q(variant__product__sku__icontains=query) |
+                                     Q(variant__variant_sku__icontains=query))
+    return movements
+
+
+def movement_product_summaries(movements, warehouse_id=None):
+    """Aggregate the full filtered history, before pagination, once per product."""
+    from django.db.models import BigIntegerField, Max, OuterRef, Subquery
+    from django.db.models.functions import Coalesce
+
+    incoming = Q(to_warehouse_id=warehouse_id) if warehouse_id else Q(to_warehouse__isnull=False)
+    outgoing = Q(from_warehouse_id=warehouse_id) if warehouse_id else Q(from_warehouse__isnull=False)
+    stock = Stock.objects.filter(variant__product_id=OuterRef('variant__product_id'))
+    if warehouse_id:
+        stock = stock.filter(warehouse_id=warehouse_id)
+    balance = stock.order_by().values('variant__product_id').annotate(value=Sum('quantity')).values('value')
+    return movements.order_by().values('variant__product_id', 'variant__product__name', 'variant__product__sku').annotate(
+        movement_count=Count('pk'), incoming=Sum('quantity', filter=incoming, default=0),
+        outgoing=Sum('quantity', filter=outgoing, default=0), last_movement=Max('created_at'),
+        current_balance=Coalesce(Subquery(balance, output_field=BigIntegerField()), 0, output_field=BigIntegerField()),
+    ).order_by('-last_movement', 'variant__product_id')
+
+
 def movement_balance_rows(movements, warehouse_id=None):
     """Reconstruct each warehouse balance, including movements hidden by filters.
 

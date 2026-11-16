@@ -1581,6 +1581,14 @@ def _validate_operation(operation, user, branch_id):
     if user.is_manager:
         return
     entity = operation['entity_type']
+    if user.is_sales:
+        if operation.get('operation_type', 'create') != 'create':
+            raise ValidationError('المندوب يمكنه إنشاء البيع والقبض والصنف فقط، دون تعديل أو حذف.')
+        if entity not in {'order', 'payment', 'product'}:
+            raise ValidationError('غير مسموح بتنفيذ هذه العملية لهذا المندوب.')
+        if entity == 'payment' and path not in {'', '/finance/transactions/collection/'}:
+            if not re.fullmatch(r'/invoices/\d+/payments/add/', path):
+                raise ValidationError('المندوب يمكنه تسجيل القبض فقط.')
     rep_product_create = (user.is_sales and entity == 'product'
                           and path == '/products/representative/create/'
                           and operation.get('operation_type', 'create') == 'create')
@@ -1600,6 +1608,12 @@ def _validate_operation(operation, user, branch_id):
     if user.is_sales and entity == 'order':
         data, items = _normalize_order_payload(operation)
         order = _order_from_payload(data, operation)
+        original_receipt = order and SyncOperation.objects.filter(
+            idempotency_key=operation['idempotency_key'], user=user,
+            server_object_id=str(order.pk), status=SyncOperation.STATUS_SUCCESS,
+        ).exists()
+        if (order and not original_receipt) or data.get('document_type', Order.DOCUMENT_SALE) != Order.DOCUMENT_SALE:
+            raise ValidationError('المندوب يمكنه إنشاء فاتورة بيع جديدة فقط.')
         if order and order.created_by_id != user.pk:
             raise ValidationError('لا يمكنك تعديل فاتورة مستخدم آخر.')
         for warehouse_id in [data.get('warehouse'), *[item.get('warehouse_server_id') or item.get('warehouse_id') for item in items]]:
@@ -1617,6 +1631,8 @@ def _validate_operation(operation, user, branch_id):
             raise ValidationError('غير مسموح بحذف العميل لهذا الحساب.')
     if entity == 'payment':
         data = operation['payload'].get('payment') or _form_payload(operation)
+        if user.is_sales and (decimal_value(data.get('amount') or 0) <= 0 or decimal_value(data.get('allowed_discount') or 0) != 0):
+            raise ValidationError('المندوب يمكنه تسجيل قبض بمبلغ موجب فقط دون رد مبالغ أو تسوية خصومات.')
         if '/transfer/' in path:
             from finance.forms import TransferForm
             form_data = {**data, 'transaction_date': data.get('transaction_date') or timezone.now().isoformat()}

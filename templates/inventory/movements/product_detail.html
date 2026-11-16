@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}حركة الصنف {{ product.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>حركة الصنف: {{ product.name }}</h1><p>{{ product.sku }} — جميع مرات دخول وخروج الصنف، مع رصيد كل مخزن قبل الحركة وبعدها.</p>
+<a class="btn btn-light" href="{% url 'reports:stock_movement' %}?{{ pagination_query }}">العودة إلى تقرير حركة المخزن</a></div>
+<form method="get" class="card filters-form">
+    <div class="form-grid">
+        <div class="form-group"><label for="warehouse">المخزن</label><select id="warehouse" name="warehouse"><option value="">كل المخازن</option>{% for warehouse in warehouses %}<option value="{{ warehouse.pk }}" {% if filters.warehouse == warehouse.pk|stringformat:'s' %}selected{% endif %}>{{ warehouse.name }}</option>{% endfor %}</select></div>
+        <div class="form-group"><label for="date_from">من تاريخ</label><input type="date" id="date_from" name="date_from" value="{{ filters.date_from }}"></div>
+        <div class="form-group"><label for="date_to">إلى تاريخ</label><input type="date" id="date_to" name="date_to" value="{{ filters.date_to }}"></div>
+        <div class="form-group"><label for="movement_type">نوع الحركة</label><select id="movement_type" name="movement_type"><option value="">كل الحركات</option>{% for value, label in movement_types %}<option value="{{ value }}" {% if filters.movement_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    </div><button class="btn btn-primary" type="submit">تصفية</button>
+    <a class="btn btn-light" href="{% url 'inventory:product_movements' product.pk %}">عرض كل الحركات</a>
+</form>
+<div class="table-wrap"><table>
+    <thead><tr><th>التاريخ</th><th>اللون / المقاس</th><th>المخزن</th><th>نوع الحركة</th><th>من</th><th>إلى</th><th>رصيد سابق</th><th>التغير</th><th>الرصيد بعد الحركة</th><th>المستخدم</th><th>ملاحظات</th></tr></thead>
+    <tbody>{% for movement in movements %}<tr>
+        <td>{{ movement.created_at|date:'Y-m-d H:i' }}</td><td>{{ movement.variant.variant_sku }} — {{ movement.variant.color|default:'-' }} / {{ movement.variant.size|default:'-' }}</td>
+        <td>{{ movement.report_warehouse }}</td><td>{{ movement.get_movement_type_display }}</td><td>{{ movement.from_warehouse|default:'-' }}</td><td>{{ movement.to_warehouse|default:'-' }}</td>
+        <td>{{ movement.previous_balance }}</td><td>{{ movement.quantity_change }}</td><td>{{ movement.current_balance }}</td><td>{{ movement.created_by|default:'-' }}</td><td>{{ movement.note|default:'-' }}</td>
+    </tr>{% empty %}<tr><td colspan="11">لا توجد حركات مطابقة.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% include 'partials/pagination.html' %}
+{% endblock %}

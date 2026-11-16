@@ -42,9 +42,9 @@
             </thead>
             <tbody>
                 {% for stock in stocks %}
-                    <tr>
+                    <tr{% if request.user.is_manager or request.user.is_warehouse %} data-row-link="{% url 'inventory:product_movements' stock.variant.product_id %}?warehouse={{ stock.warehouse_id }}" tabindex="0"{% endif %}>
                         <td>
-                            <strong>{{ stock.variant.product.name }}</strong>
+                            {% if request.user.is_manager or request.user.is_warehouse %}<a href="{% url 'inventory:product_movements' stock.variant.product_id %}?warehouse={{ stock.warehouse_id }}"><strong>{{ stock.variant.product.name }}</strong></a>{% else %}<strong>{{ stock.variant.product.name }}</strong>{% endif %}
                             <span class="muted">{{ stock.variant.product.sku }}</span>
                         </td>
                         <td>

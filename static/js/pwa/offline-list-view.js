@@ -562,7 +562,6 @@ function renderDriverActions(queue) {
 }
 
 async function renderOfflineRecords() {
-    clearOfflineRows();
     if (window.location.pathname === '/inventory/stock/') {
         if (!navigator.onLine) await renderLocalStock();
         else if (stockTableSnapshot) {
@@ -571,6 +570,7 @@ async function renderOfflineRecords() {
         }
         return;
     }
+    clearOfflineRows();
     const queue = await getPendingQueue();
     if (!queue.length) return;
     const path = window.location.pathname;
@@ -598,6 +598,7 @@ async function renderLocalStock() {
     const [stock, variants, warehouses] = await Promise.all([
         getAll(STORE_NAMES.stock), getAll(STORE_NAMES.productVariants), getAll(STORE_NAMES.warehouses),
     ]);
+    if (navigator.onLine || document.querySelector('.stock-table-wrap tbody') !== tbody) return;
     const variantById = new Map(variants.map(row => [String(row.server_id || row.id), row]));
     const warehouseById = new Map(warehouses.map(row => [String(row.server_id || row.id), row]));
     const params = new URLSearchParams(window.location.search);
@@ -646,6 +647,7 @@ window.addEventListener("focus", scheduleRender);
 window.addEventListener("offline", scheduleRender);
 window.addEventListener("online", scheduleRender);
 window.addEventListener("sh-sync-status", scheduleRender);
+document.addEventListener('sh:page-loaded', scheduleRender);
 
 window.SHOfflineLists = {
     render: renderOfflineRecords,

@@ -35,21 +35,23 @@ test('relative form actions and explicit submit overrides use the intended route
     assert.equal(context.classifyPath(context.formPath(form, submitter)), null);
 });
 
-test('an online collection submits to the server without a connectivity probe or local queue', async () => {
+test('a reachable collection is dispatched once after a read-only connectivity check', async () => {
     const declaration = source.match(/async function handleCapturedSubmit\([^]*?\n\}/);
     assert.ok(declaration);
     const scheduled = [];
     let serverSubmits = 0;
     let queued = 0;
+    let probes = 0;
     const context = vm.createContext({
         navigator: { onLine: true },
         window: {
             setTimeout(callback) { scheduled.push(callback); },
-            SHUnsavedForms: { markSaved() {} },
+            SHUi: { markSaved() {} },
         },
         pendingSubmissions: new WeakSet(),
         submitNormally() { serverSubmits += 1; },
         queueFormSubmission() { queued += 1; },
+        serverIsReachable: async () => { probes += 1; return true; },
     });
     vm.runInContext(declaration[0], context);
     const form = { isConnected: true, reportValidity() { return true; } };
@@ -57,4 +59,35 @@ test('an online collection submits to the server without a connectivity probe or
     await scheduled.shift()();
     assert.equal(serverSubmits, 1);
     assert.equal(queued, 0);
+    assert.equal(probes, 1);
+});
+
+test('an unreachable server queues before dispatch even when navigator reports online', async () => {
+    const scheduled = [];
+    let submitted = 0, queued = 0;
+    const context = vm.createContext({
+        navigator: { onLine: true }, CustomEvent: class {},
+        window: { setTimeout(fn) { scheduled.push(fn); }, dispatchEvent() {} },
+        pendingSubmissions: new WeakSet(), serverIsReachable: async () => false,
+        submitNormally() { submitted++; }, validateOfflineForm: () => true,
+        queueFormSubmission: async () => { queued++; return true; },
+        showOfflineNotice() {}, processQueue() {},
+    });
+    vm.runInContext(source.match(/async function handleCapturedSubmit\([^]*?\n\}/)[0], context);
+    await context.handleCapturedSubmit({ isConnected: true, dataset: {}, reportValidity: () => true });
+    await scheduled.shift()();
+    assert.equal(queued, 1);
+    assert.equal(submitted, 0);
+});
+
+test('connectivity check performs a GET and returns false on a failed probe', async () => {
+    let request;
+    const context = vm.createContext({ navigator: { onLine: true }, AbortController,
+        window: { setTimeout, clearTimeout },
+        fetch: async (url, options) => { request = { url, options }; throw new TypeError('offline'); },
+    });
+    vm.runInContext(source.match(/async function serverIsReachable\([^]*?\n\}/)[0], context);
+    assert.equal(await context.serverIsReachable(), false);
+    assert.equal(request.url, '/api/sync/ping/');
+    assert.equal(request.options.method, undefined); // GET; no business POST was sent.
 });

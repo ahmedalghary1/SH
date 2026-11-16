@@ -6,7 +6,7 @@
     <h1>{{ customer.name }}</h1>
     <div class="button-row">
         <a class="btn btn-accent" href="{% url 'orders:create' %}">إضافة فاتورة</a>
-        <a class="btn btn-light" href="{% url 'customers:update' customer.pk %}">تعديل</a>
+        {% if request.user.is_manager %}<a class="btn btn-light" href="{% url 'customers:update' customer.pk %}">تعديل</a>{% endif %}
         {% if request.user.is_manager %}
             <a class="btn btn-light" href="{% url 'customers:reconcile_returns' customer.pk %}">مراجعة رصيد المرتجعات</a>
         {% endif %}

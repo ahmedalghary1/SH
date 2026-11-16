@@ -327,6 +327,8 @@ class InvoicePaymentCreateView(InvoiceContextMixin, SalesRequiredMixin, View):
         form = InvoicePaymentForm(request.POST, invoice=invoice)
         if form.is_valid():
             try:
+                if request.user.is_sales and not request.user.is_superuser and form.cleaned_data['amount'] <= 0:
+                    raise ValidationError('المندوب يمكنه تسجيل قبض بمبلغ موجب فقط.')
                 collect_order_payment(
                     order=invoice.order,
                     amount=form.cleaned_data['amount'],

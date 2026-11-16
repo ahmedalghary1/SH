@@ -20,6 +20,8 @@
     {% if invoice.order.status != 'cancelled' %}
     <form method="post" action="{% url 'invoices:payment_add' invoice.pk %}" class="form-grid">
         {% csrf_token %}
+        <input type="hidden" name="customer" value="{{ invoice.order.customer_id|default:'' }}">
+        <input type="hidden" name="order" value="{{ invoice.order_id }}">
         {% if payment_form.non_field_errors %}<div class="form-errors">{{ payment_form.non_field_errors }}</div>{% endif %}
         {% for field in payment_form %}
             <label>

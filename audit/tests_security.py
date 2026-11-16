@@ -87,9 +87,8 @@ class CostProfitVisibilityTests(TestCase):
         """Verify sales user cannot see cost_price in product detail."""
         self.client.login(username='sales', password='pass123')
         response = self.client.get(reverse('products:detail', args=[self.product.pk]))
-        self.assertEqual(response.status_code, 200)
-        # Cost price should not be in the response for sales user
-        self.assertNotContains(response, str(self.variant.cost_price))
+        self.assertEqual(response.status_code, 403)
+        self.assertNotContains(response, 'سعر الشراء', status_code=403)
     
     def test_warehouse_user_cannot_see_cost_in_product_detail(self):
         """Verify warehouse user cannot see cost_price in product detail."""

@@ -69,10 +69,10 @@ class DashboardView(RoleRequiredMixin, TemplateView):
             context['workflow_title'] = 'بيع سريع'
             context['workflow_actions'] = [
                 {'label': 'فاتورة جديدة', 'href': reverse('orders:create'), 'icon': 'icon-sale'},
-                {'label': 'إضافة مرتجع', 'href': reverse('returns:customer_create'), 'icon': 'icon-arrow'},
-                {'label': 'عميل جديد', 'href': reverse('customers:create'), 'icon': 'icon-users'},
+                {'label': 'حركة قبض', 'href': reverse('finance:collection_create'), 'icon': 'icon-money'},
+                {'label': 'كشف حساب عميل', 'href': reverse('finance:customer_statement'), 'icon': 'icon-users'},
                 {'label': 'الفواتير', 'href': reverse('invoices:list'), 'icon': 'icon-invoice'},
-                {'label': 'العملاء', 'href': reverse('customers:list'), 'icon': 'icon-users'},
+                {'label': 'تسجيل منتج جديد', 'href': reverse('products:representative_create'), 'icon': 'icon-box'},
             ]
             my_orders = Order.objects.filter(created_by=user, created_at__date=today).exclude(status=Order.STATUS_DRAFT)
             context.update({

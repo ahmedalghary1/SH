@@ -164,6 +164,7 @@ MIDDLEWARE += [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'accounts.middleware.BranchContextMiddleware',
     'config.pwa.PwaScopeMiddleware',
+    'accounts.middleware.RepresentativeAccessMiddleware',
     'accounts.middleware.DuplicateSubmissionMiddleware',
     'audit.middleware.AuditRequestMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',

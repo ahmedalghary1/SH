@@ -54,7 +54,7 @@ class ReportPagesTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'لا توجد بيانات')
 
-    def test_sales_user_sees_only_sales_reports_on_index(self):
+    def test_sales_user_cannot_access_reports_outside_daily_work(self):
         sales = User.objects.create_user(
             username='reports-sales',
             password='pass',
@@ -64,12 +64,7 @@ class ReportPagesTests(TestCase):
 
         response = self.client.get(reverse('reports:index'))
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'تقرير اليوم')
-        self.assertContains(response, 'تقرير المبيعات')
-        self.assertContains(response, 'تقرير المرتجعات')
-        self.assertNotContains(response, 'تقرير الأرباح')
-        self.assertNotContains(response, 'مديونيات الموردين')
+        self.assertEqual(response.status_code, 403)
 
     def test_warehouse_user_sees_only_inventory_reports_on_index(self):
         warehouse = User.objects.create_user(

@@ -700,6 +700,8 @@ class OrderCreateViewTests(TestCase):
         self.assertTrue(Order.objects.filter(order_number=f'ORD-{today}-0003').exists())
 
     def test_quote_datetime_is_editable_and_saved(self):
+        self.sales.role = User.ROLE_MANAGER
+        self.sales.save(update_fields=['role'])
         self.client.force_login(self.sales)
 
         page = self.client.get(reverse('orders:create'), {'document': 'quote'})

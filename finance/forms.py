@@ -81,8 +81,13 @@ class CustomerCollectionForm(forms.Form):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         visible_customers = Customer.objects.filter(is_active=True).order_by('name')
+        if user:
+            from customers.services import visible_customers_for_user
+            visible_customers = visible_customers_for_user(user, visible_customers)
         self.fields['customer'].queryset = visible_customers
         self.fields['order'].queryset = self.fields['order'].queryset.filter(customer__in=visible_customers)
+        if user and user.is_sales and not user.is_superuser:
+            self.fields['order'].queryset = self.fields['order'].queryset.filter(created_by=user)
         self.fields['cash_account'].initial = CashAccount.get_cash_drawer()
         self.fields['allowed_discount'].widget = forms.HiddenInput()
         self.fields['order'].widget = forms.HiddenInput()

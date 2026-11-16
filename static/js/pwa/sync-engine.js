@@ -77,6 +77,7 @@ const APP_SHELL_URLS = [
     "/finance/transactions/?type=expense",
     "/finance/transactions/expense/",
     "/finance/transactions/collection/",
+    "/finance/statements/customer/",
     "/finance/transactions/supplier-payment/",
     "/finance/transactions/transfer/",
     "/returns/",
@@ -150,8 +151,7 @@ export async function cacheAppShell(extraUrls = []) {
     if (!("serviceWorker" in navigator) || !scope || !navigator.onLine) return;
     const representativeUrls = new Set([
         '/', '/products/representative/create/', '/inventory/stock/', '/orders/create/',
-        '/orders/', '/orders/quotes/', '/invoices/', '/customers/', '/customers/simple/create/',
-        '/customers/list/', '/customers/create/', '/finance/transactions/collection/',
+        '/orders/', '/invoices/', '/finance/transactions/collection/', '/finance/statements/customer/',
     ]);
     const urls = uniqueUrls([
         ...(shellCached ? [] : APP_SHELL_URLS.filter((url) =>
@@ -167,8 +167,27 @@ export async function cacheAppShell(extraUrls = []) {
         if (!registration) return;
         const worker = navigator.serviceWorker.controller || registration.active || registration.waiting || registration.installing;
         worker?.postMessage({ type: "PWA_SCOPE", scope });
-        worker?.postMessage({ type: "CACHE_URLS", urls, scope });
-        if (worker) shellCached = true;
+        if (worker) {
+            const result = await new Promise((resolve) => {
+                const channel = new MessageChannel();
+                const timeout = window.setTimeout(() => { channel.port1.close(); resolve(null); }, 30000);
+                channel.port1.onmessage = (event) => {
+                    window.clearTimeout(timeout);
+                    channel.port1.close();
+                    resolve(event.data);
+                };
+                worker.postMessage({ type: "CACHE_URLS", urls, scope }, [channel.port2]);
+            });
+            shellCached = Boolean(result && !result.failed.length);
+            if (document.body.dataset.pwaRole === 'sales') {
+                const ready = shellCached && Boolean(await getMetadata('last_bootstrap_at'));
+                await setMetadata('offline_ready', ready);
+                document.querySelectorAll('[data-offline-ready]').forEach(node => {
+                    node.textContent = ready ? 'جاهز للعمل دون اتصال' : 'تجهيز الأوفلاين غير مكتمل';
+                });
+                syncStatusEvent({ state: ready ? 'offline_ready' : 'offline_not_ready', failed: result?.failed || [] });
+            }
+        }
     } catch (error) {
         syncStatusEvent({ state: "app_shell_cache_failed", error: String(error.message || error) });
     }
@@ -292,7 +311,8 @@ async function bootstrapSnapshot() {
         }
         lastBootstrapAt = Date.now();
         await setMetadata("last_successful_sync_at", nowIso());
-        await cacheAppShell();
+        // Preparing HTML must not hold the queue lock or delay financial sync.
+        cacheAppShell();
         syncStatusEvent({ state: "bootstrapped" });
         return payload;
     } catch (error) {
@@ -394,3 +414,9 @@ window.SHSync = {
     processQueue,
     getQueueStatus,
 };
+
+if (!navigator.onLine) {
+    getMetadata('offline_ready').then(ready => document.querySelectorAll('[data-offline-ready]').forEach(node => {
+        node.textContent = ready ? 'جاهز للعمل دون اتصال' : 'افتح التطبيق بالإنترنت لإكمال التجهيز';
+    }));
+}

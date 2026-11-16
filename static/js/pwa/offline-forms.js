@@ -352,6 +352,16 @@ async function queueFormSubmission(form, submitter = null) {
     if (!await getMetadata("last_bootstrap_at")) throw new Error("افتح التطبيق أثناء الاتصال أولًا لتجهيز البيانات المحلية.");
 
     const fields = await serializeForm(form, submitter);
+    if (document.body.dataset.pwaRole === 'sales' && document.body.dataset.pwaSuperuser !== '1') {
+        const allowed = path === '/orders/create/' || path === '/products/representative/create/'
+            || path === '/finance/transactions/collection/' || /^\/invoices\/\d+\/payments\/add\/$/.test(path);
+        if (!allowed || (classification.entity_name === 'sales' && (fields.document_type || 'sale') !== 'sale')) {
+            throw new Error('صلاحيات المندوب تسمح بإنشاء البيع والقبض والصنف فقط.');
+        }
+        if (classification.entity_name === 'cash' && (Number(fields.amount) <= 0 || Number(fields.allowed_discount || 0) !== 0)) {
+            throw new Error('سجّل مبلغ قبض موجبًا دون رد مبالغ أو تسوية خصومات.');
+        }
+    }
     delete fields.csrfmiddlewaretoken;
     delete fields._submission_token;
     const serverId = serverIdFromPath(path);
@@ -596,23 +606,33 @@ export async function handleJsonRequest(url, options = {}) {
     throw new Error("No offline handler for this request");
 }
 
+async function serverIsReachable() {
+    if (!navigator.onLine) return false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 3000);
+    try {
+        const response = await fetch('/api/sync/ping/', { cache: 'no-store', credentials: 'same-origin', signal: controller.signal });
+        return response.ok && (await response.json()).status === 'ok';
+    } catch { return false; }
+    finally { window.clearTimeout(timeout); }
+}
+
 async function handleCapturedSubmit(form, submitter = null) {
     window.setTimeout(async () => {
         try {
             if (!form.isConnected) return;
             if (!submitter?.formNoValidate && typeof form.reportValidity === "function" && !form.reportValidity()) return;
 
-            // A timed-out probe does not prove the POST cannot reach the server.
-            // Never queue a financial write while the browser reports online:
-            // the server may already have committed it when a response is lost.
+            // Test connectivity before dispatching any business POST. A failed
+            // GET can safely choose the local queue; a lost POST response cannot.
             const localProducts = form.id === 'order-form' && parseItemsJson(getField(form, 'items_json')?.value)
                 .some(item => item.product_local_uuid || !/^\d+$/.test(String(item.variant_id || item.variant_server_id || '')));
-            if (navigator.onLine && !localProducts) {
+            if (!localProducts && await serverIsReachable()) {
                 if (window.SHWorkspace?.canSubmitForm?.(form, submitter)) {
                     await window.SHWorkspace.submitForm(form, submitter);
                     return;
                 }
-                window.SHUnsavedForms?.markSaved?.(form);
+                window.SHUi?.markSaved?.(form);
                 submitNormally(form, submitter);
                 return;
             }
@@ -626,7 +646,7 @@ async function handleCapturedSubmit(form, submitter = null) {
             const queued = await queueFormSubmission(form, submitter);
             if (queued) {
                 form.dataset.offlineQueued = "true";
-                window.SHUnsavedForms?.markSaved?.(form);
+                window.SHUi?.markSaved?.(form);
                 window.dispatchEvent(new CustomEvent('sh-sync-status', { detail: { state: 'pending' } }));
                 showOfflineNotice("تم الحفظ محليا. ستتم المزامنة تلقائيا عند عودة الاتصال.");
                 if (navigator.onLine) processQueue();

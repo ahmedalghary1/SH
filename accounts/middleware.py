@@ -40,6 +40,53 @@ class BranchContextMiddleware:
 from .models import SubmissionReceipt
 
 
+class RepresentativeAccessMiddleware:
+    """Restrict the representative's HTTP surface; sync validates writes too."""
+    allowed_views = {
+        'dashboard:index', 'accounts:login', 'accounts:logout',
+        'orders:list', 'orders:create', 'orders:detail', 'orders:confirm', 'orders:delete_draft',
+        'orders:ajax_search_products', 'orders:ajax_get_product_variants',
+        'orders:ajax_get_variant_stock', 'orders:ajax_get_variant_price',
+        'orders:ajax_search_customers', 'orders:ajax_calculate',
+        'products:representative_create', 'inventory:stock',
+        'finance:collection_create', 'finance:customer_statement',
+        'customers:simple_list', 'customers:list', 'customers:simple_detail',
+        'customers:detail', 'customers:ajax_search', 'customers:statement_export',
+        'invoices:list', 'invoices:detail', 'invoices:print',
+        'invoices:print_mark', 'invoices:payment_add',
+    }
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        return self.get_response(request)
+
+    def process_view(self, request, view_func, view_args, view_kwargs):
+        user = request.user
+        if not user.is_authenticated or user.is_superuser or user.role != 'sales':
+            return None
+        match = request.resolver_match
+        if request.path.startswith(('/api/', '/static/')) or match.view_name in {
+            'pwa_manifest', 'pwa_service_worker', 'pwa_offline',
+        }:
+            return None
+        from django.core.exceptions import PermissionDenied
+        if match.view_name not in self.allowed_views:
+            raise PermissionDenied('صلاحيات المندوب: البيع والقبض وعرض كشف الحساب وإضافة صنف فقط.')
+        if match.view_name in {'orders:detail', 'orders:confirm', 'orders:delete_draft',
+                               'invoices:detail', 'invoices:print', 'invoices:payment_add', 'invoices:print_mark'}:
+            from orders.models import Order
+            query = Order.objects.filter(pk=view_kwargs['pk']) if match.namespace == 'orders' else Order.objects.filter(invoice__pk=view_kwargs['pk'])
+            if query.exclude(document_type=Order.DOCUMENT_SALE).exists():
+                raise PermissionDenied
+        if match.view_name == 'orders:create':
+            if (request.GET.get('document', 'sale') != 'sale'
+                    or request.GET.get('document_type', 'sale') != 'sale'
+                    or request.POST.get('document_type', 'sale') != 'sale'):
+                raise PermissionDenied
+
+
 class DuplicateSubmissionMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response

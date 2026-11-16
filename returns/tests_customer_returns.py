@@ -107,8 +107,7 @@ class CustomerReturnTests(TestCase):
         self.assertEqual(row['available_quantity'], 3)
         self.client.force_login(sales)
         response = self.client.get(reverse('returns:customer_create'), {'customer': self.customer.pk})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.context['item_rows']), 1)
+        self.assertEqual(response.status_code, 403)
 
     def test_branch_scope_hides_other_branch_purchases(self):
         branch = Branch.objects.create(name='Other branch', code='OTHER-RET')

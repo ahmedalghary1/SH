@@ -150,10 +150,11 @@
                         <span>العميل</span>
                         {{ form.customer }}
                     </label>
-                    <button class="btn btn-light btn-small" type="button" data-open-modal="customer-modal">
+                    {% if request.user.is_manager %}<button class="btn btn-light btn-small" type="button" data-open-modal="customer-modal">
                         <svg class="ui-icon"><use href="#icon-users"></use></svg>
                         عميل جديد
                     </button>
+                    {% endif %}
                 </div>
 
                 <!-- جدول الأصناف -->
@@ -246,6 +247,6 @@
 </form>
 
 {{ initial_order_items|json_script:"initial-order-items" }}
-{% include 'orders/partials/customer_modal.html' %}
+{% if request.user.is_manager %}{% include 'orders/partials/customer_modal.html' %}{% endif %}
 {% endblock %}
 {% block extra_js %}<script src="{% static 'js/orders.js' %}"></script>{% endblock %}

@@ -20,7 +20,7 @@
         {% endif %}
     </header>
 
-    <form class="card statement-picker no-print" method="get" data-live-filter data-customer-picker data-search-url="{% url 'customers:ajax_search' %}">
+    <form class="card statement-picker no-print" method="get" data-customer-picker data-search-url="{% url 'customers:ajax_search' %}">
         <div class="statement-picker-copy">
             <strong>اختيار العميل</strong>
             <span>ابحث بالاسم أو رقم الهاتف، أو أدخل رقم العميل مباشرة.</span>
@@ -39,6 +39,8 @@
         </div>
     </form>
 
+    <div data-offline-statement hidden></div>
+    <div data-server-statement>
     {% if customer %}
     <section class="statement-identity card" aria-labelledby="statement-customer-name">
         <div class="statement-identity-main">
@@ -123,6 +125,7 @@
     {% else %}
     <div class="statement-placeholder card"><h2>ابدأ باختيار عميل</h2><p>ستظهر هنا أرصدته وجميع حركات حسابه بعد عرض الكشف.</p></div>
     {% endif %}
+    </div>
 </div>
 {% endblock %}
-{% block extra_js %}<script src="{% static 'js/customer-statement.js' %}" defer></script>{% endblock %}
+{% block extra_js %}<script type="module" src="{% static 'js/customer-statement.js' %}"></script>{% endblock %}

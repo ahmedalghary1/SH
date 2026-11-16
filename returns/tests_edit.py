@@ -306,14 +306,14 @@ class SalesReturnEditTests(TestCase):
         self.assertEqual(sales_return.return_warehouse, self.target)
         self.assertEqual(timezone.localtime(sales_return.created_at).strftime('%Y-%m-%dT%H:%M'), '2026-10-10T14:35')
 
-    def test_sales_user_can_only_edit_own_drafts(self):
+    def test_sales_user_cannot_edit_return_drafts(self):
         sales_return = self.make_return(completed=False)
         sales = User.objects.create_user(username='return-edit-sales', role='sales')
         self.client.force_login(sales)
         url = reverse('returns:edit', args=[sales_return.pk])
-        self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.get(url).status_code, 403)
         sales_return.created_by = sales
         sales_return.save(update_fields=['created_by'])
-        self.assertEqual(self.client.get(url).status_code, 200)
+        self.assertEqual(self.client.get(url).status_code, 403)
         approve_sales_return(sales_return=sales_return, user=self.user)
-        self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.get(url).status_code, 403)

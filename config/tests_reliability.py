@@ -207,7 +207,7 @@ class PageSmokeTests(TestCase):
         sales = User.objects.create_user(username='access-sales', role='sales')
         self.client.force_login(sales)
         for action in ('confirm', 'cancel', 'return'):
-            self.assertEqual(self.client.post(reverse('orders:' + action, args=[order.pk])).status_code, 404)
+            self.assertEqual(self.client.post(reverse('orders:' + action, args=[order.pk])).status_code, 404 if action == 'confirm' else 403)
         order.refresh_from_db()
         self.assertEqual(order.status, Order.STATUS_DRAFT)
 

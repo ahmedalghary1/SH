@@ -204,6 +204,8 @@ class CustomerCRMViewTests(TestCase):
         self.assertIn(old_payment, all_response.context['payments'])
 
     def test_create_edit_and_complete_interaction_flow(self):
+        self.user.role = User.ROLE_MANAGER
+        self.user.save(update_fields=['role'])
         create_url = reverse('customers:interaction_create', kwargs={'pk': self.customer.pk})
         response = self.client.post(create_url, {
             'interaction_type': CustomerInteraction.TYPE_FOLLOW_UP,
@@ -234,7 +236,7 @@ class CustomerCRMViewTests(TestCase):
         interaction.refresh_from_db()
         self.assertTrue(interaction.is_completed)
 
-    def test_crm_pages_open_for_sales_role(self):
+    def test_crm_pages_are_denied_for_sales_role(self):
         urls = [
             reverse('customers:crm'),
             reverse('customers:crm_detail', kwargs={'pk': self.customer.pk}),
@@ -247,9 +249,11 @@ class CustomerCRMViewTests(TestCase):
 
         for url in urls:
             response = self.client.get(url)
-            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.status_code, 403)
 
     def test_simple_customer_create_accepts_blank_phone(self):
+        self.user.role = User.ROLE_MANAGER
+        self.user.save(update_fields=['role'])
         response = self.client.post(reverse('customers:simple_create'), {
             'name': 'No Phone Customer',
             'customer_type': Customer.TYPE_RETAIL,

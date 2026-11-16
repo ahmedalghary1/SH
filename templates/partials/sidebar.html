@@ -10,6 +10,15 @@
         </button>
     </div>
     <nav class="side-nav" aria-label="روابط النظام">
+        {% if request.user.is_sales and not request.user.is_superuser %}
+        <a class="nav-link" href="{% url 'dashboard:index' %}">الرئيسية</a>
+        <a class="nav-link" href="{% url 'orders:create' %}">حركة بيع</a>
+        <a class="nav-link" href="{% url 'orders:list' %}">فواتير البيع</a>
+        <a class="nav-link" href="{% url 'finance:collection_create' %}">حركة قبض</a>
+        <a class="nav-link" href="{% url 'finance:customer_statement' %}">كشف حساب عميل — عرض فقط</a>
+        <a class="nav-link" href="{% url 'products:representative_create' %}">تسجيل منتج جديد</a>
+        <a class="nav-link" href="{% url 'inventory:stock' %}">رصيد عهدتي</a>
+        {% else %}
         {% if request.user.is_sales %}<a class="nav-link" href="{% url 'products:representative_create' %}">تسجيل منتج جديد</a><a class="nav-link" href="{% url 'inventory:stock' %}">رصيد عهدتي</a>{% endif %}
         <a class="nav-link nav-single" href="{% url 'dashboard:index' %}">
             <svg class="ui-icon color-red"><use href="#icon-home"></use></svg>
@@ -118,6 +127,7 @@
                 <span class="nav-text">التقارير</span>
                 <span class="nav-arrow">‹</span>
             </a>
+        {% endif %}
         {% endif %}
     </nav>
 </aside>

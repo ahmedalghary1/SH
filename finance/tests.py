@@ -356,7 +356,7 @@ class FinanceServiceTests(TestCase):
         self.assertTrue(form.is_valid(), form.errors.as_text())
         self.assertEqual(form.fields['amount'].label, 'القبض')
 
-    def test_customer_collection_form_shows_all_active_customers_for_sales_user(self):
+    def test_customer_collection_form_shows_only_visible_customers_for_sales_user(self):
         sales_user = User.objects.create_user(username='sales', password='pass', role=User.ROLE_SALES)
         other_sales = User.objects.create_user(username='sales-2', password='pass', role=User.ROLE_SALES)
         other_customer = Customer.objects.create(
@@ -371,7 +371,7 @@ class FinanceServiceTests(TestCase):
         customer_ids = list(form.fields['customer'].queryset.values_list('pk', flat=True))
 
         self.assertIn(self.customer.pk, customer_ids)
-        self.assertIn(other_customer.pk, customer_ids)
+        self.assertNotIn(other_customer.pk, customer_ids)
 
     def test_customer_payment_edit_form_shows_all_active_customers_for_sales_user(self):
         sales_user = User.objects.create_user(username='sales-edit', password='pass', role=User.ROLE_SALES)

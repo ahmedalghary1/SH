@@ -1,5 +1,21 @@
 # PWA and offline synchronization
 
+## Representative workflow update (2026-11-16)
+
+Representatives can create sales, positive collections, and new catalog items;
+their customer statements are read-only and include an authorized downloaded
+ledger plus local sales/collections. Other business writes, including returns,
+customer edits and cash transfers, are rejected by HTTP and synchronization
+permissions. See the [Arabic review](representative-warehouse-review-2026-11-16-ar.md).
+Workspace navigation uses the scoped page cache. The ready indicator confirms
+that required files, screens and data have been prepared. A read-only GET checks
+server reachability before a supported form dispatches any business POST, so an
+unreachable server can select the local queue even if `navigator.onLine` is true.
+An ambiguous failure after a business POST is dispatched is still never replayed
+automatically. Synced receipt IDs prevent double counting allocated collections
+in an offline statement. Opening or updating the installed PWA still requires
+the release to be deployed and downloaded first.
+
 Install from a compatible browser over HTTPS. Sign in online first so the
 service worker and an authorized data snapshot can be downloaded. On iOS, use
 Safari's **Add to Home Screen**. A locally saved invoice is provisional until
