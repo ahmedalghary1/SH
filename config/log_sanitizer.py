@@ -127,7 +127,10 @@ class SanitizingFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         from config.request_context import request_id
         context_id = request_id.get()
-        record.request_id = context_id if context_id != '-' else getattr(record, 'request_id', '-')
+        reference = getattr(record, 'request_id', '-')
+        if not reference or reference == '-':
+            reference = getattr(getattr(record, 'request', None), 'request_id', '-')
+        record.request_id = context_id if context_id != '-' else reference
         # Sanitize the formatted message
         if isinstance(record.msg, str):
             record.msg = _sanitize_string(record.msg)

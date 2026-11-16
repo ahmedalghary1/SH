@@ -27,19 +27,18 @@ class Command(BaseCommand):
         if options['connect'] and not configuration['smtp']:
             raise CommandError('--connect requires the SMTP backend.')
         if options['connect'] or options['send_test']:
-            connection = None
             try:
                 if options['connect']:
                     connection = get_connection(fail_silently=False)
-                    connection.open()
+                    try:
+                        connection.open()
+                    finally:
+                        connection.close()
                 else:
                     send_diagnostic_email()
             except Exception as exc:
                 code = getattr(exc, 'smtp_code', '-')
                 raise CommandError(f'{delivery_failure_reason(exc)} [{type(exc).__name__}; SMTP {code}]') from None
-            finally:
-                if connection is not None:
-                    connection.close()
             result = 'SMTP connection/authentication succeeded; no message sent.' if options['connect'] else 'Diagnostic message accepted by the mail backend; check the inbox and spam folder.'
             self.stdout.write(self.style.SUCCESS(result))
         else:

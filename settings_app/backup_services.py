@@ -10,6 +10,7 @@ from copy import deepcopy
 from datetime import timedelta
 import hashlib
 import json
+import os
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 import re
@@ -157,20 +158,34 @@ def media_roots():
 
 def media_inventory():
     found = {}
+
+    def raise_scan_error(error):
+        # Path.rglob can silently skip unreadable directories. A complete backup
+        # must fail explicitly rather than omit their unreferenced attachments.
+        raise error
+
     for root in media_roots():
-        if not root.is_dir():
+        try:
+            root_info = root.stat()
+        except FileNotFoundError:
             continue
-        for path in sorted(root.rglob('*')):
-            # Never follow an uploaded symlink outside the media tree.
-            if path.is_symlink():
-                raise BackupError('يوجد رابط رمزي في مجلد المرفقات؛ يلزم مراجعته قبل النسخ.')
-            if path.is_file():
-                relative = safe_name(path.relative_to(root).as_posix())
-                if not path.resolve().is_relative_to(root):
-                    raise BackupError('مسار مرفق خارج مجلد الصور.')
-                if relative not in found:
-                    found[relative] = {'path': relative, 'size': path.stat().st_size,
-                                       'sha256': file_digest(path), 'source': path}
+        if not stat.S_ISDIR(root_info.st_mode):
+            raise BackupError('أحد مسارات مجلدات المرفقات المضبوطة ليس مجلدًا صالحًا.')
+        for directory, folders, files in os.walk(root, onerror=raise_scan_error, followlinks=False):
+            folders.sort()
+            for name in sorted([*folders, *files]):
+                path = Path(directory) / name
+                info = path.lstat()
+                # Never follow an uploaded symlink outside the media tree.
+                if stat.S_ISLNK(info.st_mode):
+                    raise BackupError('يوجد رابط رمزي في مجلد المرفقات؛ يلزم مراجعته قبل النسخ.')
+                if stat.S_ISREG(info.st_mode):
+                    relative = safe_name(path.relative_to(root).as_posix())
+                    if not path.resolve().is_relative_to(root):
+                        raise BackupError('مسار مرفق خارج مجلد الصور.')
+                    if relative not in found:
+                        found[relative] = {'path': relative, 'size': info.st_size,
+                                           'sha256': file_digest(path), 'source': path}
     return found
 
 

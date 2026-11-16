@@ -141,17 +141,21 @@ class ErrorEmailHandler(logging.Handler):
     def emit(self, record):
         # This logger has no mail handler and never propagates to root.
         diagnostic = logging.getLogger('error_alerts')
-        reference = getattr(record, 'request_id', None) or request_id.get()
-        configuration = email_configuration()
-        request = getattr(record, 'request', None)
-        path = getattr(request, 'path', '')
-        event = [record.name, record.getMessage(), path,
-                 record.exc_info[0].__name__ if record.exc_info and record.exc_info[0] else '',
-                 configuration['enabled'], settings.EMAIL_BACKEND, settings.EMAIL_HOST,
-                 bool(settings.EMAIL_HOST_PASSWORD)]
-        key = 'sh-error-email-' + hashlib.sha256(json.dumps(event, default=str).encode()).hexdigest()
+        reference = getattr(record, 'request_id', None)
+        if not reference or reference == '-':
+            reference = getattr(getattr(record, 'request', None), 'request_id', None)
+        reference = str(reference or request_id.get())
+        key = None
         claimed = False
         try:
+            configuration = email_configuration()
+            request = getattr(record, 'request', None)
+            path = getattr(request, 'path', '')
+            event = [record.name, record.getMessage(), path,
+                     record.exc_info[0].__name__ if record.exc_info and record.exc_info[0] else '',
+                     configuration['enabled'], settings.EMAIL_BACKEND, settings.EMAIL_HOST,
+                     bool(settings.EMAIL_HOST_PASSWORD)]
+            key = 'sh-error-email-' + hashlib.sha256(json.dumps(event, default=str).encode()).hexdigest()
             timeout = max(1, int(getattr(settings, 'ERROR_EMAIL_REPEAT_SECONDS', 300)))
             if reference != '-' and not _claim('request-' + reference, timeout):
                 return
@@ -161,7 +165,8 @@ class ErrorEmailHandler(logging.Handler):
             if not configuration['ready']:
                 reason = ' '.join(configuration['issues'])
                 _remember('disabled', reference, reason)
-                diagnostic.error('ERROR_EMAIL_NOT_READY request=%s reason=%s', reference, reason)
+                diagnostic.error('ERROR_EMAIL_NOT_READY request=%s reason=%s', reference, reason,
+                                 extra={'request_id': reference})
                 return
             body = [f'Reference: {reference}', f'Time: {timezone.now().isoformat()}',
                     f'Logger: {record.name}', f'Level: {record.levelname}',
@@ -174,7 +179,7 @@ class ErrorEmailHandler(logging.Handler):
             subject = f'{prefix}{record.levelname}: {record.name} [{reference}]'.replace('\r', '').replace('\n', '')
             _send(subject[:220], '\n\n'.join(body), configuration)
             _remember('sent', reference)
-            diagnostic.info('ERROR_EMAIL_SENT request=%s', reference)
+            diagnostic.info('ERROR_EMAIL_SENT request=%s', reference, extra={'request_id': reference})
         except Exception as exc:
             if claimed:
                 try:
@@ -184,4 +189,5 @@ class ErrorEmailHandler(logging.Handler):
             reason = delivery_failure_reason(exc)
             _remember('failed', reference, reason)
             diagnostic.error('ERROR_EMAIL_SEND_FAILED request=%s reason=%s error=%s smtp_code=%s',
-                             reference, reason, type(exc).__name__, getattr(exc, 'smtp_code', '-'))
+                             reference, reason, type(exc).__name__, getattr(exc, 'smtp_code', '-'),
+                             extra={'request_id': reference})

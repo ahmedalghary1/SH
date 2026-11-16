@@ -66,6 +66,26 @@ class ErrorEmailTests(SimpleTestCase):
         handler.emit(self.record(reference='second-request'))
         self.assertEqual(len(mail.outbox), 1)
 
+    def test_django_response_log_uses_request_reference_after_context_is_reset(self):
+        handler = error_email.ErrorEmailHandler()
+        handler.emit(self.record())
+        later = self.record()
+        later.request.request_id = later.request_id
+        del later.request_id
+        later.name = 'django.request'
+        later.msg = 'Internal Server Error: /settings/backups/download/'
+        SanitizingFilter().filter(later)
+        self.assertEqual(later.request_id, 'test-reference')
+        handler.emit(later)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_configuration_exception_cannot_break_the_original_error_response(self):
+        with patch('config.error_email.email_configuration', side_effect=ValueError('private-mail-password')):
+            with self.assertLogs('error_alerts', 'ERROR') as logs:
+                error_email.ErrorEmailHandler().emit(self.record())
+        self.assertIn('ERROR_EMAIL_SEND_FAILED', '\n'.join(logs.output))
+        self.assertNotIn('private-mail-password', '\n'.join(logs.output))
+
     def test_smtp_authentication_failure_is_visible_and_does_not_raise(self):
         failure = smtplib.SMTPAuthenticationError(535, b'private-mail-password SMTP rejection')
         with patch('config.error_email.EmailMessage.send', side_effect=failure), self.assertLogs('error_alerts', 'ERROR') as logs:

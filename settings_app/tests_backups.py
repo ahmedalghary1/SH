@@ -25,6 +25,7 @@ from django.utils import timezone
 from accounts.models import Branch, User
 from audit.models import AuditLog
 from config import error_email
+from config.log_sanitizer import SanitizingFilter
 from config.branching import reset_current_branch, set_current_branch
 from customers.models import Customer
 from finance.models import CashAccount, PaymentTransaction
@@ -337,6 +338,13 @@ class CompleteBackupTests(TestCase):
         self.assertEqual(record['fields']['changes_after'], value)
         self.assertNotIn('/orders/42/', manifest['missing_media'])
 
+    def test_unreadable_media_directory_fails_instead_of_omitting_attachments(self):
+        def unreadable(root, onerror, followlinks):
+            onerror(PermissionError(errno.EACCES, 'unreadable media directory'))
+        with patch.object(backups.os, 'walk', side_effect=unreadable):
+            with self.assertRaises(PermissionError):
+                backups.media_inventory()
+
     def test_records_limit_is_checked_before_creating_identities(self):
         with override_settings(BACKUP_MAX_RECORDS=1):
             with self.assertRaises(backups.BackupError), patch.object(backups, '_global_uid') as assign:
@@ -462,9 +470,15 @@ class CompleteBackupTests(TestCase):
         self.client.force_login(self.admin)
         logger = logging.getLogger('settings_app.backups')
         handler = error_email.ErrorEmailHandler()
-        handler.addFilter(logging.getLogger().handlers[0].filters[0])
+        handler.addFilter(SanitizingFilter())
         logger.addHandler(handler)
         self.addCleanup(logger.removeHandler, handler)
+        # Django logs the HTTP 500 after RequestIdMiddleware resets its context.
+        # It must share the original reference and send no second notification.
+        response_logger = logging.getLogger('django.request')
+        response_logger.disabled = False
+        response_logger.addHandler(handler)
+        self.addCleanup(response_logger.removeHandler, handler)
         with patch('settings_app.backup_views.build_backup', side_effect=KeyError('unexpected')):
             response = self.client.get(reverse('settings_app:backup_download'))
         self.assertContains(response, 'KeyError', status_code=500)
