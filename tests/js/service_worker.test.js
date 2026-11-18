@@ -6,11 +6,14 @@ const source = fs.readFileSync('static/service-worker.js', 'utf8');
 
 function worker() {
     const handlers = {}, stores = new Map();
+    const workerNavigator = {onLine: true};
     let fetcher = async () => new Response('network');
+    let blocked = false;
     const caches = {
         async keys() { return [...stores.keys()]; },
         async delete(key) { return stores.delete(key); },
         async open(name) {
+            if (blocked) throw new Error('Cache storage denied');
             if (!stores.has(name)) stores.set(name, new Map());
             const entries = stores.get(name);
             const key = (request) => typeof request === 'string' ? request : request.url;
@@ -25,10 +28,11 @@ function worker() {
     vm.runInNewContext(source, {
         URL, Request, Response, Headers, Map, Set, Promise, AbortController, setTimeout, clearTimeout, caches,
         fetch: (...args) => fetcher(...args),
-        self: { location: { origin: 'https://erp.test' }, clients: { claim: async () => {}, matchAll: async () => [] }, addEventListener(type, callback) { handlers[type] = callback; }, skipWaiting: async () => {} },
+        self: { navigator: workerNavigator, location: { origin: 'https://erp.test' }, clients: { claim: async () => {}, matchAll: async () => [] }, addEventListener(type, callback) { handlers[type] = callback; }, skipWaiting: async () => {} },
     });
     return {
-        stores, handlers, fetch(fn) { fetcher = fn; },
+        stores, handlers, fetch(fn) { fetcher = fn; }, denyStorage() { blocked = true; },
+        setOnline(online) { workerNavigator.onLine = online; },
         async navigate(path, method = 'GET', workspace = false) {
             let result;
             handlers.fetch({ request: { url: 'https://erp.test' + path, method,
@@ -134,6 +138,44 @@ test('permission errors and server 500 are visible instead of stale offline data
         w.fetch(async () => new Response('error', { status }));
         assert.equal((await w.navigate('/orders/')).status, status);
     }
+});
+
+test('denied or failed Cache Storage produces visible fallback HTML instead of a rejected navigation', async () => {
+    const w = worker();
+    w.denyStorage();
+    w.fetch(async () => {throw new Error('offline');});
+    const response = await w.navigate('/');
+    assert.equal(response.status, 503);
+    assert.match(response.headers.get('content-type'), /text\/html/);
+    assert.match(await response.text(), /الاتصال غير متاح/);
+});
+
+test('an empty gateway failure before first preparation produces visible offline HTML', async () => {
+    const w = worker();
+    w.fetch(async () => new Response('', {status:503}));
+    const response = await w.navigate('/');
+    assert.match(await response.text(), /الاتصال غير متاح/);
+});
+
+test('installed start URL query parameters reuse the verified root document', async () => {
+    const w = worker();
+    w.fetch(async () => privateResponse('u1-b1-rmanager-s0', 'start page'));
+    await w.navigate('/');
+    w.fetch(async () => {throw new Error('offline');});
+    const response = await w.navigate('/?source=installed');
+    assert.equal(await response.text(), 'start page');
+    assert.equal(response.headers.get('X-PWA-Local'), '1');
+});
+
+test('a disconnected installed app opens its cached launch UI without waiting for a network request', async () => {
+    const w = worker();
+    w.fetch(async () => privateResponse('u1-b1-rmanager-s0', 'instant local shell'));
+    await w.navigate('/');
+    w.setOnline(false);
+    let requested = false;
+    w.fetch(() => {requested = true; return new Promise(() => {});});
+    assert.equal(await (await w.navigate('/')).text(), 'instant local shell');
+    assert.equal(requested, false);
 });
 
 test('HTML without scope or with no-store is never cached', async () => {

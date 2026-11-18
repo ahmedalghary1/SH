@@ -5,6 +5,7 @@
     const modes = ['standalone', 'minimal-ui', 'window-controls-overlay', 'fullscreen']
         .map(mode => window.matchMedia?.(`(display-mode: ${mode})`)).filter(Boolean);
     const standalone = () => navigator.standalone === true || modes.some(mode => mode.matches);
+    const ready = () => window.SHSync?.isOfflineReady?.() === true;
     let promptEvent = null;
     let busy = false;
     let revision = 0;
@@ -14,7 +15,8 @@
     function render() {
         document.querySelectorAll('[data-pwa-install]').forEach(button => {
             button.hidden = confirmed || standalone() || !promptEvent || busy;
-            button.disabled = busy;
+            button.disabled = busy || !ready();
+            button.title = ready() ? 'تثبيت التطبيق للعمل دون اتصال' : 'جارٍ تجهيز التطبيق للعمل دون اتصال؛ أبقِ الإنترنت متصلًا';
         });
     }
 
@@ -63,6 +65,11 @@
 
     document.addEventListener('click', async event => {
         if (!event.target.closest('[data-pwa-install]') || !promptEvent || busy || confirmed || standalone()) return;
+        if (!ready()) {
+            window.showPwaNotice?.('جارٍ تجهيز التطبيق والبيانات للعمل دون اتصال. انتظر ظهور «جاهز للعمل دون اتصال» قبل التثبيت وقطع الإنترنت.');
+            window.SHSync?.cacheAppShell?.();
+            return;
+        }
         const candidate = promptEvent;
         promptEvent = null; // A native prompt is single-use, including rejection.
         busy = true;
@@ -85,7 +92,9 @@
 
     window.addEventListener('appinstalled', () => {
         markInstalled();
-        window.showPwaNotice?.('اكتمل تثبيت SH في هذا المتصفح. افتحه من قائمة التطبيقات أو قائمة ابدأ.');
+        window.showPwaNotice?.(ready()
+            ? 'اكتمل تثبيت SH وتجهيزه للعمل دون اتصال.'
+            : 'تم تثبيت SH. أبقِ الإنترنت متصلًا حتى تظهر «جاهز للعمل دون اتصال»؛ تجهيز البيانات لم يكتمل بعد.');
         Promise.resolve().then(() => window.SHSync?.processQueue?.())
             .then(() => window.SHSync?.bootstrapNow?.())
             .then(() => window.SHSync?.cacheAppShell?.())
@@ -100,6 +109,7 @@
     window.addEventListener('focus', refresh);
     window.addEventListener('pageshow', refresh);
     document.addEventListener('sh:page-loaded', render);
+    window.addEventListener('sh-sync-status', render);
     modes.forEach(mode => mode.addEventListener?.('change', refresh));
     render();
     refresh();

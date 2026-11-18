@@ -4,13 +4,14 @@ const vm = require('node:vm');
 const { test } = require('node:test');
 const source = fs.readFileSync('static/js/pwa/install.js', 'utf8');
 
-function fixture({ installed = [], standalone = false, storage = new Map(), blockedStorage = false } = {}) {
+function fixture({ installed = [], standalone = false, storage = new Map(), blockedStorage = false, ready = true } = {}) {
     const events = {}, documentEvents = {}, notices = [];
     const buttons = [{ hidden: true }, { hidden: true }];
     const media = [];
     const navigator = { getInstalledRelatedApps: async () => installed };
     const window = {
         location: { origin: 'https://erp.test' },
+        SHSync: {isOfflineReady: () => ready},
         localStorage: {
             getItem: key => { if (blockedStorage) throw Error('blocked'); return storage.get(key); },
             setItem: (key, value) => { if (blockedStorage) throw Error('blocked'); storage.set(key, value); },
@@ -29,7 +30,7 @@ function fixture({ installed = [], standalone = false, storage = new Map(), bloc
         addEventListener: (type, fn) => { documentEvents[type] = fn; },
     };
     vm.runInNewContext(source, { window, document, navigator, URL, Date, Promise, console: { warn() {} } });
-    return { buttons, events, navigator, storage, notices, media,
+    return { buttons, events, navigator, storage, notices, media, window,
         click: () => documentEvents.click({target: {closest: () => buttons[0]}}),
         async offer(overrides = {}) {
             const prompt = { preventDefault() {}, prompt: async () => {}, userChoice: Promise.resolve({ outcome: 'dismissed' }), ...overrides };
@@ -66,6 +67,20 @@ test('accepting a native prompt does not record a successful installation', asyn
     assert.ok(f.buttons.every(button => button.hidden && !button.disabled));
     await f.events.appinstalled();
     assert.ok(f.storage.has('sh-pwa-installed-v1'));
+});
+
+test('native installation waits for confirmed offline preparation without consuming its single-use prompt', async () => {
+    const f = fixture({ready: false});
+    let calls = 0;
+    await f.offer({prompt: async () => {calls++;}});
+    assert.ok(f.buttons.every(button => !button.hidden && button.disabled));
+    await f.click();
+    assert.equal(calls, 0);
+    f.window.SHSync.isOfflineReady = () => true;
+    f.events['sh-sync-status']();
+    assert.ok(f.buttons.every(button => !button.hidden && !button.disabled));
+    await f.click();
+    assert.equal(calls, 1);
 });
 
 test('installation is broadcast across tabs and persists through a new tab', async () => {

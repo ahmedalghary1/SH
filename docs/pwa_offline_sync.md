@@ -1,5 +1,16 @@
 # PWA and offline synchronization
 
+## Brave initial offline launch (2026-11-18)
+
+See the [Brave cold-start review](pwa-brave-cold-start-2026-11-18-ar.md).
+The worker registers immediately, including on login pages. The verified launch
+and current HTML are prepared independently of the first data bootstrap. Native
+installation from the SH button waits until data and all authorized screens are
+confirmed ready; browser-menu installation still requires preparation afterward.
+Start URL query parameters reuse the same account's root shell. Storage failures
+and empty gateway errors return a visible offline explanation. Release
+`sh-pwa-v2026-11-18-cold-start-02` retains existing scoped databases and queues.
+
 ## Installation and offline lifecycle fixes (2026-11-18)
 
 Installation now has an independent controller (`install.js`). It checks

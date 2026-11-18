@@ -44,6 +44,7 @@ let shellCached = false;
 let lastBootstrapAt = 0;
 let shellPreparation = null;
 let persistenceAttempted = false;
+let offlineReady = false;
 
 async function readyWorkerRegistration() {
     let timeout;
@@ -95,7 +96,13 @@ function uniqueUrls(urls) {
 
 export async function cacheAppShell(extraUrls = []) {
     if (shellPreparation) return shellPreparation;
-    shellPreparation = prepareAppShell(extraUrls).finally(() => { shellPreparation = null; });
+    shellPreparation = (async () => {
+        // Bootstrap can finish while the first, minimal launch shell is being
+        // cached. Finish its newly authorized screens before declaring readiness.
+        if (await prepareAppShell(extraUrls)) await prepareAppShell(extraUrls);
+    })().catch(error => {
+        syncStatusEvent({state: 'app_shell_cache_failed', error: String(error.message || error)});
+    }).finally(() => { shellPreparation = null; });
     return shellPreparation;
 }
 
@@ -109,9 +116,9 @@ async function prepareAppShell(extraUrls = []) {
         return;
     }
     if (!navigator.onLine) return;
-    const authorizedPages = await getMetadata('offline_pages');
-    if (!authorizedPages?.length) return;
+    const authorizedPages = await getMetadata('offline_pages') || [];
     const urls = uniqueUrls([
+        '/',
         ...authorizedPages,
         `${window.location.pathname}${window.location.search}`,
         ...extraUrls,
@@ -140,7 +147,13 @@ async function prepareAppShell(extraUrls = []) {
             });
             shellCached = Boolean(result && !result.failed.length);
             {
-                const ready = shellCached && Boolean(await getMetadata('last_bootstrap_at'));
+                const latestPages = await getMetadata('offline_pages') || [];
+                const required = uniqueUrls(['/', ...latestPages]);
+                const needsMorePages = required.some(url => !urls.includes(url));
+                const ready = shellCached && latestPages.length > 0
+                    && required.every(url => result.cached.includes(url))
+                    && Boolean(await getMetadata('last_bootstrap_at'));
+                offlineReady = ready;
                 await setMetadata('offline_ready', ready);
                 await setMetadata('offline_failed_pages', result?.failed || []);
                 document.querySelectorAll('[data-offline-ready]').forEach(node => {
@@ -148,6 +161,7 @@ async function prepareAppShell(extraUrls = []) {
                     node.title = (result?.failed || []).join('\n');
                 });
                 syncStatusEvent({ state: ready ? 'offline_ready' : 'offline_not_ready', failed: result?.failed || [] });
+                return needsMorePages;
             }
         }
     } catch (error) {
@@ -372,6 +386,9 @@ async function startOnlineWork() {
     if (!getOfflineScope()) return;
     // A storage permission prompt must not delay processing saved operations.
     ensurePersistentStorage();
+    // Save the launch/current HTML before an expensive or failing first data
+    // download. The first document was loaded before the worker controlled it.
+    cacheAppShell();
     await processQueue();
     if (Date.now() - lastBootstrapAt > 60000) await bootstrapNow();
     await cacheAppShell();
@@ -405,12 +422,16 @@ window.SHSync = {
     cacheAppShell,
     processQueue,
     getQueueStatus,
+    isOfflineReady: () => offlineReady,
 };
 
 if (!navigator.onLine) {
-    getMetadata('offline_ready').then(ready => document.querySelectorAll('[data-offline-ready]').forEach(node => {
+    getMetadata('offline_ready').then(ready => {
+        offlineReady = Boolean(ready);
+        document.querySelectorAll('[data-offline-ready]').forEach(node => {
         node.textContent = ready ? 'جاهز للعمل دون اتصال' : 'افتح التطبيق بالإنترنت لإكمال التجهيز';
-    }));
+        });
+    });
 }
 
 window.addEventListener('sh-sync-status', event => {

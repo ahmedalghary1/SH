@@ -48,9 +48,11 @@
 <body>
     <main class="offline-panel">
         <img class="offline-logo" src="{% static 'images/sh-family-Logo.png' %}" alt="SH">
-        <h1>التطبيق يعمل بدون اتصال</h1>
-        <p>يمكنك متابعة البيع والتسجيل من الصفحات المحفوظة. سيتم إرسال العمليات المعلقة تلقائيا عند عودة الإنترنت.</p>
+        <h1>تعذر فتح هذه الصفحة دون اتصال</h1>
+        <p>إذا سبق تجهيز التطبيق، افتح الصفحة الرئيسية للوصول إلى الصفحات المحفوظة. وإلا أعد الاتصال، وسجّل الدخول، وانتظر ظهور «جاهز للعمل دون اتصال» قبل قطع الإنترنت.</p>
+        <p>العمليات المحفوظة على هذا الجهاز تبقى في انتظار المزامنة. لا تمسح بيانات الموقع لحل مشكلة التشغيل.</p>
         <div class="offline-actions">
+            <a class="btn btn-primary" href="/">الصفحة الرئيسية</a>
             <button class="btn btn-primary" type="button" onclick="location.reload()">إعادة المحاولة</button>
             <button class="btn btn-light" type="button" onclick="history.back()">رجوع</button>
         </div>

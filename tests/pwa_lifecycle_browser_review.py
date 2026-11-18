@@ -6,6 +6,7 @@ Run: .venv-audit/Scripts/python.exe tests/pwa_lifecycle_browser_review.py
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
 import tempfile
 import threading
@@ -61,7 +62,8 @@ def main():
     base = f'http://127.0.0.1:{server.server_port}'
     try:
         with tempfile.TemporaryDirectory(prefix='sh-pwa-lifecycle-') as profile, sync_playwright() as pw:
-            context = pw.chromium.launch_persistent_context(profile, headless=True)
+            browser_options = {'executable_path': os.environ['PWA_BROWSER_EXECUTABLE']} if os.environ.get('PWA_BROWSER_EXECUTABLE') else {}
+            context = pw.chromium.launch_persistent_context(profile, headless=True, **browser_options)
             try:
                 page = context.pages[0]
                 page.goto(base)
@@ -103,7 +105,7 @@ def main():
             # Shut the browser down completely. The fixture now refuses every
             # network request while navigator.onLine remains true, like an outage.
             unavailable.set()
-            context = pw.chromium.launch_persistent_context(profile, headless=True)
+            context = pw.chromium.launch_persistent_context(profile, headless=True, **browser_options)
             try:
                 page = context.pages[0]
                 response = page.goto(base)

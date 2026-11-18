@@ -29,7 +29,7 @@ def wait_for(page, expression):
     raise AssertionError('Timed out: ' + expression + ' State: ' + ascii(details))
 
 
-def main():
+def main(startup_review=None):
     with tempfile.TemporaryDirectory(prefix='sh-pwa-') as temporary, ExitStack() as cleanup:
         os.environ.update(DJANGO_SETTINGS_MODULE='config.settings', DB_ENGINE='sqlite',
                           SQLITE_PATH=str(Path(temporary) / 'test.sqlite3'), DEBUG='True',
@@ -89,9 +89,12 @@ def main():
         cleanup.callback(server.shutdown)
         base = f'http://127.0.0.1:{server.server_port}'
         with sync_playwright() as playwright, ExitStack() as browser_cleanup:
-            browser = playwright.chromium.launch(headless=True)
+            browser = playwright.chromium.launch(headless=True, **({'executable_path': os.environ['PWA_BROWSER_EXECUTABLE']} if os.environ.get('PWA_BROWSER_EXECUTABLE') else {}))
             browser_cleanup.callback(browser.close)
             browser_cleanup.callback(connections.close_all)
+            if startup_review is not None:
+                startup_review(browser, base, unavailable)
+                return
             if '--representative-only' in sys.argv:
                 review_representative(browser, base, unavailable)
                 return

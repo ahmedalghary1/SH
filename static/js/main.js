@@ -71,43 +71,43 @@ if ("serviceWorker" in navigator && isAuthPage) {
     navigator.serviceWorker.controller?.postMessage({ type: "CLEAR_SCOPE" });
 }
 
-if ("serviceWorker" in navigator && !isAuthPage) {
-    window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/service-worker.js", { scope: "/" })
-            .then((registration) => {
-                const offerUpdate = () => {
-                    if (!registration.waiting || !navigator.serviceWorker.controller) return;
-                    showPwaNotice("يتوفر تحديث للتطبيق. احفظ عملك ثم اضغط تحديث التطبيق.");
-                    const notice = document.querySelector("[data-pwa-notice]");
-                    const button = document.createElement("button");
-                    button.type = "button";
-                    button.className = "btn btn-light btn-small";
-                    button.textContent = "تحديث التطبيق";
-                    button.addEventListener("click", async () => {
-                        const status = await window.SHSync?.getQueueStatus?.();
-                        if (window.SHUi?.hasUnsavedChanges?.() || Number(status?.pending || status?.total || 0) > 0) {
-                            showPwaNotice("احفظ التغييرات وزامن العمليات المعلقة قبل تحديث التطبيق.", true);
-                            return;
-                        }
-                        requestedPwaUpdate = true;
-                        registration.waiting?.postMessage({ type: "SKIP_WAITING" });
-                    });
-                    notice?.appendChild(button);
-                    window.clearTimeout(showPwaNotice.timer);
-                };
-                offerUpdate();
-                registration.addEventListener("updatefound", () => {
-                    const worker = registration.installing;
-                    worker?.addEventListener("statechange", () => {
-                        if (worker.state === "installed") offerUpdate();
-                    });
+if ("serviceWorker" in navigator) {
+    // Native browser installation is possible on the login page too. Register
+    // immediately; images or other slow resources must not delay offline setup.
+    navigator.serviceWorker.register("/service-worker.js", { scope: "/" })
+        .then((registration) => {
+            const offerUpdate = () => {
+                if (!registration.waiting || !navigator.serviceWorker.controller) return;
+                showPwaNotice("يتوفر تحديث للتطبيق. احفظ عملك ثم اضغط تحديث التطبيق.");
+                const notice = document.querySelector("[data-pwa-notice]");
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "btn btn-light btn-small";
+                button.textContent = "تحديث التطبيق";
+                button.addEventListener("click", async () => {
+                    const status = await window.SHSync?.getQueueStatus?.();
+                    if (window.SHUi?.hasUnsavedChanges?.() || Number(status?.pending || status?.total || 0) > 0) {
+                        showPwaNotice("احفظ التغييرات وزامن العمليات المعلقة قبل تحديث التطبيق.", true);
+                        return;
+                    }
+                    requestedPwaUpdate = true;
+                    registration.waiting?.postMessage({ type: "SKIP_WAITING" });
                 });
-                return registration.update?.();
-            })
-            .catch((error) => {
-                console.warn("Service worker registration failed", error);
+                notice?.appendChild(button);
+                window.clearTimeout(showPwaNotice.timer);
+            };
+            offerUpdate();
+            registration.addEventListener("updatefound", () => {
+                const worker = registration.installing;
+                worker?.addEventListener("statechange", () => {
+                    if (worker.state === "installed") offerUpdate();
+                });
             });
-    });
+            return registration.update?.();
+        })
+        .catch((error) => {
+            console.warn("Service worker registration failed", error);
+        });
 }
 
 if ("serviceWorker" in navigator) {

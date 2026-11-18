@@ -1,5 +1,5 @@
 // Release all shell assets together; private pages require a verified scope.
-const CACHE_VERSION = "sh-pwa-v2026-11-18-install-offline-01";
+const CACHE_VERSION = "sh-pwa-v2026-11-18-cold-start-02";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_PREFIX = 'sh-pwa-pages-v2-';
 const META_CACHE = "sh-pwa-identity-v1";
@@ -104,8 +104,12 @@ async function storeResponse(request, response, scope) {
 }
 
 async function offlineFallback() {
-  const cache = await caches.open(STATIC_CACHE);
-  return (await cache.match(OFFLINE_URL)) || new Response(
+  try {
+    const cache = await caches.open(STATIC_CACHE);
+    const cached = await cache.match(OFFLINE_URL);
+    if (cached) return cached;
+  } catch { /* A disabled/full cache must still return a visible HTML screen. */ }
+  return new Response(
     '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>بدون اتصال — SH</title><body><main><h1>الاتصال غير متاح</h1><p>افتح الصفحة مرة أثناء الاتصال لتجهيزها للعمل بدون إنترنت. تسجيل الدخول والمزامنة يحتاجان إلى الاتصال.</p><button onclick="location.reload()">إعادة المحاولة</button></main></body></html>',
     { status: 503, headers: { "Content-Type": "text/html; charset=utf-8" } },
   );
@@ -129,7 +133,7 @@ async function cachedPage(request, clientId) {
   if (exact) return local(exact);
   // The customer is selected from the authorized local snapshot on this screen.
   const url = sameOriginUrl(request);
-  if (url?.pathname === '/finance/statements/customer/' || FILTERABLE_PATHS.has(url?.pathname)) {
+  if (url?.pathname === '/' || url?.pathname === '/finance/statements/customer/' || FILTERABLE_PATHS.has(url?.pathname)) {
     return local(await cache.match(new Request(new URL(url.pathname, self.location.origin)), { ignoreVary: true }));
   }
   const metadata = await caches.open(META_CACHE);
@@ -147,6 +151,11 @@ async function networkNavigation(request, event) {
   if (isAuthUrl(url)) {
     await clearScope();
     try { return await fetch(request); } catch { return offlineFallback(); }
+  }
+  // A genuinely disconnected device should open its prepared UI immediately,
+  // instead of showing a blank launch window until the network timeout expires.
+  if (self.navigator?.onLine === false) {
+    return (await cachedPage(request, event.clientId)) || offlineFallback();
   }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
@@ -178,7 +187,7 @@ async function networkNavigation(request, event) {
       return (await cachedPage(request, event.clientId)) || response;
     }
     if ([502, 503, 504].includes(response.status)) {
-      return (await cachedPage(request, event.clientId)) || response;
+      return (await cachedPage(request, event.clientId)) || offlineFallback();
     }
     return response;
   } catch {
@@ -282,7 +291,7 @@ self.addEventListener("fetch", (event) => {
   // request and its attachment/error response; never turn it into offline HTML.
   if (url.pathname.startsWith('/settings/backups/')) return;
   if (request.mode === "navigate" || request.destination === "document" || request.headers?.get('X-Workspace-Tab') === '1') {
-    event.respondWith(networkNavigation(request, event));
+    event.respondWith(networkNavigation(request, event).catch(() => offlineFallback()));
   } else if (isPublicAsset(url)) event.respondWith(staticAsset(request));
 });
 self.addEventListener("message", (event) => {
