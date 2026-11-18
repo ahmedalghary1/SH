@@ -5,11 +5,13 @@ from decimal import Decimal
 from io import BytesIO
 from io import StringIO
 import errno
+import hashlib
 import json
 import logging
 from pathlib import Path
 import tempfile
 import smtplib
+import stat
 import threading
 from unittest.mock import patch
 import zipfile
@@ -42,7 +44,7 @@ from returns.services import add_return_item, approve_sales_return, cancel_sales
 from sync_api.models import SyncOperation
 
 from . import backup_services as backups
-from .models import BackupIdentity, BackupImport
+from .models import BackupIdentity, BackupImport, CompanySettings
 
 
 PNG = b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jB1sAAAAASUVORK5CYII=')
@@ -148,7 +150,7 @@ class CompleteBackupTests(TestCase):
         self.assertEqual(Invoice.all_objects.get(order=order).order_id, order.pk)
         self.assertEqual(SalesReturn.all_objects.get(order=order).items.get().original_order_item_id, order.items.get().pk)
         self.assertEqual((self.media / str(product.image)).read_bytes(), PNG)
-        self.assertEqual((self.media / 'unused.txt').read_text(), 'A detached attachment')
+        self.assertFalse((self.media / 'unused.txt').exists())
         self.assertTrue(Product.all_objects.filter(sku='KEEP').exists())
         self.admin.refresh_from_db()
         self.assertEqual(self.admin.password, user_password)
@@ -319,6 +321,7 @@ class CompleteBackupTests(TestCase):
         fallback = self.root / 'fallback'
         fallback.mkdir()
         (fallback / 'legacy.png').write_bytes(PNG)
+        Product.objects.create(name='Legacy SH image', sku='LEGACY-SH', image='legacy.png')
         Product.objects.create(name='Missing image', sku='MISSING', image='not-there.png')
         with override_settings(MEDIA_FALLBACK_ROOTS=[fallback]), backups.build_backup() as stream:
             with zipfile.ZipFile(stream) as archive:
@@ -338,12 +341,143 @@ class CompleteBackupTests(TestCase):
         self.assertEqual(record['fields']['changes_after'], value)
         self.assertNotIn('/orders/42/', manifest['missing_media'])
 
-    def test_unreadable_media_directory_fails_instead_of_omitting_attachments(self):
-        def unreadable(root, onerror, followlinks):
-            onerror(PermissionError(errno.EACCES, 'unreadable media directory'))
-        with patch.object(backups.os, 'walk', side_effect=unreadable):
+    def test_unreadable_referenced_media_fails_instead_of_omitting_attachments(self):
+        (self.media / 'products').mkdir()
+        image = self.media / 'products/item.png'
+        image.write_bytes(PNG)
+        original = Path.lstat
+
+        def unreadable(path, *args, **kwargs):
+            if path == image:
+                raise PermissionError(errno.EACCES, 'unreadable SH attachment')
+            return original(path, *args, **kwargs)
+
+        with patch.object(Path, 'lstat', unreadable):
             with self.assertRaises(PermissionError):
-                backups.media_inventory()
+                backups.media_inventory(['products/item.png'])
+
+    def test_shared_server_exports_only_sh_file_field_references_without_scanning(self):
+        shared = self.root / 'public_html'
+        legacy = shared / 'media'
+        assets = {
+            'sh_media/products/sh.png': PNG,
+            'media/product_variants/sh.png': b'SH legacy variant',
+            'media/brand/sh-logo.png': b'SH logo',
+            'media/products/other-site.png': b'Other site catalog',
+            'media/site-two/banner.jpg': b'Other site banner',
+            'site-three/uploads/photo.png': b'Third site image',
+            'sh_media/unlinked.png': b'Unproven ownership',
+            '.env': b'Unrelated private configuration',
+        }
+        for name, content in assets.items():
+            target = shared / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+        product = Product.objects.create(name='SH product', sku='SH-ONLY', image='products/sh.png')
+        ProductVariant.objects.create(product=product, variant_sku='SH-ONLY-V', image='product_variants/sh.png')
+        CompanySettings.objects.create(logo='brand/sh-logo.png')
+        AuditLog.objects.create(user=self.admin, action='update', section='settings',
+                                changes_after={'path': 'site-two/banner.jpg'})
+        with override_settings(MEDIA_ROOT=shared / 'sh_media', MEDIA_FALLBACK_ROOTS=[legacy, shared]), \
+                patch('os.walk', side_effect=AssertionError('Must not scan hosted sites')), \
+                patch.object(backups, 'file_digest', wraps=backups.file_digest) as hashed:
+            with backups.build_backup() as stream, zipfile.ZipFile(stream) as archive:
+                manifest = json.loads(archive.read('manifest.json'))
+                self.assertEqual(set(archive.namelist()), {
+                    'manifest.json', 'data.json', 'media/products/sh.png',
+                    'media/product_variants/sh.png', 'media/brand/sh-logo.png',
+                })
+                self.assertEqual(archive.read('media/products/sh.png'), PNG)
+                self.assertEqual(manifest['missing_media'], [])
+            self.assertEqual({call.args[0] for call in hashed.call_args_list}, {
+                shared / 'sh_media/products/sh.png', legacy / 'product_variants/sh.png', legacy / 'brand/sh-logo.png',
+            })
+        self.assertEqual((legacy / 'site-two/banner.jpg').read_bytes(), b'Other site banner')
+
+    def test_shared_primary_media_root_does_not_export_unrelated_files(self):
+        (self.media / 'sh.png').write_bytes(PNG)
+        (self.media / 'other-site').mkdir()
+        (self.media / 'other-site/private.png').write_bytes(b'Other site')
+        Product.objects.create(name='SH shared root', sku='SH-SHARED', image='sh.png')
+        with backups.build_backup() as stream, zipfile.ZipFile(stream) as archive:
+            self.assertEqual(set(archive.namelist()), {'manifest.json', 'data.json', 'media/sh.png'})
+
+    def test_legacy_archive_unlinked_attachment_still_restores_without_reexporting_it(self):
+        data, _ = self.make_source()
+        content = b'Attachment included by an older SH release'
+
+        def legacy_attachment(files):
+            manifest = json.loads(files['manifest.json'])
+            manifest['media'].append({'path': 'legacy-unlinked.txt', 'size': len(content),
+                                      'sha256': hashlib.sha256(content).hexdigest()})
+            files['manifest.json'] = backups.canonical(manifest)
+            files['media/legacy-unlinked.txt'] = content
+
+        legacy = self.rewrite(data, change=legacy_attachment)
+        self.import_data(legacy)
+        self.assertEqual((self.media / 'legacy-unlinked.txt').read_bytes(), content)
+        with backups.build_backup() as stream, zipfile.ZipFile(stream) as archive:
+            self.assertNotIn('media/legacy-unlinked.txt', archive.namelist())
+
+    def test_unsafe_database_file_reference_cannot_read_a_sibling_site(self):
+        Product.objects.create(name='Invalid media path', sku='SH-UNSAFE', image='../other-site/private.png')
+        with self.assertRaises(backups.BackupError), patch.object(backups, 'file_digest') as hashed:
+            backups.build_backup()
+        hashed.assert_not_called()
+
+    def test_media_priority_keeps_primary_sh_image_when_fallback_has_same_name(self):
+        fallback = self.root / 'shared-media'
+        fallback.mkdir()
+        (self.media / 'same.png').write_bytes(PNG)
+        (fallback / 'same.png').write_bytes(b'Different site image')
+        Product.objects.create(name='Primary image', sku='SH-PRIORITY', image='same.png')
+        with override_settings(MEDIA_FALLBACK_ROOTS=[fallback]):
+            with backups.build_backup() as stream, zipfile.ZipFile(stream) as archive:
+                self.assertEqual(archive.read('media/same.png'), PNG)
+
+    def test_referenced_symlink_component_is_rejected_before_reading_it(self):
+        linked = self.media / 'linked'
+        linked.mkdir()
+        original = Path.lstat
+
+        def symbolic(path, *args, **kwargs):
+            if path == linked:
+                return type('LinkInfo', (), {'st_mode': stat.S_IFLNK})()
+            return original(path, *args, **kwargs)
+
+        with patch.object(Path, 'lstat', symbolic), self.assertRaisesMessage(backups.BackupError, 'رابط رمزي'):
+            backups.media_inventory(['linked/other-site.png'])
+
+    def test_import_preserves_unreferenced_directory_at_an_incoming_image_path(self):
+        data, _ = self.make_source()
+        directory = self.media / 'products/item.png'
+        directory.mkdir(parents=True)
+        (directory / 'other-site.txt').write_bytes(b'Keep directory contents')
+        result = self.import_data(data)
+        self.assertEqual(result.summary['media_renamed'], 1)
+        product = Product.all_objects.get(sku='SOURCE-P')
+        self.assertEqual((self.media / str(product.image)).read_bytes(), PNG)
+        self.assertEqual((directory / 'other-site.txt').read_bytes(), b'Keep directory contents')
+
+    def test_import_preserves_unreferenced_file_blocking_an_incoming_directory(self):
+        data, _ = self.make_source()
+        (self.media / 'products').write_bytes(b'Keep ancestor file')
+        result = self.import_data(data)
+        self.assertEqual(result.summary['media_renamed'], 1)
+        product = Product.all_objects.get(sku='SOURCE-P')
+        self.assertEqual((self.media / str(product.image)).read_bytes(), PNG)
+        self.assertEqual((self.media / 'products').read_bytes(), b'Keep ancestor file')
+
+    def test_changed_unreferenced_destination_after_preview_requires_fresh_preview(self):
+        data, _ = self.make_source()
+        (self.media / 'products').mkdir()
+        image = self.media / 'products/item.png'
+        image.write_bytes(b'Unrelated existing file')
+        job = backups.stage_upload(self.upload(data), self.admin)
+        image.write_bytes(b'Changed after preview')
+        with self.assertRaisesMessage(backups.BackupError, 'بعد المعاينة'):
+            backups.apply_import(job.pk, self.admin)
+        self.assertEqual(image.read_bytes(), b'Changed after preview')
 
     def test_records_limit_is_checked_before_creating_identities(self):
         with override_settings(BACKUP_MAX_RECORDS=1):

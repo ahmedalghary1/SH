@@ -152,25 +152,6 @@ window.addEventListener("DOMContentLoaded", () => {
     window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
 });
 
-let deferredPwaInstallPrompt = null;
-
-window.addEventListener("beforeinstallprompt", (event) => {
-    event.preventDefault();
-    deferredPwaInstallPrompt = event;
-    document.querySelectorAll("[data-pwa-install]").forEach((button) => {
-        button.hidden = false;
-    });
-});
-
-window.addEventListener("appinstalled", () => {
-    deferredPwaInstallPrompt = null;
-    document.querySelectorAll("[data-pwa-install]").forEach((button) => {
-        button.hidden = true;
-    });
-    window.SHSync?.cacheAppShell?.();
-    window.SHSync?.bootstrapNow?.();
-});
-
 function normalizeNumberText(value) {
     let normalized = String(value ?? '')
         .trim()
@@ -857,15 +838,6 @@ document.addEventListener("click", (event) => {
     const closeButton = event.target.closest("[data-close-modal]");
     if (closeButton) {
         closeModal(closeButton.closest(".modal"));
-    }
-
-    const installButton = event.target.closest("[data-pwa-install]");
-    if (installButton && deferredPwaInstallPrompt) {
-        deferredPwaInstallPrompt.prompt();
-        deferredPwaInstallPrompt.userChoice.finally(() => {
-            deferredPwaInstallPrompt = null;
-            installButton.hidden = true;
-        });
     }
 
     const syncButton = event.target.closest("[data-pwa-sync]");

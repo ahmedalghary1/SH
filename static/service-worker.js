@@ -1,5 +1,5 @@
 // Release all shell assets together; private pages require a verified scope.
-const CACHE_VERSION = "sh-pwa-v2026-11-16-offline-durable-01";
+const CACHE_VERSION = "sh-pwa-v2026-11-18-install-offline-01";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_PREFIX = 'sh-pwa-pages-v2-';
 const META_CACHE = "sh-pwa-identity-v1";
@@ -21,6 +21,7 @@ const CORE_ASSETS = [
   "/static/js/internal-tabs.js", "/static/js/orders.js", "/static/js/inventory.js",
   "/static/js/product_create.js", "/static/js/purchase_create.js", "/static/js/purchase_return.js",
   "/static/js/pwa/identity.js", "/static/js/pwa/db.js", "/static/js/pwa/sync-queue.js",
+  "/static/js/pwa/install.js",
   "/static/js/pwa/sync-engine.js", "/static/js/pwa/offline-forms.js", "/static/js/pwa/offline-list-view.js",
   "/static/js/pwa/queue-view.js", "/static/js/bulk-transfer.js",
   "/static/js/pwa/local-pages.js",
@@ -72,7 +73,15 @@ async function clearScope() {
 function canStore(response, url, scope) {
   if (!response || !response.ok || response.type === "opaque" || response.redirected) return false;
   if ((response.headers.get("cache-control") || "").toLowerCase().includes("no-store")) return false;
-  if (isPublicAsset(url)) return true;
+  if (isPublicAsset(url)) {
+    const type = (response.headers.get('content-type') || '').toLowerCase();
+    // Some proxies answer a missing script with a 200 HTML error/login page.
+    // Such a response must not make an incomplete shell look ready.
+    if (url.pathname.endsWith('.js')) return /(?:javascript|ecmascript)/.test(type);
+    if (url.pathname.endsWith('.css')) return type.includes('text/css');
+    if (url.pathname === '/manifest.json') return type.includes('json');
+    return true;
+  }
   return isPrivatePage(url) && validScope(scope)
     && response.headers.get("X-PWA-Scope") === scope
     && response.headers.get("X-PWA-Cacheable") === "1"
@@ -143,6 +152,21 @@ async function networkNavigation(request, event) {
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
     const response = await fetch(request, { signal: controller.signal });
+    // Real top-level navigations use manual redirects. The worker sees an
+    // opaque redirect, not the final login URL (unlike workspace fetches).
+    // Check the read-only session endpoint before allowing an expired session
+    // to replace a prepared local form with login and clear its page cache.
+    if (response.type === 'opaqueredirect') {
+      const cached = await cachedPage(request, event.clientId);
+      if (cached) {
+        const session = await fetch(new URL('/api/sync/session/', self.location.origin).href, {
+          credentials: 'same-origin', cache: 'no-store', redirect: 'follow', signal: controller.signal,
+        });
+        const sessionUrl = sameOriginUrl(session.url);
+        if (session.status === 401 || (session.redirected && sessionUrl && isAuthUrl(sessionUrl))) return cached;
+      }
+      return response;
+    }
     const scope = response.headers.get("X-PWA-Scope");
     if (validScope(scope)) {
       await setActiveScope(scope);
@@ -218,7 +242,13 @@ async function cacheUrls(urls, scope) {
 
 self.addEventListener("install", (event) => {
   // Updates wait for explicit user action or all old tabs to close.
-  event.waitUntil(cacheUrls(CORE_ASSETS, null));
+  event.waitUntil((async () => {
+    const result = await cacheUrls(CORE_ASSETS, null);
+    if (result.failed.length) {
+      // Keep the working previous worker/cache when a release is incomplete.
+      throw new Error(`Offline assets unavailable: ${result.failed.join(', ')}`);
+    }
+  })());
 });
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {

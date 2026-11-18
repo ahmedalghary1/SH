@@ -110,6 +110,29 @@ test('ordinary navigation reuses the active workspace tab; explicit action opens
   assert.equal(bar.children[0].textContent, '＋ فتح في تبويب جديد');
 });
 
+test('cached-page origin follows each workspace page, including tab restoration and online pages', async () => {
+  const { context, content } = fixture();
+  const Parser = context.DOMParser;
+  context.DOMParser = class extends Parser {
+    parseFromString(url) {
+      const doc = super.parseFromString(url);
+      const query = doc.querySelector;
+      doc.querySelector = selector => {
+        const node = query(selector);
+        if (selector === '[data-page-content]') node.hasAttribute = name => name === 'data-pwa-local' && url === '/orders/';
+        return node;
+      };
+      return doc;
+    }
+  };
+  await context.window.SHWorkspace.openInNewTab('/orders/');
+  assert.equal(content.hasAttribute('data-pwa-local'), true);
+  await context.window.SHWorkspace.openInNewTab('/customers/');
+  assert.equal(content.hasAttribute('data-pwa-local'), false);
+  await context.window.SHWorkspace.openInNewTab('/orders/');
+  assert.equal(content.hasAttribute('data-pwa-local'), true);
+});
+
 test('saving in one workspace tab preserves the live form in another tab', async () => {
   const { context, bar, content, stored, events } = fixture();
   await context.window.SHWorkspace.navigate('/customers/');

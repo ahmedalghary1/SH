@@ -41,6 +41,49 @@ function worker() {
 }
 const privateResponse = (scope, text = 'private') => new Response(text, { headers: { 'Content-Type': 'text/html', 'X-PWA-Scope': scope, 'X-PWA-Cacheable': '1', 'Vary': 'Cookie' } });
 
+test('an incomplete update cannot replace the installed worker or its offline assets', async () => {
+    const w = worker();
+    const previous = new Map([['https://erp.test/static/js/main.js', new Response('working old code')]]);
+    w.stores.set('sh-pwa-vprevious-static', previous);
+    const missing = new Set(['/static/js/main.js']);
+    w.fetch(async request => {
+        const path = new URL(request.url).pathname;
+        if (missing.has(path)) return new Response('missing', {status: 404});
+        const type = path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : path.endsWith('.json') ? 'application/manifest+json' : 'text/html';
+        return new Response('asset', {headers: {'Content-Type': type}});
+    });
+    let installation;
+    w.handlers.install({waitUntil(value) { installation = value; }});
+    await assert.rejects(installation, /main\.js/);
+    assert.equal(w.stores.get('sh-pwa-vprevious-static'), previous);
+    missing.clear();
+    w.handlers.install({waitUntil(value) { installation = value; }});
+    await installation;
+});
+
+test('a proxy HTML response cannot masquerade as a JavaScript offline asset', async () => {
+    const w = worker();
+    w.fetch(async () => new Response('<html>proxy error</html>', {headers: {'Content-Type': 'text/html'}}));
+    let installation;
+    w.handlers.install({waitUntil(value) { installation = value; }});
+    await assert.rejects(installation, /main\.js/);
+});
+
+test('an incomplete release cannot install or remove the previous offline shell', async () => {
+    const w = worker();
+    const oldCache = 'sh-pwa-vprevious-static';
+    w.stores.set(oldCache, new Map());
+    const asset = request => new Response('asset', {headers: {'Content-Type': request.url.endsWith('.js') ? 'text/javascript' : request.url.endsWith('.css') ? 'text/css' : 'application/json'}});
+    w.fetch(async request => request.url.endsWith('/pwa/install.js') ? new Response('missing', {status: 404}) : asset(request));
+    let done;
+    w.handlers.install({waitUntil(value) { done = value; }});
+    await assert.rejects(done, /install\.js/);
+    assert.ok(w.stores.has(oldCache));
+    w.fetch(async request => asset(request));
+    w.handlers.install({waitUntil(value) { done = value; }});
+    await done;
+});
+
 test('backup requests bypass the worker and its page timeout entirely', async () => {
     const w = worker();
     let fetches = 0;
@@ -156,6 +199,29 @@ test('an expired session keeps offline work available and explicit logout still 
     await w.navigate('/accounts/logout/');
     w.fetch(async () => { throw new Error('offline'); });
     assert.equal((await w.navigate('/orders/create/')).status, 503);
+});
+
+test('opaque browser navigation redirects fall back only when the session has expired', async () => {
+    const w = worker();
+    w.fetch(async () => privateResponse('u1-b1-rsales-s0', '<section data-page-content>prepared form</section>'));
+    await w.navigate('/orders/create/');
+    const redirect = new Response(null);
+    Object.defineProperty(redirect, 'type', {value: 'opaqueredirect'});
+    let expired = true;
+    w.fetch(async request => {
+        if (String(request).endsWith('/api/sync/session/')) {
+            if (!expired) return new Response('{}', {headers: {'Content-Type': 'application/json'}});
+            const login = new Response('login');
+            Object.defineProperties(login, {redirected: {value: true}, url: {value: 'https://erp.test/accounts/login/?next=/api/sync/session/'}});
+            return login;
+        }
+        return redirect;
+    });
+    const local = await w.navigate('/orders/create/');
+    assert.equal(local.headers.get('X-PWA-Local'), '1');
+    assert.match(await local.text(), /data-pwa-local="1"/);
+    expired = false;
+    assert.equal(await w.navigate('/orders/create/'), redirect);
 });
 
 test('unseen list filters reuse the local shell without substituting a quote form', async () => {

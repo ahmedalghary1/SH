@@ -42,10 +42,12 @@ def main():
         cleanup.callback(isolated_media.disable)
         call_command('migrate', interactive=False, verbosity=0)
         user = User.objects.create_superuser(username='browser-backup-admin', password='test-password')
-        Product.objects.create(name='Browser backup product', sku='BROWSER-BACKUP')
+        Product.objects.create(name='Browser backup product', sku='BROWSER-BACKUP', image='products/sh.png')
         media = task_root / 'media'
         media.mkdir()
-        (media / 'attachment.txt').write_text('all attachments are included', encoding='utf-8')
+        (media / 'products').mkdir()
+        (media / 'products/sh.png').write_bytes(b'SH attachment')
+        (media / 'other-site.txt').write_bytes(b'Unrelated site attachment')
         client = Client()
         client.force_login(user)
 
@@ -105,7 +107,8 @@ def main():
             downloaded.value.save_as(str(archive))
             with zipfile.ZipFile(archive) as zipped:
                 assert zipped.testzip() is None
-                assert zipped.read('media/attachment.txt') == b'all attachments are included'
+                assert zipped.read('media/products/sh.png') == b'SH attachment'
+                assert 'media/other-site.txt' not in zipped.namelist()
             slow_download.clear()
             fail_download.set()
             unexpected = []

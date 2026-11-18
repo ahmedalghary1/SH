@@ -96,10 +96,21 @@ export function openOfflineDB() {
     return dbPromise;
 }
 
+function durableTransaction(db, stores) {
+    // Unsent business records cannot be downloaded again. Ask the browser to
+    // flush them before reporting a successful save, where supported.
+    try { return db.transaction(stores, 'readwrite', {durability: 'strict'}); }
+    catch (error) {
+        if (error.name !== 'TypeError') throw error;
+        return db.transaction(stores, 'readwrite');
+    }
+}
+
 async function withStore(storeName, mode, callback) {
     const db = await openOfflineDB();
     return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, mode);
+        const tx = mode === 'readwrite' && storeName === STORE_NAMES.syncQueue
+            ? durableTransaction(db, storeName) : db.transaction(storeName, mode);
         const store = tx.objectStore(storeName);
         let result;
         tx.oncomplete = () => resolve(result);
@@ -163,12 +174,21 @@ export async function getMetadata(key) {
 }
 
 export async function getDeviceId() {
-    let deviceId = await getMetadata("device_id");
-    if (!deviceId) {
-        deviceId = uuid();
-        await setMetadata("device_id", deviceId);
-    }
-    return deviceId;
+    // Serialize first use across tabs: retries and dependent records must keep
+    // the same device ID even when several tabs start simultaneously.
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+        const tx = durableTransaction(db, STORE_NAMES.metadata);
+        const store = tx.objectStore(STORE_NAMES.metadata);
+        let deviceId;
+        const request = store.get('device_id');
+        request.onsuccess = () => {
+            deviceId = request.result?.value || uuid();
+            if (!request.result?.value) store.put({key: 'device_id', value: deviceId, updated_at: nowIso()});
+        };
+        tx.oncomplete = () => resolve(deviceId);
+        tx.onerror = tx.onabort = () => reject(tx.error || new Error('تعذر حفظ هوية الجهاز للمزامنة.'));
+    });
 }
 
 export function storeForEntity(entityName) {
@@ -264,7 +284,7 @@ export async function queueEntityOperation(entityName, actionType, payload, opti
         ...(options.local_variants?.length ? [STORE_NAMES.productVariants] : []),
         ...(mutations.length ? [STORE_NAMES.stock, STORE_NAMES.warehouses] : [])])];
     await new Promise((resolve, reject) => {
-        const tx = db.transaction(stores, "readwrite");
+        const tx = durableTransaction(db, stores);
         tx.oncomplete = resolve;
         bumpQueueRevision(tx, item);
         let validationError;
@@ -337,7 +357,7 @@ export async function getDueQueueItems() {
 export async function removeQueueItem(id) {
     const db = await openOfflineDB();
     await new Promise((resolve, reject) => {
-        const tx = db.transaction([STORE_NAMES.syncQueue, STORE_NAMES.metadata], 'readwrite');
+        const tx = durableTransaction(db, [STORE_NAMES.syncQueue, STORE_NAMES.metadata]);
         tx.oncomplete = resolve;
         tx.onerror = tx.onabort = () => reject(tx.error);
         tx.objectStore(STORE_NAMES.syncQueue).delete(id);

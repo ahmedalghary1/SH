@@ -1,7 +1,8 @@
+import json
 from pathlib import Path
 
 from django.conf import settings
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import render
 from django.utils.cache import patch_cache_control, patch_vary_headers
 
@@ -50,11 +51,17 @@ def _static_source_path(relative_path):
 
 
 def manifest_view(request):
-    response = FileResponse(
-        _static_source_path('manifest.json').open('rb'),
-        content_type='application/manifest+json',
-    )
-    response['Cache-Control'] = 'public, max-age=3600'
+    manifest = json.loads(_static_source_path('manifest.json').read_text(encoding='utf-8'))
+    # Desktop Chromium requires the absolute app ID for self-install detection.
+    # Derive it per deployment without changing the existing app identity.
+    manifest['related_applications'] = [{
+        'platform': 'webapp',
+        'id': request.build_absolute_uri(manifest['id']),
+        'url': request.build_absolute_uri('/manifest.json'),
+    }]
+    manifest['prefer_related_applications'] = False
+    response = JsonResponse(manifest, content_type='application/manifest+json')
+    response['Cache-Control'] = 'public, max-age=0, must-revalidate'
     return response
 
 

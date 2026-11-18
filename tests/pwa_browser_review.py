@@ -66,7 +66,16 @@ def main():
             def log_message(self, *unused):
                 pass
 
-        server = make_server('127.0.0.1', 0, StaticFilesHandler(get_wsgi_application()), handler_class=QuietHandler)
+        application = StaticFilesHandler(get_wsgi_application())
+        unavailable = threading.Event()
+
+        def server_application(environ, start_response):
+            if unavailable.is_set():
+                start_response('503 Service Unavailable', [('Content-Type', 'text/plain')])
+                return [b'Simulated server outage']
+            return application(environ, start_response)
+
+        server = make_server('127.0.0.1', 0, server_application, handler_class=QuietHandler)
         def serve():
             try:
                 server.serve_forever()
@@ -84,7 +93,7 @@ def main():
             browser_cleanup.callback(browser.close)
             browser_cleanup.callback(connections.close_all)
             if '--representative-only' in sys.argv:
-                review_representative(browser, base)
+                review_representative(browser, base, unavailable)
                 return
             context = browser.new_context()
             context.add_cookies([dict(name='sessionid', value=client.cookies['sessionid'].value, url=base)])
@@ -236,10 +245,10 @@ def main():
             page.wait_for_url(base + f'/inventory/movements/products/{product.pk}/**')
             assert page.locator('table tbody tr').count() > 1
             print('PASS: grouped product report and clicking a non-link cell opens inventory history', flush=True)
-            review_representative(browser, base)
+            review_representative(browser, base, unavailable)
 
 
-def review_representative(browser, base):
+def review_representative(browser, base, unavailable):
     from django.test import Client
     from accounts.models import User
     from customers.models import Customer
@@ -417,11 +426,17 @@ def review_representative(browser, base):
         return {before, after:(await db.stockForVariant(f.variant))[0].quantity};
     }''', dict(customer=customer.pk, warehouse=warehouse.pk, variant=existing.pk))
     assert quote['before'] == quote['after'], quote
+    # Chromium's page offline emulation may leave a restarted worker online.
+    # Refuse real server traffic too, exercising an outage with onLine=true.
+    unavailable.set()
     page.close()
     page=context.new_page()
     page.on('pageerror', lambda error: errors.append(str(error)))
     page.on('console', lambda message: print('BROWSER', message.type, message.text, flush=True) if message.type in {'error','warning'} else None)
+    page.on('requestfailed',lambda request: print('FAILED REQUEST',request.url,flush=True))
     page.goto(base + '/orders/quotes/?q=quote', wait_until='domcontentloaded')
+    page.wait_for_timeout(1000)
+    print('LOCAL DEBUG',page.evaluate("async () => ({online:navigator.onLine,attributes:document.querySelector('[data-page-content]').outerHTML.slice(0,200),download:await (await import('/static/js/pwa/db.js')).getMetadata('last_bootstrap_at'),scripts:[...document.scripts].map(s=>s.src)})"),flush=True)
     page.wait_for_selector('[data-local-data-view]')
     assert 'قيد المزامنة' in page.locator('[data-page-content]').inner_text()
     existing_order=Order.objects.filter(created_by=rep,document_type='sale').first()
@@ -430,6 +445,7 @@ def review_representative(browser, base):
     assert existing_order.order_number in page.locator('h1').inner_text()
     from django.contrib.sessions.models import Session
     Session.objects.filter(session_key=client.cookies['sessionid'].value).delete()
+    unavailable.clear()
     context.set_offline(False)
     wait_for(page,'navigator.onLine')
     page.goto(base + '/orders/create/', wait_until='domcontentloaded')

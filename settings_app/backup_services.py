@@ -10,7 +10,6 @@ from copy import deepcopy
 from datetime import timedelta
 import hashlib
 import json
-import os
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 import re
@@ -156,14 +155,33 @@ def media_roots():
     return roots
 
 
-def media_inventory():
+def _media_path(root, name):
+    path = root
+    for part in PurePosixPath(name).parts:
+        path = path / part
+        try:
+            info = path.lstat()
+        except (FileNotFoundError, NotADirectoryError):
+            return None
+        # Check every component, including directory links/junctions, before
+        # accessing its children. Unrelated trees are never enumerated.
+        if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_reparse_tag', 0) == 0xA0000003:
+            raise BackupError('يوجد رابط رمزي في مسار مرفق النظام؛ يلزم مراجعته قبل النسخ.')
+    if not path.resolve().is_relative_to(root):
+        raise BackupError('مسار مرفق خارج مجلد الصور.')
+    return path, info
+
+
+def media_inventory(names, *, include_directories=False):
+    """Read only named SH attachments, never recursively scan a shared root.
+
+    Fallback roots locate older SH uploads; they do not establish ownership of
+    all files in that directory. FileField references establish that ownership.
+    Import planning can also probe exact destinations to avoid overwriting an
+    unrelated existing file or directory, without including it in exports.
+    """
+    names = sorted({safe_name(str(name)) for name in names if name})
     found = {}
-
-    def raise_scan_error(error):
-        # Path.rglob can silently skip unreadable directories. A complete backup
-        # must fail explicitly rather than omit their unreferenced attachments.
-        raise error
-
     for root in media_roots():
         try:
             root_info = root.stat()
@@ -171,21 +189,18 @@ def media_inventory():
             continue
         if not stat.S_ISDIR(root_info.st_mode):
             raise BackupError('أحد مسارات مجلدات المرفقات المضبوطة ليس مجلدًا صالحًا.')
-        for directory, folders, files in os.walk(root, onerror=raise_scan_error, followlinks=False):
-            folders.sort()
-            for name in sorted([*folders, *files]):
-                path = Path(directory) / name
-                info = path.lstat()
-                # Never follow an uploaded symlink outside the media tree.
-                if stat.S_ISLNK(info.st_mode):
-                    raise BackupError('يوجد رابط رمزي في مجلد المرفقات؛ يلزم مراجعته قبل النسخ.')
-                if stat.S_ISREG(info.st_mode):
-                    relative = safe_name(path.relative_to(root).as_posix())
-                    if not path.resolve().is_relative_to(root):
-                        raise BackupError('مسار مرفق خارج مجلد الصور.')
-                    if relative not in found:
-                        found[relative] = {'path': relative, 'size': info.st_size,
-                                           'sha256': file_digest(path), 'source': path}
+        for name in names:
+            if name in found:
+                continue
+            result = _media_path(root, name)
+            if result is None:
+                continue
+            path, info = result
+            if stat.S_ISREG(info.st_mode):
+                found[name] = {'path': name, 'size': info.st_size,
+                               'sha256': file_digest(path), 'source': path}
+            elif include_directories and stat.S_ISDIR(info.st_mode):
+                found[name] = {'path': name, 'size': 0, 'sha256': None, 'source': path}
     return found
 
 
@@ -238,7 +253,10 @@ def collect_snapshot(preferred=None):
     if additions:
         BackupIdentity.objects.bulk_create(additions)
     identities.update(preferred)
-    media = media_inventory()
+    media = media_inventory(
+        field.value_from_object(obj) for obj in objects.values()
+        for field in obj._meta.concrete_fields if isinstance(field, models.FileField)
+    )
     records = []
     for key, obj in objects.items():
         fields = {}
@@ -611,6 +629,13 @@ def _map_existing(records):
     return mapped, existing
 
 
+def _restored_media_targets(item):
+    suffix = PurePosixPath(item['path']).suffix.lower()
+    suffix = suffix if re.fullmatch(r'\.[a-z0-9]{1,10}', suffix) else ''
+    return (f"restored/{item['sha256'][:2]}/{item['sha256']}{suffix}",
+            f"restored-{item['sha256']}{suffix}")
+
+
 def _media_plan(manifest, local_media):
     result = {}
     used = {name.casefold(): (name, item['sha256']) for name, item in local_media.items()}
@@ -627,11 +652,9 @@ def _media_plan(manifest, local_media):
         same = prior is not None and prior[1] == item['sha256']
         target = prior[0] if same else name
         if (prior is not None and not same) or collides(target):
-            suffix = PurePosixPath(name).suffix.lower()
-            suffix = suffix if re.fullmatch(r'\.[a-z0-9]{1,10}', suffix) else ''
-            target = f"restored/{item['sha256'][:2]}/{item['sha256']}{suffix}"
+            target, flat_target = _restored_media_targets(item)
             if collides(target):
-                target = f"restored-{item['sha256']}{suffix}"
+                target = flat_target
             if target.casefold() in used and used[target.casefold()][1] != item['sha256']:
                 raise BackupError('يوجد تعارض غير متوقع في مسار صورة مستعادة.')
             if collides(target):
@@ -714,6 +737,15 @@ def plan_merge(manifest, records):
                     other_branch = incoming_by_uid[ref]['fields'].get('branch')
                     if branch and other_branch and branch != other_branch:
                         raise BackupError('توجد تسوية أو علاقة متعددة بين معرضين مختلفين.')
+        # Preserve collision detection for files not referenced by SH records.
+        # Probe just incoming destinations, rename destinations and ancestor
+        # files; do not enumerate media belonging to other hosted sites.
+        destinations = {name for item in manifest['media']
+                        for name in (item['path'], *_restored_media_targets(item))}
+        parents = {str(parent) for name in destinations for parent in PurePosixPath(name).parents
+                   if str(parent) != '.'}
+        media.update(media_inventory(parents))
+        media.update(media_inventory(destinations, include_directories=True))
         media_plan = _media_plan(manifest, media)
         counts = defaultdict(Counter)
         for record in records:

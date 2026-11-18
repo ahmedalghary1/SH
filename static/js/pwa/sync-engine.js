@@ -43,6 +43,19 @@ let csrfToken = null;
 let shellCached = false;
 let lastBootstrapAt = 0;
 let shellPreparation = null;
+let persistenceAttempted = false;
+
+async function readyWorkerRegistration() {
+    let timeout;
+    try {
+        return await Promise.race([
+            navigator.serviceWorker.ready,
+            new Promise((_, reject) => {
+                timeout = window.setTimeout(() => reject(new Error('تعذر تجهيز العمل دون اتصال. تحقق من السماح بالتخزين وService Worker ثم أعد المحاولة.')), 15000);
+            }),
+        ]);
+    } finally { window.clearTimeout(timeout); }
+}
 
 function getCookie(name) {
     let cookieValue = null;
@@ -88,7 +101,14 @@ export async function cacheAppShell(extraUrls = []) {
 
 async function prepareAppShell(extraUrls = []) {
     const scope = getOfflineScope();
-    if (!("serviceWorker" in navigator) || !scope || !navigator.onLine) return;
+    if (!scope) return;
+    if (!("serviceWorker" in navigator)) {
+        document.querySelectorAll('[data-offline-ready]').forEach(node => {
+            node.textContent = 'الأوفلاين غير متاح؛ افتح رابط HTTPS في متصفح يدعم التطبيق';
+        });
+        return;
+    }
+    if (!navigator.onLine) return;
     const authorizedPages = await getMetadata('offline_pages');
     if (!authorizedPages?.length) return;
     const urls = uniqueUrls([
@@ -100,7 +120,7 @@ async function prepareAppShell(extraUrls = []) {
 
     try {
         // Don't wait forever on a browser where worker installation is disabled.
-        const registration = await navigator.serviceWorker.ready;
+        const registration = await readyWorkerRegistration();
         if (!registration) return;
         const worker = navigator.serviceWorker.controller || registration.active || registration.waiting || registration.installing;
         worker?.postMessage({ type: "PWA_SCOPE", scope });
@@ -131,6 +151,10 @@ async function prepareAppShell(extraUrls = []) {
             }
         }
     } catch (error) {
+        document.querySelectorAll('[data-offline-ready]').forEach(node => {
+            node.textContent = 'تعذر إكمال تجهيز الأوفلاين؛ أعد المحاولة بالإنترنت';
+            node.title = String(error.message || error);
+        });
         syncStatusEvent({ state: "app_shell_cache_failed", error: String(error.message || error) });
     }
 }
@@ -326,17 +350,38 @@ export async function bootstrapNow() {
     return run();
 }
 
-async function startOnlineWork() {
-    if (!await getMetadata('storage_persistence_requested') && navigator.storage?.persist) {
-        await setMetadata('storage_persistence_requested', true);
-        await setMetadata('storage_persistent', await navigator.storage.persist().catch(() => false));
+async function ensurePersistentStorage(force = false) {
+    if (!navigator.storage?.persist || persistenceAttempted) return;
+    persistenceAttempted = true;
+    try {
+        // Recheck grants on every load, but rate-limit denied requests so
+        // browsers with permission dialogs do not prompt on every page.
+        let persistent = await navigator.storage.persisted?.();
+        if (!persistent) {
+            if (!force && Number(await getMetadata('storage_persistence_retry_at') || 0) > Date.now()) return;
+            await setMetadata('storage_persistence_retry_at', Date.now() + 24 * 60 * 60 * 1000);
+            persistent = await navigator.storage.persist();
+        }
+        await setMetadata('storage_persistent', Boolean(persistent));
+    } catch (error) {
+        syncStatusEvent({state: 'storage_persistence_failed', error: String(error.message || error)});
     }
+}
+
+async function startOnlineWork() {
+    if (!getOfflineScope()) return;
+    // A storage permission prompt must not delay processing saved operations.
+    ensurePersistentStorage();
     await processQueue();
     if (Date.now() - lastBootstrapAt > 60000) await bootstrapNow();
     await cacheAppShell();
 }
 
 window.addEventListener("online", startOnlineWork);
+window.addEventListener('appinstalled', () => {
+    persistenceAttempted = false;
+    ensurePersistentStorage(true);
+});
 window.addEventListener("focus", () => {
     if (navigator.onLine) startOnlineWork();
 });

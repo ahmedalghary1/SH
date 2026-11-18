@@ -1,5 +1,53 @@
 # PWA and offline synchronization
 
+## Installation and offline lifecycle fixes (2026-11-18)
+
+Installation now has an independent controller (`install.js`). It checks
+standalone mode and the browser's installed-related-app API, shares confirmed
+installation through browser storage events, and consumes each native prompt
+once. Accepting the dialog alone never records a successful installation;
+`appinstalled` or running standalone confirms it. A fresh browser eligibility
+event permits installation again after uninstall, so a local flag cannot lock
+the user out permanently. The manifest declares its own absolute app ID and
+manifest URL per deployment while retaining the existing `/` identity.
+
+Service worker installation now requires every core asset to be cached.
+Missing files, redirects and HTML masquerading as JavaScript/CSS prevent an
+incomplete release from replacing the previous worker and deleting its assets.
+Worker readiness has a bounded wait and displays an actionable failure.
+Workspace navigation preserves each page's local-cache marker. Top-level opaque
+redirects check the read-only session endpoint before using a prepared page for
+an expired session; authenticated redirects and permission failures retain their
+normal behavior. The user must authenticate with the same account to sync.
+
+Unsent business saves request strict IndexedDB durability where supported,
+reducing the window between a successful save and disk flushing. This is not a
+guarantee against device/storage failure or clearing browser data.
+Device ID creation is atomic across tabs, keeping retries and dependent records
+attached to one device. Persistent-storage requests are rechecked each browser
+session and after installation; denied requests are limited to once a day,
+with an immediate retry on installation. A denial is not treated as permanent.
+Storage permission prompts do not delay financial synchronization.
+
+Install detection is limited to the same origin and browser profile. Browser and
+OS policy still control installation and shortcut creation. Use HTTPS in a
+normal supported browser profile. After deploying the complete release, run
+`python manage.py collectstatic --noinput`, restart the application, apply the
+offered PWA update and wait for the offline-ready indicator while online.
+No new database migration is required by these changes. Keep existing pending
+work and browser storage intact.
+
+`tests/pwa_lifecycle_browser_review.py` uses a temporary persistent Chromium
+profile and checks browser installability, concurrent device ID creation, and a
+complete browser shutdown/restart during a real server outage. It confirms that
+the scoped shell, queued payload and idempotency key survive. The Django browser
+review additionally simulates server refusal for its final cold offline pages:
+Chromium's per-tab offline emulation alone may not disable a worker after all
+tabs close. Neither test proves OS shortcut creation on every user's laptop.
+
+References: [Chrome installed-related-app detection](https://developer.chrome.com/docs/capabilities/get-installed-related-apps),
+[native installation prompt lifecycle](https://web.dev/articles/customize-install).
+
 ## Representative workflow update (2026-11-16)
 
 Representatives can create sales, positive collections, and new catalog items;
