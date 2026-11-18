@@ -16,7 +16,7 @@
     <link rel="stylesheet" href="{% static 'css/ui-spacing.css' %}">
     {% block extra_css %}{% endblock %}
 </head>
-<body data-pwa-user-id="{% if request.user.is_authenticated %}{{ request.user.pk }}{% endif %}" data-pwa-branch-id="{% if request.user.is_authenticated %}{{ active_branch.pk|default:request.user.branch_id|default:'' }}{% endif %}" data-pwa-role="{% if request.user.is_authenticated %}{{ request.user.role }}{% endif %}" data-pwa-superuser="{% if request.user.is_superuser %}1{% else %}0{% endif %}">
+<body data-pwa-scope="{{ request.pwa_scope|default:'' }}" data-pwa-user-id="{% if request.user.is_authenticated %}{{ request.user.pk }}{% endif %}" data-pwa-branch-id="{% if request.user.is_authenticated %}{% if request.user.is_superuser %}{{ active_branch.pk|default:'' }}{% else %}{{ active_branch.pk|default:request.user.branch_id|default:'' }}{% endif %}{% endif %}" data-pwa-role="{% if request.user.is_authenticated %}{{ request.user.role }}{% endif %}" data-pwa-superuser="{% if request.user.is_superuser %}1{% else %}0{% endif %}">
 {% include 'partials/icon_sprite.html' %}
 {% if request.user.is_authenticated %}
 <a class="skip-link" href="#main-content">تخطي إلى المحتوى الرئيسي</a>

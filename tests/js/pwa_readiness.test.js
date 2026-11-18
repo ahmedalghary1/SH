@@ -4,6 +4,22 @@ const vm = require('node:vm');
 const {test} = require('node:test');
 const source = fs.readFileSync('static/js/pwa/sync-engine.js', 'utf8');
 
+test('readiness explains scope and missing-page failures and clears stale errors after success', () => {
+    const badge = {};
+    const context = vm.createContext({document: {querySelectorAll: () => [badge]}});
+    vm.runInContext('let offlineReady = false; let readinessDetails = {};\n'
+        + source.match(/function showOfflineReadiness\([^]*?\n\}/)[0], context);
+    context.showOfflineReadiness({ready:false, reason:'scope_changed', error:'scope_changed'});
+    assert.match(badge.textContent, /نطاق المعرض/);
+    assert.equal(badge.title, 'scope_changed');
+    context.showOfflineReadiness({ready:false, reason:'pages_missing', failed:['/orders/','/products/']});
+    assert.match(badge.textContent, /2/);
+    assert.equal(badge.title, '/orders/\n/products/');
+    context.showOfflineReadiness({ready:true, reason:'ready'});
+    assert.equal(badge.textContent, 'جاهز للعمل دون اتصال');
+    assert.equal(badge.title, '');
+});
+
 test('worker readiness times out and allows a later successful retry', async () => {
     let expire, cleared = 0;
     const context = vm.createContext({

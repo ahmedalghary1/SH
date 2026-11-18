@@ -45,6 +45,27 @@ let lastBootstrapAt = 0;
 let shellPreparation = null;
 let persistenceAttempted = false;
 let offlineReady = false;
+let bootstrapError = '';
+let bootstrapErrorCode = '';
+let readinessDetails = {ready: false, reason: 'preparing', failed: []};
+
+function showOfflineReadiness(detail) {
+    offlineReady = Boolean(detail.ready);
+    readinessDetails = {...detail, ready: offlineReady, failed: detail.failed || []};
+    const messages = {
+        preparing: 'جارٍ إكمال تجهيز الصفحات للعمل دون اتصال',
+        snapshot_missing: 'لم يكتمل تنزيل بيانات العمل؛ اضغط مزامنة لإعادة المحاولة',
+        snapshot_failed: 'تعذر تنزيل بيانات العمل؛ اضغط مزامنة لإعادة المحاولة',
+        scope_changed: 'تغير نطاق المعرض؛ أعد فتح الصفحة لإكمال تجهيز الأوفلاين',
+        pages_missing: `تعذر تجهيز ${readinessDetails.failed.length} من ملفات أو صفحات الأوفلاين؛ اضغط مزامنة`,
+        worker_timeout: 'لم يرد مكوّن الأوفلاين؛ حدّث التطبيق ثم أعد المحاولة',
+        worker_error: 'تعذر تشغيل مكوّن الأوفلاين؛ تحقق من السماح بتخزين بيانات الموقع',
+    };
+    document.querySelectorAll('[data-offline-ready]').forEach(node => {
+        node.textContent = offlineReady ? 'جاهز للعمل دون اتصال' : messages[detail.reason] || 'تعذر تجهيز الأوفلاين؛ أعد المحاولة';
+        node.title = [detail.error, ...readinessDetails.failed].filter(Boolean).join('\n');
+    });
+}
 
 async function readyWorkerRegistration() {
     let timeout;
@@ -101,6 +122,7 @@ export async function cacheAppShell(extraUrls = []) {
         // cached. Finish its newly authorized screens before declaring readiness.
         if (await prepareAppShell(extraUrls)) await prepareAppShell(extraUrls);
     })().catch(error => {
+        showOfflineReadiness({ready: false, reason: 'worker_error', error: String(error.message || error)});
         syncStatusEvent({state: 'app_shell_cache_failed', error: String(error.message || error)});
     }).finally(() => { shellPreparation = null; });
     return shellPreparation;
@@ -150,25 +172,23 @@ async function prepareAppShell(extraUrls = []) {
                 const latestPages = await getMetadata('offline_pages') || [];
                 const required = uniqueUrls(['/', ...latestPages]);
                 const needsMorePages = required.some(url => !urls.includes(url));
+                const hasSnapshot = Boolean(await getMetadata('last_bootstrap_at')) && latestPages.length > 0;
+                const failed = [...new Set([...(result?.failed || []), ...required.filter(url => !result?.cached?.includes(url))])];
                 const ready = shellCached && latestPages.length > 0
                     && required.every(url => result.cached.includes(url))
-                    && Boolean(await getMetadata('last_bootstrap_at'));
-                offlineReady = ready;
+                    && hasSnapshot;
                 await setMetadata('offline_ready', ready);
-                await setMetadata('offline_failed_pages', result?.failed || []);
-                document.querySelectorAll('[data-offline-ready]').forEach(node => {
-                    node.textContent = ready ? 'جاهز للعمل دون اتصال' : 'تجهيز الأوفلاين غير مكتمل';
-                    node.title = (result?.failed || []).join('\n');
-                });
-                syncStatusEvent({ state: ready ? 'offline_ready' : 'offline_not_ready', failed: result?.failed || [] });
+                await setMetadata('offline_failed_pages', failed);
+                showOfflineReadiness({ready, failed, error: hasSnapshot ? '' : bootstrapError,
+                    reason: ready ? 'ready' : bootstrapErrorCode === 'scope_changed' ? 'scope_changed'
+                        : !result ? 'worker_timeout' : !hasSnapshot ? 'snapshot_missing'
+                        : needsMorePages ? 'preparing' : 'pages_missing'});
+                syncStatusEvent({ state: ready ? 'offline_ready' : 'offline_not_ready', ...readinessDetails });
                 return needsMorePages;
             }
         }
     } catch (error) {
-        document.querySelectorAll('[data-offline-ready]').forEach(node => {
-            node.textContent = 'تعذر إكمال تجهيز الأوفلاين؛ أعد المحاولة بالإنترنت';
-            node.title = String(error.message || error);
-        });
+        showOfflineReadiness({ready: false, reason: 'worker_error', error: String(error.message || error)});
         syncStatusEvent({ state: "app_shell_cache_failed", error: String(error.message || error) });
     }
 }
@@ -283,6 +303,8 @@ async function bootstrapSnapshot() {
     try {
         const expectedQueueRevision = Number(await getMetadata('queue_revision') || 0);
         const payload = await jsonFetch("/api/sync/bootstrap-browser/");
+        bootstrapError = '';
+        bootstrapErrorCode = '';
         const imported = await importBootstrap(payload, { expectedQueueRevision });
         csrfToken = payload.csrf_token || csrfToken;
         if (!imported) {
@@ -296,6 +318,11 @@ async function bootstrapSnapshot() {
         syncStatusEvent({ state: "bootstrapped" });
         return payload;
     } catch (error) {
+        bootstrapError = String(error.message || error);
+        bootstrapErrorCode = error.code || '';
+        showOfflineReadiness({ready: offlineReady && error.code !== 'scope_changed',
+            reason: error.code === 'scope_changed' ? 'scope_changed' : 'snapshot_failed',
+            error: bootstrapError, failed: readinessDetails.failed});
         syncStatusEvent({ state: "bootstrap_failed", error: String(error.message || error) });
         return null;
     } finally {
@@ -423,11 +450,12 @@ window.SHSync = {
     processQueue,
     getQueueStatus,
     isOfflineReady: () => offlineReady,
+    getOfflineReadiness: () => ({...readinessDetails, failed: [...readinessDetails.failed]}),
 };
 
 if (!navigator.onLine) {
     getMetadata('offline_ready').then(ready => {
-        offlineReady = Boolean(ready);
+        showOfflineReadiness({ready: Boolean(ready), reason: ready ? 'ready' : 'snapshot_missing'});
         document.querySelectorAll('[data-offline-ready]').forEach(node => {
         node.textContent = ready ? 'جاهز للعمل دون اتصال' : 'افتح التطبيق بالإنترنت لإكمال التجهيز';
         });

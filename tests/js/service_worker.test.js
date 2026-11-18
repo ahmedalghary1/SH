@@ -167,6 +167,16 @@ test('installed start URL query parameters reuse the verified root document', as
     assert.equal(response.headers.get('X-PWA-Local'), '1');
 });
 
+test('legacy cached superuser HTML receives its verified server scope when opened offline', async () => {
+    const w = worker();
+    w.fetch(async () => privateResponse('u7-ball-rmanager-s1', '<body data-pwa-branch-id="3"><section data-page-content>SH</section></body>'));
+    await w.navigate('/');
+    w.setOnline(false);
+    const html = await (await w.navigate('/')).text();
+    assert.match(html, /<body data-pwa-scope="u7-ball-rmanager-s1"/);
+    assert.match(html, /data-pwa-local="1"/);
+});
+
 test('a disconnected installed app opens its cached launch UI without waiting for a network request', async () => {
     const w = worker();
     w.fetch(async () => privateResponse('u1-b1-rmanager-s0', 'instant local shell'));

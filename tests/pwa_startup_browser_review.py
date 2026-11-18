@@ -77,6 +77,37 @@ def review(browser, base, unavailable):
         release_images()
         context.close()
 
+    # Realistic existing administrator: profile assigned to one branch, UI set
+    # to all branches. This must not send a branch-specific scope to the API.
+    manager = User.objects.get(username='pwa-test')
+    administrator = User.objects.create_superuser(username='all-branches-ready', branch_id=manager.branch_id)
+    client.force_login(administrator)
+    context = browser.new_context()
+    context.add_cookies([dict(name='sessionid', value=client.cookies['sessionid'].value, url=base)])
+    try:
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda error: errors.append(str(error)))
+        response = page.goto(base + '/', wait_until='domcontentloaded')
+        page.wait_for_function('window.SHSync?.isOfflineReady?.()', timeout=90000)
+        scope = page.evaluate("async () => (await import('/static/js/pwa/identity.js')).getOfflineScope()")
+        assert scope == f'u{administrator.pk}-ball-r{administrator.role}-s1'
+        assert response.headers['x-pwa-scope'] == scope
+        status = page.evaluate('window.SHSync.getOfflineReadiness()')
+        assert status['ready'] and not status['failed'], status
+        assert not page.locator('[data-offline-ready]').get_attribute('title')
+        # Verify that a genuine eligibility event enables a real DOM button.
+        page.evaluate("""() => {
+            const event=new Event('beforeinstallprompt');
+            event.prompt=async()=>{}; event.userChoice=Promise.resolve({outcome:'dismissed'});
+            window.dispatchEvent(event);
+        }""")
+        page.wait_for_function("!document.querySelector('[data-pwa-install]').hidden && !document.querySelector('[data-pwa-install]').disabled")
+        assert not errors, errors
+        print('PASS: assigned administrator in all-branches mode completes offline preparation and enables installation in Brave', flush=True)
+    finally:
+        context.close()
+
 
 if __name__ == '__main__':
     main(review)

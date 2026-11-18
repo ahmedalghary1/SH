@@ -1,5 +1,5 @@
 // Release all shell assets together; private pages require a verified scope.
-const CACHE_VERSION = "sh-pwa-v2026-11-18-cold-start-02";
+const CACHE_VERSION = "sh-pwa-v2026-11-18-scope-ready-03";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_PREFIX = 'sh-pwa-pages-v2-';
 const META_CACHE = "sh-pwa-identity-v1";
@@ -121,13 +121,16 @@ async function cachedPage(request, clientId) {
   const cache = await caches.open(`${PAGE_PREFIX}${scope}`);
   const exact = await cache.match(new Request(request.url), { ignoreVary: true });
   const local = async response => {
-    if (!response) return null;
+    if (!response || response.headers.get('X-PWA-Scope') !== scope) return null;
     const headers = new Headers(response.headers);
     headers.delete('Content-Length');
     headers.delete('Content-Encoding');
     headers.set('X-PWA-Local', '1');
     // The renderer must know a cache was used even when the OS reports online.
-    const html = (await response.text()).replace('data-page-content', 'data-pwa-local="1" data-page-content');
+    const html = (await response.text())
+      .replace(/<body\b([^>]*)>/i, (_tag, attributes) =>
+        `<body data-pwa-scope="${scope}"${attributes.replace(/\sdata-pwa-scope=(?:"[^"]*"|'[^']*')/gi, '')}>`)
+      .replace('data-page-content', 'data-pwa-local="1" data-page-content');
     return new Response(html, {status: 200, headers});
   };
   if (exact) return local(exact);
