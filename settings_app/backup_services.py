@@ -11,6 +11,7 @@ from datetime import timedelta
 import hashlib
 import json
 from functools import lru_cache
+from itertools import chain
 from pathlib import Path, PurePosixPath
 import re
 import stat
@@ -40,6 +41,7 @@ APPS = {'accounts', 'products', 'inventory', 'customers', 'orders', 'invoices',
         'audit', 'auth', 'contenttypes', 'admin'}
 HISTORY_ONLY = {'audit.auditlog', 'admin.logentry', 'sync_api.syncoperation', 'accounts.submissionreceipt'}
 GLOBALS = {'accounts.branch', 'accounts.user', 'auth.group', 'auth.permission', 'contenttypes.contenttype'}
+COMPANY_SETTINGS = 'settings_app.companysettings'
 NAMESPACE = uuid.UUID('306dd37d-d987-4311-a447-0af38b6e8849')
 MODEL_LABELS = {
     'accounts.branch': 'المعارض', 'accounts.user': 'المستخدمون',
@@ -348,6 +350,20 @@ def record_value(record):
     return {'uid': record['uid'], 'model': record['model'], 'fields': fields, 'm2m': record['m2m']}
 
 
+def _records_equal(record, local):
+    incoming, current = record_value(record), record_value(local)
+    if incoming == current:
+        return True
+    # Django can export sub-millisecond timestamps with ".000" and omit
+    # the fraction after restoring them. Compare instants without changing
+    # the serialized values used by already-issued archive digests.
+    for field in backup_models()[record['model']]._meta.concrete_fields:
+        if isinstance(field, models.DateTimeField) and field.name in incoming['fields']:
+            for value in (incoming, current):
+                value['fields'][field.name] = field.to_python(value['fields'][field.name])
+    return incoming == current
+
+
 def snapshot_digest(records):
     return digest(sorted((record_value(r) for r in records if r['model'] not in HISTORY_ONLY),
                          key=lambda r: r['uid']))
@@ -560,14 +576,19 @@ def _natural_keys(model):
     keys += list(model._meta.unique_together)
     keys += [c.fields for c in model._meta.constraints
              if isinstance(c, models.UniqueConstraint) and c.fields and c.condition is None]
-    if model._meta.label_lower == 'settings_app.companysettings':
-        keys.append(('branch',))
     return keys
 
 
 def _map_existing(records):
     registry = backup_models()
     mapped, existing = {}, {}
+    # CompanySettings.load() uses the first row in a branch. Older databases
+    # can contain additional rows, so only the effective row can match by branch.
+    company_settings = sorted((r for r in records if r['model'] == COMPANY_SETTINGS),
+                              key=lambda r: int(r['source_pk']))
+    effective_settings = {}
+    for record in company_settings:
+        effective_settings.setdefault(record['fields']['branch'], record['uid'])
     for offset in range(0, len(records), 500):
         for identity in BackupIdentity.objects.filter(uid__in=[r['uid'] for r in records[offset:offset + 500]]):
             model = registry.get(identity.model_label)
@@ -582,7 +603,21 @@ def _map_existing(records):
                 if mapped[uid][0] != label:
                     raise BackupError('معرف ثابت مستخدم لنوع مختلف من البيانات.')
                 continue
-            model, matches = registry[label], set()
+            model = registry[label]
+            if label == COMPANY_SETTINGS:
+                branch = record['fields']['branch']
+                if uid != effective_settings[branch]:
+                    continue
+                if branch not in mapped:
+                    remaining.append(record)
+                    continue
+                local_pk = (model._base_manager.filter(branch_id=mapped[branch][1])
+                            .order_by('pk').values_list('pk', flat=True).first())
+                if local_pk is not None:
+                    mapped[uid] = (label, local_pk)
+                    progress = True
+                continue
+            matches = set()
             keys = _natural_keys(model)
             if (label == 'finance.cashaccount' and record['fields']['account_type'] == 'sales_rep_cash'
                     and record['fields']['assigned_user'] is not None):
@@ -611,17 +646,21 @@ def _map_existing(records):
         if not progress:
             break
         pending = remaining
-    used = set()
+    used = {}
+    by_uid = {r['uid']: r for r in records}
     for uid, key in mapped.items():
         if key in used:
-            raise BackupError('تحتوي النسخة سجلين يطابقان السجل الحالي نفسه؛ لم يتم دمجهما تلقائيًا.')
-        used.add(key)
+            label = MODEL_LABELS.get(key[0], key[0])
+            first, second = (by_uid[ref]['source_pk'] for ref in (used[key], uid))
+            raise BackupError(f'تعارض في {label}. السجلان {first} و{second} في النسخة يطابقان السجل الحالي رقم {key[1]}.')
+        used[key] = uid
         existing[uid] = key
     # Allocate new local keys without trusting source primary keys. The apply
     # path locks the tables and rechecks the preview before using these keys.
     next_ids = {label: (model._base_manager.aggregate(value=Max('pk'))['value'] or 0) + 1
                 for label, model in registry.items()}
-    for record in records:
+    # Preserve which company settings row is used for newly restored branches.
+    for record in chain((r for r in records if r['model'] != COMPANY_SETTINGS), company_settings):
         if record['uid'] not in mapped:
             label = record['model']
             mapped[record['uid']] = (label, next_ids[label])
@@ -704,7 +743,7 @@ def plan_merge(manifest, records):
                         conflicts.append({'model': label, 'label': 'حساب مستخدم', 'reference': fields['username'],
                                           'reason': 'اسم المستخدم موجود في معرض مختلف.'})
                     retained += 1
-            elif record_value(record) == record_value(local):
+            elif _records_equal(record, local):
                 actions[uid] = 'skip'
             elif fields.get('branch') in preserve:
                 actions[uid] = 'skip'

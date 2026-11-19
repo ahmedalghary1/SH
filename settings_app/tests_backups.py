@@ -173,6 +173,20 @@ class CompleteBackupTests(TestCase):
         self.assertEqual(before, (Order.all_objects.count(), PaymentTransaction.all_objects.count(), StockBatch.all_objects.count()))
         self.assertEqual(CashAccount.all_objects.get(branch__code='SOURCE').balance, Decimal('20'))
 
+    def test_repeated_archive_accepts_same_timestamp_with_zero_fraction(self):
+        with transaction.atomic():
+            product = Product.objects.create(name='Legacy timestamp', sku='BACKUP-TIMESTAMP')
+            Product.objects.filter(pk=product.pk).update(created_at=timezone.now().replace(microsecond=1))
+            with backups.build_backup() as stream:
+                data = stream.read()
+            transaction.set_rollback(True)
+
+        self.import_data(data)
+        self.assertEqual(Product.objects.get(sku='BACKUP-TIMESTAMP').created_at.microsecond, 0)
+        again = self.import_data(data)
+        self.assertEqual(again.summary['create'], 0)
+        self.assertEqual(again.summary['update'], 0)
+
     def test_restored_return_and_invoice_can_be_cancelled_with_correct_cash_and_stock(self):
         data, _ = self.make_source()
         self.import_data(data)
@@ -214,6 +228,47 @@ class CompleteBackupTests(TestCase):
         self.assertEqual(result.summary['create'], 0)
         self.assertEqual(BackupIdentity.objects.filter(model_label='products.product',
                                                       object_pk=str(current.pk), is_primary=True).count(), 1)
+
+    def test_legacy_company_settings_rows_restore_separately_in_their_branch(self):
+        branch = Branch.objects.create(code='LEGACY-SETTINGS', name='Legacy settings')
+        current = CompanySettings.objects.create(branch=branch, company_name='Active settings')
+        with transaction.atomic():
+            CompanySettings.objects.create(branch=branch, company_name='Legacy settings 1')
+            CompanySettings.objects.create(branch=branch, company_name='Legacy settings 2')
+            with backups.build_backup() as stream:
+                data = stream.read()
+            transaction.set_rollback(True)
+
+        def reverse_record_order(files):
+            records = json.loads(files['data.json'])
+            files['data.json'] = backups.canonical(records[::-1])
+            manifest = json.loads(files['manifest.json'])
+            manifest['data_sha256'] = hashlib.sha256(files['data.json']).hexdigest()
+            files['manifest.json'] = backups.canonical(manifest)
+
+        data = self.rewrite(data, change=reverse_record_order)
+        result = self.import_data(data)
+        settings_rows = CompanySettings.all_objects.filter(branch=branch).order_by('pk')
+        self.assertEqual(list(settings_rows.values_list('company_name', flat=True)),
+                         ['Active settings', 'Legacy settings 1', 'Legacy settings 2'])
+        self.assertEqual(settings_rows.first().pk, current.pk)
+        self.assertEqual(result.summary['create'], 2)
+        self.assertEqual(self.import_data(data).summary['create'], 0)
+        self.assertEqual(settings_rows.count(), 3)
+
+    def test_distinct_business_identities_cannot_merge_into_the_same_target(self):
+        first = Product.objects.create(name='First product', sku='BACKUP-IDENTITY-1')
+        second = Product.objects.create(name='Second product', sku='BACKUP-IDENTITY-2')
+        with backups.build_backup() as stream:
+            data = stream.read()
+        BackupIdentity.objects.filter(model_label='products.product', object_pk=str(second.pk)).update(
+            object_pk=str(first.pk), is_primary=False,
+        )
+
+        with self.assertRaisesMessage(backups.BackupError, 'يطابقان السجل الحالي'):
+            backups.stage_upload(self.upload(data), self.admin)
+        self.assertEqual(Product.objects.get(pk=first.pk).sku, 'BACKUP-IDENTITY-1')
+        self.assertEqual(Product.objects.get(pk=second.pk).sku, 'BACKUP-IDENTITY-2')
 
     def test_newer_descendant_snapshot_updates_balances_once(self):
         old, new = self.make_source(later=True)
