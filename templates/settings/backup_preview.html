@@ -11,9 +11,10 @@
     <p><strong>المعارض:</strong> {% for branch in summary.branches %}{{ branch.name }} ({{ branch.code }}){% if not forloop.last %}، {% endif %}{% endfor %}</p>
     <div class="summary-grid">
         <div><strong>{{ summary.create }}</strong><p>سجل جديد</p></div>
-        <div><strong>{{ summary.update }}</strong><p>تحديث من نسخة أحدث متوافقة</p></div>
+        <div><strong>{{ summary.update }}</strong><p>سجل سيتم تحديثه</p></div>
         <div><strong>{{ summary.skip }}</strong><p>سجل موجود سيبقى محفوظًا</p></div>
-        <div><strong>{{ summary.conflict_count }}</strong><p>تعارض يحتاج مراجعة</p></div>
+        <div><strong>{{ summary.conflict_count }}</strong><p>تعارض</p></div>
+        {% if summary.deferred_count %}<div><strong>{{ summary.deferred_count }}</strong><p>سجل مؤجل</p></div>{% endif %}
     </div>
     <p>الصور والمرفقات: {{ summary.media_count }}، منها {{ summary.media_new }} ملفًا يضاف و{{ summary.media_reused }} ملفًا موجودًا بالفعل.</p>
     {% if summary.media_renamed %}<p>سيحفظ {{ summary.media_renamed }} ملفًا باسم مختلف لتبقى الصور الحالية دون استبدال.</p>{% endif %}
@@ -23,18 +24,49 @@
 <section class="card">
     <h2>تفاصيل السجلات</h2>
     <div class="table-wrap"><table>
-        <thead><tr><th>البيانات</th><th>إضافة</th><th>تحديث</th><th>موجود</th><th>تعارض</th></tr></thead>
-        <tbody>{% for row in summary.rows %}<tr><td>{{ row.label }}</td><td>{{ row.create }}</td><td>{{ row.update }}</td><td>{{ row.skip }}</td><td>{{ row.conflict }}</td></tr>{% endfor %}</tbody>
+        <thead><tr><th>البيانات</th><th>إضافة</th><th>تحديث</th><th>موجود</th><th>تعارض</th>{% if summary.deferred_count %}<th>مؤجل</th>{% endif %}</tr></thead>
+        <tbody>{% for row in summary.rows %}<tr><td>{{ row.label }}</td><td>{{ row.create }}</td><td>{{ row.update }}</td><td>{{ row.skip }}</td><td>{{ row.conflict }}</td>{% if summary.deferred_count %}<td>{{ row.defer }}</td>{% endif %}</tr>{% endfor %}</tbody>
     </table></div>
 </section>
 {% if summary.conflict_count %}
 <section class="card">
-    <h2>لن يطبق الدمج قبل معالجة التعارضات</h2>
-    <p>لم تتغير البيانات. لا يتم استبدال مستندات مختلفة أو جمع أرصدة متعارضة تلقائيًا.</p>
-    <div class="table-wrap"><table><thead><tr><th>النوع</th><th>المرجع</th><th>السبب</th></tr></thead>
-        <tbody>{% for conflict in summary.conflicts %}<tr><td>{{ conflict.label }}</td><td>{{ conflict.reference }}</td><td>{{ conflict.reason }}</td></tr>{% endfor %}</tbody>
+    <h2>معالجة التعارضات</h2>
+    {% if not job.completed_at %}
+    <p>اختر القيم التي تريد اعتمادها، ثم راجع عدد السجلات التي ستضاف أو تحدّث أو تؤجل قبل التأكيد. تُراجع الأرصدة مع الحركات المرتبطة بها داخل كل معرض.</p>
+    <form method="post" class="form-grid">
+        {% csrf_token %}
+        {{ resolution_form.non_field_errors }}
+        {{ resolution_form.resolution.errors }}
+        <fieldset>
+            <legend>{{ resolution_form.resolution.label }}</legend>
+            {% for choice in resolution_form.resolution %}
+            <label>{{ choice.tag }} {{ choice.choice_label }}</label>
+            {% endfor %}
+        </fieldset>
+        <div class="form-actions"><button class="btn btn-light" name="preview_resolution" value="1" type="submit">معاينة الاختيار</button></div>
+    </form>
+    {% endif %}
+    <div class="table-wrap"><table><thead><tr><th>النوع</th><th>المرجع</th><th>السبب</th>{% if summary.resolution_label %}<th>القرار</th>{% endif %}</tr></thead>
+        <tbody>{% for conflict in summary.conflicts %}
+        <tr>
+            <td>{{ conflict.label }}</td><td>{{ conflict.reference }}</td>
+            <td>
+                {{ conflict.reason }}
+                {% if conflict.comparisons %}<ul>{% for value in conflict.comparisons %}
+                    <li>{{ value.label }}، الحالي «{{ value.current|default_if_none:'—' }}»، النسخة «{{ value.incoming|default_if_none:'—' }}»</li>
+                {% endfor %}</ul>{% endif %}
+            </td>
+            {% if summary.resolution_label %}<td>{{ conflict.decision|default:'—' }}</td>{% endif %}
+        </tr>
+        {% endfor %}</tbody>
     </table></div>
     {% if summary.conflict_count > 100 %}<p class="muted">تعرض أول 100 حالة فقط.</p>{% endif %}
+</section>
+{% endif %}
+{% if summary.deferred_count %}
+<section class="card">
+    <h2>أسباب تأجيل السجلات</h2>
+    <ul>{% for reason, count in summary.deferred_reasons %}<li>{{ reason }} ({{ count }})</li>{% endfor %}</ul>
 </section>
 {% endif %}
 {% if job.completed_at %}
@@ -46,7 +78,10 @@
     <form method="post" class="form-grid">
         {% csrf_token %}
         {{ form.non_field_errors }}
-        {% if not summary.conflict_count %}
+        {{ form.resolution.errors }}
+        {{ form.resolution }}
+        {% if can_apply %}
+        {% if summary.resolution_label %}<p><strong>{{ summary.resolution_label }}</strong></p>{% endif %}
         <label>{{ form.confirm }}<span>{{ form.confirm.label }}</span>{{ form.confirm.errors }}</label>
         <div class="form-actions"><button class="btn btn-primary" type="submit">تأكيد دمج البيانات والصور</button></div>
         {% endif %}

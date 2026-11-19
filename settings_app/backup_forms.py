@@ -1,5 +1,6 @@
 from django import forms
 
+from .backup_resolution import RESOLUTIONS, STRICT
 from .backup_services import limits
 
 
@@ -20,3 +21,12 @@ class BackupUploadForm(forms.Form):
 
 class BackupConfirmForm(forms.Form):
     confirm = forms.BooleanField(label='راجعت ملخص الدمج وأريد تطبيقه')
+    resolution = forms.ChoiceField(choices=((STRICT, STRICT), *RESOLUTIONS),
+                                   widget=forms.HiddenInput, required=False)
+
+    def clean_resolution(self):
+        return self.cleaned_data['resolution'] or STRICT
+
+
+class BackupResolutionForm(forms.Form):
+    resolution = forms.ChoiceField(label='معالجة التعارضات', choices=RESOLUTIONS, widget=forms.RadioSelect)

@@ -44,6 +44,7 @@ from returns.services import add_return_item, approve_sales_return, cancel_sales
 from sync_api.models import SyncOperation
 
 from . import backup_services as backups
+from .backup_resolution import KEEP_CURRENT, USE_ARCHIVE
 from .models import BackupIdentity, BackupImport, CompanySettings
 
 
@@ -118,6 +119,7 @@ class CompleteBackupTests(TestCase):
                         stock_in(variant=variant, warehouse=warehouse, quantity=5, unit_cost=6, user=manager)
                         collect_order_payment(order=Order.objects.get(pk=order.pk),
                                               amount=Decimal('10'), cash_account=cash, user=manager)
+                        Product.objects.create(name='New catalog product', sku='SOURCE-NEW')
                         with backups.build_backup() as stream:
                             newer = stream.read()
                 transaction.set_rollback(True)
@@ -297,6 +299,69 @@ class CompleteBackupTests(TestCase):
         self.assertEqual(cash.balance, Decimal('999'))
         self.assertEqual(before, PaymentTransaction.all_objects.count())
         self.assertEqual(Stock.all_objects.get(branch__code='SOURCE').quantity, 17)
+
+    def test_keep_current_applies_independent_creates_and_holds_conflicting_ledger(self):
+        old, new = self.make_source(later=True)
+        self.import_data(old)
+        cash = CashAccount.all_objects.get(branch__code='SOURCE')
+        CashAccount.all_objects.filter(pk=cash.pk).update(balance=Decimal('999'))
+        before = PaymentTransaction.all_objects.count()
+        job = backups.stage_upload(self.upload(new), self.admin)
+        self.client.force_login(self.admin)
+        url = reverse('settings_app:backup_preview', kwargs={'job_id': job.pk})
+        response = self.client.post(url, {'preview_resolution': '1', 'resolution': KEEP_CURRENT}, follow=True)
+        self.assertContains(response, 'معاينة الاختيار')
+        self.assertContains(response, 'تأكيد دمج البيانات والصور')
+        self.assertContains(response, '999.00')
+        self.assertFalse(Product.all_objects.filter(sku='SOURCE-NEW').exists())
+        with self.assertRaisesMessage(backups.BackupError, 'تغير خيار'):
+            backups.apply_import(job.pk, self.admin, resolution=USE_ARCHIVE)
+        response = self.client.post(url, {'confirm': 'on', 'resolution': KEEP_CURRENT}, follow=True)
+        self.assertContains(response, 'اكتمل دمج النسخة')
+        self.assertTrue(Product.all_objects.filter(sku='SOURCE-NEW').exists())
+        cash.refresh_from_db()
+        self.assertEqual(cash.balance, Decimal('999'))
+        self.assertEqual(PaymentTransaction.all_objects.count(), before)
+        self.assertEqual(Stock.all_objects.get(branch__code='SOURCE').quantity, 17)
+        job.refresh_from_db()
+        self.assertGreater(job.summary['deferred_count'], 0)
+
+    def test_use_archive_applies_complete_ledger_and_uses_archived_values(self):
+        old, new = self.make_source(later=True)
+        self.import_data(old)
+        cash = CashAccount.all_objects.get(branch__code='SOURCE')
+        CashAccount.all_objects.filter(pk=cash.pk).update(balance=Decimal('999'))
+        Product.all_objects.filter(sku='SOURCE-P').update(name='Local catalog name')
+        job = backups.stage_upload(self.upload(new), self.admin)
+        preview = backups.preview_resolution(job.pk, self.admin, USE_ARCHIVE)
+        self.assertGreater(preview.summary['update'], 0)
+        self.assertEqual(preview.summary['deferred_count'], 0)
+        backups.apply_import(job.pk, self.admin, resolution=USE_ARCHIVE)
+        cash.refresh_from_db()
+        self.assertEqual(cash.balance, Decimal('30'))
+        self.assertEqual(Stock.all_objects.get(branch__code='SOURCE').quantity, 22)
+        self.assertEqual(Order.all_objects.get(branch__code='SOURCE').remaining_amount, Decimal('0'))
+        self.assertEqual(Product.all_objects.get(sku='SOURCE-P').name, 'Source product')
+        self.assertEqual(self.import_data(new).summary['update'], 0)
+
+    def test_use_archive_holds_ledger_with_local_only_movements(self):
+        old, new = self.make_source(later=True)
+        self.import_data(old)
+        manager = User.objects.get(username='source-manager')
+        variant = ProductVariant.all_objects.get(branch_id=manager.branch_id)
+        warehouse = Warehouse.all_objects.get(branch_id=manager.branch_id)
+        token = set_current_branch(manager.branch_id)
+        try:
+            stock_in(variant=variant, warehouse=warehouse, quantity=7, unit_cost=6, user=manager)
+        finally:
+            reset_current_branch(token)
+        job = backups.stage_upload(self.upload(new), self.admin)
+        preview = backups.preview_resolution(job.pk, self.admin, USE_ARCHIVE)
+        self.assertGreater(preview.summary['deferred_count'], 0)
+        backups.apply_import(job.pk, self.admin, resolution=USE_ARCHIVE)
+        self.assertEqual(Stock.all_objects.get(branch_id=manager.branch_id).quantity, 24)
+        self.assertEqual(CashAccount.all_objects.get(branch_id=manager.branch_id).balance, Decimal('20'))
+        self.assertTrue(Product.all_objects.filter(sku='SOURCE-NEW').exists())
 
     def test_changed_data_after_preview_requires_fresh_preview(self):
         data, _ = self.make_source()

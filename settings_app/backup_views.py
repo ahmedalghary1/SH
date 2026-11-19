@@ -9,8 +9,12 @@ from django.views.decorators.cache import never_cache
 from accounts.permissions import SuperuserRequiredMixin
 from config.error_email import email_status
 from .backup_errors import report_backup_error
-from .backup_forms import BackupConfirmForm, BackupUploadForm
-from .backup_services import BackupError, apply_import, build_backup, cleanup_archives, ensure_backup_schema, limits, stage_upload
+from .backup_forms import BackupConfirmForm, BackupResolutionForm, BackupUploadForm
+from .backup_resolution import STRICT
+from .backup_services import (
+    BackupError, apply_import, build_backup, cleanup_archives, ensure_backup_schema, limits,
+    preview_resolution, stage_upload,
+)
 from .models import BackupImport
 
 
@@ -87,25 +91,45 @@ class BackupDownloadView(BackupAccessView):
 
 
 class BackupPreviewView(BackupAccessView):
+    def render_preview(self, request, job, form=None, resolution_form=None):
+        current = job.summary.get('resolution', STRICT)
+        return render(request, 'settings/backup_preview.html', {
+            'job': job, 'summary': job.summary,
+            'form': form if form is not None else BackupConfirmForm(initial={'resolution': current}),
+            'resolution_form': resolution_form if resolution_form is not None else BackupResolutionForm(
+                initial={'resolution': current}),
+            'can_apply': not job.summary['conflict_count'] or current != STRICT,
+        })
+
     def get(self, request, job_id):
         job = get_object_or_404(BackupImport, pk=job_id, created_by=request.user)
-        return render(request, 'settings/backup_preview.html', {
-            'job': job, 'summary': job.summary, 'form': BackupConfirmForm(),
-        })
+        return self.render_preview(request, job)
 
     def post(self, request, job_id):
         job = get_object_or_404(BackupImport, pk=job_id, created_by=request.user)
+        if 'preview_resolution' in request.POST:
+            resolution_form = BackupResolutionForm(request.POST)
+            if resolution_form.is_valid():
+                try:
+                    preview_resolution(job.pk, request.user, resolution_form.cleaned_data['resolution'])
+                    return redirect('settings_app:backup_preview', job_id=job.pk)
+                except BackupError as exc:
+                    resolution_form.add_error(None, str(exc))
+                except Exception as exc:
+                    return backup_failure_response(request, exc, 'preview')
+            return self.render_preview(request, job, resolution_form=resolution_form)
         form = BackupConfirmForm(request.POST)
         if form.is_valid():
             try:
-                result = apply_import(job.pk, request.user)
-                messages.success(request, f'اكتمل الدمج: إضافة {result.summary["create"]} سجل، '
-                                          f'وتحديث {result.summary["update"]} سجل دون مضاعفة الحركات.')
+                result = apply_import(job.pk, request.user, resolution=form.cleaned_data['resolution'])
+                summary = result.summary
+                message = f'أضيف {summary["create"]} سجل وحُدّث {summary["update"]} سجل.'
+                if summary.get('deferred_count'):
+                    message += f' أُجّل {summary["deferred_count"]} سجل وفق المعاينة.'
+                messages.success(request, message)
                 return redirect('settings_app:backup_preview', job_id=result.pk)
             except BackupError as exc:
                 form.add_error(None, str(exc))
             except Exception as exc:
                 return backup_failure_response(request, exc, 'merge')
-        return render(request, 'settings/backup_preview.html', {
-            'job': job, 'summary': job.summary, 'form': form,
-        })
+        return self.render_preview(request, job, form=form)

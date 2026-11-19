@@ -93,7 +93,8 @@ def main(startup_review=None):
         cleanup.callback(server.shutdown)
         base = f'http://127.0.0.1:{server.server_port}'
         with sync_playwright() as playwright, ExitStack() as browser_cleanup:
-            browser = playwright.chromium.launch(headless=True, **({'executable_path': os.environ['PWA_BROWSER_EXECUTABLE']} if os.environ.get('PWA_BROWSER_EXECUTABLE') else {}))
+            engine = getattr(playwright, os.environ.get('PWA_BROWSER_ENGINE', 'chromium'))
+            browser = engine.launch(headless=True, **({'executable_path': os.environ['PWA_BROWSER_EXECUTABLE']} if os.environ.get('PWA_BROWSER_EXECUTABLE') else {}))
             browser_cleanup.callback(browser.close)
             browser_cleanup.callback(connections.close_all)
             if startup_review is not None:

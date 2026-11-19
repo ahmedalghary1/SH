@@ -30,6 +30,7 @@ from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
 from config.branching import reset_current_branch, set_current_branch
+from .backup_resolution import RESOLUTIONS, STRICT, resolve_actions
 from .models import BackupBranchHistory, BackupIdentity, BackupImport
 
 
@@ -63,6 +64,13 @@ MODEL_LABELS = {
     'audit.auditlog': 'سجل المراجعة', 'admin.logentry': 'سجل الإدارة',
     'auth.group': 'مجموعات المستخدمين', 'auth.permission': 'صلاحيات النظام',
     'contenttypes.contenttype': 'تعريفات ربط البيانات',
+}
+REVIEW_FIELDS = {
+    'name': 'الاسم', 'company_name': 'اسم الشركة', 'hex_code': 'قيمة اللون',
+    'balance': 'الرصيد', 'opening_balance': 'الرصيد الافتتاحي', 'amount': 'المبلغ',
+    'total': 'الإجمالي', 'paid_amount': 'المدفوع', 'remaining_amount': 'المتبقي',
+    'quantity': 'الكمية', 'remaining_quantity': 'الكمية المتبقية',
+    'retail_price': 'سعر القطاعي', 'wholesale_price': 'سعر الجملة',
 }
 
 
@@ -704,7 +712,9 @@ def _media_plan(manifest, local_media):
     return result
 
 
-def plan_merge(manifest, records):
+def plan_merge(manifest, records, *, resolution=STRICT):
+    if resolution != STRICT and resolution not in dict(RESOLUTIONS):
+        raise BackupError('اختر طريقة صالحة لمعالجة التعارضات.')
     with unscoped():
         mapped, existing = _map_existing(records)
         preferred = {key: uid for uid, key in existing.items()}
@@ -740,7 +750,7 @@ def plan_merge(manifest, records):
                     # Never move an existing login to another branch or replace
                     # its password, privileges or group memberships.
                     if fields['branch'] != local['fields']['branch']:
-                        conflicts.append({'model': label, 'label': 'حساب مستخدم', 'reference': fields['username'],
+                        conflicts.append({'uid': uid, 'model': label, 'label': 'حساب مستخدم', 'reference': fields['username'],
                                           'reason': 'اسم المستخدم موجود في معرض مختلف.'})
                     retained += 1
             elif _records_equal(record, local):
@@ -755,11 +765,25 @@ def plan_merge(manifest, records):
             else:
                 actions[uid] = 'conflict'
                 conflicts.append({
-                    'model': label, 'label': MODEL_LABELS.get(label, label),
+                    'uid': uid, 'model': label, 'label': MODEL_LABELS.get(label, label),
                     'reference': str(fields.get('order_number') or fields.get('invoice_number')
                                      or fields.get('sku') or fields.get('name') or record['source_pk'])[:150],
-                    'reason': 'السجل يختلف عن الموجود ولا توجد نقطة سابقة مطابقة تسمح بتحديث أرصدته بأمان.',
+                    'reason': 'قيمة السجل في النسخة تختلف عن القيمة الحالية.',
+                    'comparisons': [
+                        {'label': title, 'current': local['fields'][name], 'incoming': fields[name]}
+                        for name, title in REVIEW_FIELDS.items()
+                        if name in fields and fields[name] != local['fields'][name]
+                    ],
                 })
+        deferred, partial_branches = resolve_actions(
+            records, current, schema(), actions, conflicts, HISTORY_ONLY, resolution,
+        )
+        for conflict in conflicts:
+            uid = conflict.pop('uid')
+            conflict['decision'] = deferred.get(uid) or {
+                'skip': 'الإبقاء على السجل الحالي.',
+                'update': 'اعتماد السجل الوارد في النسخة.',
+            }.get(actions[uid])
         # Validate branch ownership before inserting any row, including fields
         # whose ordinary model.save() validation is intentionally bypassed.
         for record in records:
@@ -786,18 +810,29 @@ def plan_merge(manifest, records):
         media.update(media_inventory(parents))
         media.update(media_inventory(destinations, include_directories=True))
         media_plan = _media_plan(manifest, media)
+        if resolution != STRICT:
+            selected_media, withheld_media = set(), set()
+            for record in records:
+                paths = selected_media if actions[record['uid']] in {'create', 'update'} else withheld_media
+                paths.update(record['fields'][field.name]['path'] for field in backup_models()[record['model']]._meta.concrete_fields
+                             if isinstance(field, models.FileField))
+            unused_media = withheld_media - selected_media
+            media_plan = {name: item for name, item in media_plan.items() if name not in unused_media}
         counts = defaultdict(Counter)
         for record in records:
             counts[record['model']][actions[record['uid']]] += 1
         summary = {
             'created_at': manifest['created_at'], 'archive_id': manifest['archive_id'],
             'rows': [{'model': label, 'label': MODEL_LABELS.get(label, label),
-                      'create': c['create'], 'update': c['update'], 'skip': c['skip'], 'conflict': c['conflict']}
+                      'create': c['create'], 'update': c['update'], 'skip': c['skip'],
+                      'conflict': c['conflict'], 'defer': c['defer']}
                      for label, c in sorted(counts.items())],
             'create': sum(c['create'] for c in counts.values()),
             'update': sum(c['update'] for c in counts.values()),
             'skip': sum(c['skip'] for c in counts.values()),
             'conflict_count': len(conflicts), 'conflicts': conflicts[:100], 'preserved_users': retained,
+            'resolution': resolution, 'resolution_label': dict(RESOLUTIONS).get(resolution, ''),
+            'deferred_count': len(deferred), 'deferred_reasons': list(Counter(deferred.values()).items()),
             'media_count': len(media_plan),
             'media_new': sum(not m['reused'] for m in media_plan.values()),
             'media_reused': sum(m['reused'] for m in media_plan.values()),
@@ -808,7 +843,7 @@ def plan_merge(manifest, records):
         fingerprint = digest({'data': snapshot_digest(current),
                               'media': sorted((name, item['sha256']) for name, item in media.items())})
         return {'mapped': mapped, 'existing': existing, 'actions': actions, 'summary': summary,
-                'fingerprint': fingerprint, 'media': media_plan}
+                'fingerprint': fingerprint, 'media': media_plan, 'partial_branches': partial_branches}
 
 
 def private_root():
@@ -914,7 +949,10 @@ def _apply_records(records, plan):
             registry[record['model']]._base_manager.filter(pk=mapped[record['uid']][1]).update(
                 **_resolved_fields(record, mapped, plan['media']))
     for record in records:
-        if plan['actions'][record['uid']] in {'create', 'update'}:
+        action = plan['actions'][record['uid']]
+        if action == 'defer':
+            continue
+        if action in {'create', 'update'}:
             obj = registry[record['model']]._base_manager.get(pk=mapped[record['uid']][1])
             for name, values in record['m2m'].items():
                 getattr(obj, name).set([mapped[uid][1] for uid in values])
@@ -959,48 +997,73 @@ def _install_media(path, plan, created_paths):
                 raise BackupError('تغيرت صورة أثناء الدمج؛ ألغيت العملية.')
 
 
-def apply_import(job_id, user):
+def _staged_plan(job, resolution):
+    if timezone.now() - job.created_at > timedelta(hours=1):
+        raise BackupError('انتهت صلاحية المعاينة. ارفع النسخة من جديد.')
+    path = staged_path(job.pk)
+    if not path.is_file() or file_digest(path) != job.archive_digest:
+        raise BackupError('ملف المعاينة غير متاح أو تغير؛ ارفع النسخة من جديد.')
+    manifest, records = read_archive(path)
+    plan = plan_merge(manifest, records, resolution=resolution)
+    if plan['fingerprint'] != job.preview_digest:
+        raise BackupError('تغيرت البيانات أو الصور بعد المعاينة. ارفع النسخة مجددًا لمراجعة خطة محدثة.')
+    return path, manifest, records, plan
+
+
+def preview_resolution(job_id, user, resolution):
+    with unscoped(), transaction.atomic():
+        job = BackupImport.objects.select_for_update().get(pk=job_id, created_by=user)
+        if job.completed_at:
+            return job
+        _, _, _, plan = _staged_plan(job, resolution)
+        job.summary = plan['summary']
+        job.save(update_fields=['summary'])
+        return job
+
+
+def apply_import(job_id, user, *, resolution=STRICT):
     created_paths = []
     try:
         with unscoped(), transaction.atomic():
             job = BackupImport.objects.select_for_update().get(pk=job_id, created_by=user)
             if job.completed_at:
                 return job
-            if timezone.now() - job.created_at > timedelta(hours=1):
-                raise BackupError('انتهت صلاحية المعاينة. ارفع النسخة من جديد.')
-            path = staged_path(job.pk)
-            if not path.is_file() or file_digest(path) != job.archive_digest:
-                raise BackupError('ملف المعاينة غير متاح أو تغير؛ ارفع النسخة من جديد.')
+            if resolution != job.summary.get('resolution', STRICT):
+                raise BackupError('تغير خيار معالجة التعارضات. راجع المعاينة ثم أكد الاختيار الحالي.')
             # A write obtains SQLite's writer lock before planning. PostgreSQL
             # also locks business tables so ordinary sales cannot race a merge.
             BackupImport.objects.filter(pk=job.pk).update(preview_digest=job.preview_digest)
             _lock_tables()
-            manifest, records = read_archive(path)
-            plan = plan_merge(manifest, records)
-            if plan['fingerprint'] != job.preview_digest:
-                raise BackupError('تغيرت البيانات أو الصور بعد المعاينة. ارفع النسخة مجددًا لمراجعة خطة محدثة.')
-            if plan['summary']['conflict_count']:
+            path, manifest, records, plan = _staged_plan(job, resolution)
+            if resolution == STRICT and plan['summary']['conflict_count']:
                 raise BackupError('توجد تعارضات في النسخة؛ لم يطبق أي جزء من الدمج.')
             _apply_records(records, plan)
             connection.check_constraints(table_names=[m._meta.db_table for m in backup_models().values()])
             _install_media(path, plan, created_paths)
-            current, _ = collect_snapshot({key: uid for uid, key in plan['mapped'].items()})
+            current, _ = collect_snapshot({key: uid for uid, key in plan['mapped'].items()
+                                           if plan['actions'][uid] != 'defer'})
             for branch in manifest['branches']:
                 local_pk = plan['mapped'][branch['uid']][1]
                 new_digest = branch_digest(current, branch['uid'])
                 history = BackupBranchHistory.objects.filter(branch_id=local_pk).first()
-                ancestors = set(history.ancestors if history else []) | set(branch['ancestors'])
+                ancestors = set(history.ancestors if history else [])
+                if branch['uid'] not in plan['partial_branches']:
+                    ancestors.update(branch['ancestors'])
                 if history:
                     ancestors.add(history.digest)
                 ancestors.discard(new_digest)
                 BackupBranchHistory.objects.update_or_create(
                     branch_id=local_pk, defaults={'digest': new_digest, 'ancestors': sorted(ancestors)})
             from audit.services import log_audit
+            summary = plan['summary']
+            notes = (f'إضافة {summary["create"]} سجل وتحديث {summary["update"]} سجل '
+                     f'وتأجيل {summary["deferred_count"]} سجل.')
+            if summary['resolution_label']:
+                notes += f' الخيار المختار «{summary["resolution_label"]}».'
             log_audit(user=user, action='create', section='settings', model_name='BackupImport',
-                      object_id=job.pk, object_repr='دمج نسخة احتياطية',
-                      notes=f"إضافة {plan['summary']['create']} سجل وتحديث {plan['summary']['update']} سجل دون إعادة ترحيل حركات.")
+                      object_id=job.pk, object_repr='دمج نسخة احتياطية', notes=notes)
             job.completed_at = timezone.now()
-            job.summary = plan['summary']
+            job.summary = summary
             BackupImport.objects.filter(pk=job.pk).update(completed_at=job.completed_at, summary=job.summary)
         transaction.on_commit(lambda: discard_archive(job.pk))
         return job
