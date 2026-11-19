@@ -30,3 +30,8 @@ class BackupConfirmForm(forms.Form):
 
 class BackupResolutionForm(forms.Form):
     resolution = forms.ChoiceField(label='معالجة التعارضات', choices=RESOLUTIONS, widget=forms.RadioSelect)
+
+
+class BackupReplaceConfirmForm(forms.Form):
+    saved_backup = forms.BooleanField(label='حفظت نسخة أمان من البيانات الحالية')
+    confirm = forms.BooleanField(label='أوافق على الاستبدال الكامل ولدي بيانات دخول مسؤول من النسخة')

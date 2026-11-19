@@ -44,6 +44,7 @@ from returns.services import add_return_item, approve_sales_return, cancel_sales
 from sync_api.models import SyncOperation
 
 from . import backup_services as backups
+from . import backup_replace as replacement
 from .backup_resolution import KEEP_CURRENT, USE_ARCHIVE
 from .models import BackupIdentity, BackupImport, CompanySettings
 
@@ -652,15 +653,96 @@ class CompleteBackupTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertFalse(Product.all_objects.filter(sku='SOURCE-P').exists())
         url = response['Location']
-        self.assertEqual(self.client.get(url).status_code, 200)
-        self.assertNotIn('X-PWA-Cacheable', self.client.get(url))
+        preview = self.client.get(url)
+        self.assertContains(preview, 'احفظ نسخة أمان أولًا')
+        self.assertNotIn('X-PWA-Cacheable', preview)
         unchecked = self.client.post(url)
         self.assertEqual(unchecked.status_code, 200)
         self.assertFalse(Product.all_objects.filter(sku='SOURCE-P').exists())
-        applied = self.client.post(url, {'confirm': 'on', '_submission_token': 'backup-repeat'})
-        self.assertEqual(applied.status_code, 302)
+        self.assertEqual(self.client.post(url, {'confirm': 'on'}).status_code, 200)
+        self.assertFalse(Product.all_objects.filter(sku='SOURCE-P').exists())
+        applied = self.client.post(url, {'confirm': 'on', 'saved_backup': 'on'})
+        self.assertContains(applied, 'اكتملت استعادة النسخة')
         self.assertTrue(Product.all_objects.filter(sku='SOURCE-P').exists())
-        self.assertEqual(self.client.post(url, {'confirm': 'on', '_submission_token': 'backup-repeat'}).status_code, 302)
+        self.assertNotIn('_auth_user_id', self.client.session)
+        self.assertEqual(self.client.post(url, {'confirm': 'on', 'saved_backup': 'on'}).status_code, 302)
+
+    def test_full_replacement_restores_archived_data_and_saves_previous_state(self):
+        data, _ = self.make_source()
+        old_branch = Branch.objects.create(code='LOCAL-ONLY', name='Current branch')
+        old_product = Product.objects.create(branch=old_branch, sku='LOCAL-ONLY', name='Current product')
+        local_user = User.objects.create_user(username='local-only', branch=old_branch)
+        stale_user = User.objects.create_user(username='old-offline', branch=old_branch)
+        stale_pk = stale_user.pk
+        stale_user.delete()
+        self.admin.set_password('local-password')
+        self.admin.save()
+        job = replacement.stage_replacement(self.upload(data), self.admin)
+        with self.assertRaisesMessage(backups.BackupError, 'تأكيد الاستعادة الكاملة'):
+            backups.apply_import(job.pk, self.admin)
+        result = replacement.apply_replacement(job.pk, self.admin)
+        self.assertFalse(Branch.objects.filter(code=old_branch.code).exists())
+        self.assertFalse(Product.all_objects.filter(sku=old_product.sku).exists())
+        self.assertFalse(User.all_objects.filter(username=local_user.username).exists())
+        restored_admin = User.all_objects.get(username=self.admin.username)
+        self.assertGreater(restored_admin.pk, stale_pk)
+        self.assertTrue(restored_admin.check_password('test-secret'))
+        self.assertFalse(restored_admin.check_password('local-password'))
+        branch = Branch.objects.get(code='SOURCE')
+        self.assertGreater(branch.pk, old_branch.pk)
+        self.assertEqual(Stock.all_objects.get(branch=branch).quantity, 17)
+        self.assertEqual(CashAccount.all_objects.get(branch=branch).balance, Decimal('20'))
+        order = Order.all_objects.get(branch=branch)
+        self.assertEqual(order.items.get().variant.product.sku, 'SOURCE-P')
+        self.assertEqual((self.media / str(order.items.get().variant.product.image)).read_bytes(), PNG)
+        _, previous = backups.read_archive(backups.private_root() / result['recovery_name'])
+        self.assertTrue(any(row['model'] == 'products.product' and row['fields']['sku'] == 'LOCAL-ONLY'
+                            for row in previous))
+        self.assertFalse(BackupImport.objects.filter(pk=job.pk).exists())
+
+    def test_full_replacement_rejects_changed_destination_before_writing_safety_file(self):
+        data, _ = self.make_source()
+        job = replacement.stage_replacement(self.upload(data), self.admin)
+        current = Product.objects.create(sku='AFTER-RESTORE-PREVIEW', name='Product after preview')
+        with self.assertRaisesMessage(backups.BackupError, 'بعد المعاينة'):
+            replacement.apply_replacement(job.pk, self.admin)
+        self.assertTrue(Product.objects.filter(pk=current.pk).exists())
+        self.assertFalse(list(backups.private_root().glob('pre-restore-*.zip')))
+
+    def test_full_replacement_rejects_backup_without_usable_superuser(self):
+        with transaction.atomic():
+            User.all_objects.filter(pk=self.admin.pk).update(password='!')
+            with backups.build_backup() as stream:
+                data = stream.read()
+            transaction.set_rollback(True)
+        with self.assertRaisesMessage(backups.BackupError, 'مسؤول أعلى نشط'):
+            replacement.stage_replacement(self.upload(data), self.admin)
+        self.assertFalse(BackupImport.objects.exists())
+
+    def test_full_replacement_failure_restores_current_database_and_media(self):
+        data, _ = self.make_source()
+        current = Product.objects.create(sku='RETAIN-ON-FAILURE', name='Current product')
+        job = replacement.stage_replacement(self.upload(data), self.admin)
+        with patch.object(replacement, '_save_recovery_file', side_effect=OSError('disk unavailable')):
+            with self.assertRaises(OSError):
+                replacement.apply_replacement(job.pk, self.admin)
+        self.assertTrue(Product.objects.filter(pk=current.pk).exists())
+
+        install = backups._install_media
+
+        def fail_after_install(*args):
+            install(*args)
+            raise OSError('media unavailable')
+
+        with patch.object(backups, '_install_media', side_effect=fail_after_install):
+            with self.assertRaises(OSError):
+                replacement.apply_replacement(job.pk, self.admin)
+        self.assertTrue(Product.objects.filter(pk=current.pk, sku=current.sku).exists())
+        self.assertFalse(Product.all_objects.filter(sku='SOURCE-P').exists())
+        self.assertTrue(User.all_objects.filter(pk=self.admin.pk).exists())
+        self.assertTrue(BackupImport.objects.filter(pk=job.pk).exists())
+        self.assertFalse((self.media / 'products/item.png').exists())
+        self.assertFalse(list(backups.private_root().glob('pre-restore-*.zip')))
 
     def test_missing_migrations_show_an_actionable_page_without_a_download_link(self):
         self.client.force_login(self.admin)

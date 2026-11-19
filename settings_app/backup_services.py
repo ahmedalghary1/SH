@@ -712,6 +712,34 @@ def _media_plan(manifest, local_media):
     return result
 
 
+def _validate_branch_links(records, actions=None):
+    incoming_by_uid = {r['uid']: r for r in records}
+    for record in records:
+        if actions is not None and actions[record['uid']] == 'skip':
+            continue
+        model, fields = backup_models()[record['model']], record['fields']
+        branch = fields.get('branch')
+        for name in getattr(model, 'branch_relations', ()):
+            ref = fields.get(name)
+            if ref and incoming_by_uid[ref]['fields'].get('branch') != branch:
+                raise BackupError('توجد علاقة بين معرضين مختلفين في النسخة.')
+        for refs in record['m2m'].values():
+            for ref in refs:
+                other_branch = incoming_by_uid[ref]['fields'].get('branch')
+                if branch and other_branch and branch != other_branch:
+                    raise BackupError('توجد تسوية أو علاقة متعددة بين معرضين مختلفين.')
+
+
+def _plan_import_media(manifest, media):
+    destinations = {name for item in manifest['media']
+                    for name in (item['path'], *_restored_media_targets(item))}
+    parents = {str(parent) for name in destinations for parent in PurePosixPath(name).parents
+               if str(parent) != '.'}
+    media.update(media_inventory(parents))
+    media.update(media_inventory(destinations, include_directories=True))
+    return _media_plan(manifest, media)
+
+
 def plan_merge(manifest, records, *, resolution=STRICT):
     if resolution != STRICT and resolution not in dict(RESOLUTIONS):
         raise BackupError('اختر طريقة صالحة لمعالجة التعارضات.')
@@ -720,7 +748,6 @@ def plan_merge(manifest, records, *, resolution=STRICT):
         preferred = {key: uid for uid, key in existing.items()}
         current, media = collect_snapshot(preferred)
         current_by_uid = {r['uid']: r for r in current}
-        incoming_by_uid = {r['uid']: r for r in records}
         actions, conflicts, retained = {}, [], 0
         advance, preserve = set(), set()
         for branch in manifest['branches']:
@@ -784,32 +811,8 @@ def plan_merge(manifest, records, *, resolution=STRICT):
                 'skip': 'الإبقاء على السجل الحالي.',
                 'update': 'اعتماد السجل الوارد في النسخة.',
             }.get(actions[uid])
-        # Validate branch ownership before inserting any row, including fields
-        # whose ordinary model.save() validation is intentionally bypassed.
-        for record in records:
-            if actions[record['uid']] == 'skip':
-                continue
-            model, fields = backup_models()[record['model']], record['fields']
-            branch = fields.get('branch')
-            for name in getattr(model, 'branch_relations', ()):
-                ref = fields.get(name)
-                if ref and incoming_by_uid[ref]['fields'].get('branch') != branch:
-                    raise BackupError('توجد علاقة بين معرضين مختلفين في النسخة.')
-            for name, refs in record['m2m'].items():
-                for ref in refs:
-                    other_branch = incoming_by_uid[ref]['fields'].get('branch')
-                    if branch and other_branch and branch != other_branch:
-                        raise BackupError('توجد تسوية أو علاقة متعددة بين معرضين مختلفين.')
-        # Preserve collision detection for files not referenced by SH records.
-        # Probe just incoming destinations, rename destinations and ancestor
-        # files; do not enumerate media belonging to other hosted sites.
-        destinations = {name for item in manifest['media']
-                        for name in (item['path'], *_restored_media_targets(item))}
-        parents = {str(parent) for name in destinations for parent in PurePosixPath(name).parents
-                   if str(parent) != '.'}
-        media.update(media_inventory(parents))
-        media.update(media_inventory(destinations, include_directories=True))
-        media_plan = _media_plan(manifest, media)
+        _validate_branch_links(records, actions)
+        media_plan = _plan_import_media(manifest, media)
         if resolution != STRICT:
             selected_media, withheld_media = set(), set()
             for record in records:
@@ -870,6 +873,10 @@ def cleanup_archives():
 
 
 def stage_upload(upload, user):
+    return _stage_upload(upload, user, plan_merge)
+
+
+def _stage_upload(upload, user, planner):
     ensure_backup_schema()
     job_id = uuid.uuid4()
     path = staged_path(job_id)
@@ -883,7 +890,8 @@ def stage_upload(upload, user):
                 destination.write(chunk)
         manifest, records = read_archive(path)
         with transaction.atomic(), unscoped():
-            plan = plan_merge(manifest, records)
+            _lock_imports()
+            plan = planner(manifest, records)
             return BackupImport.objects.create(
                 id=job_id, created_by=user, original_name=Path(upload.name).name[:255],
                 archive_digest=file_digest(path), preview_digest=plan['fingerprint'], summary=plan['summary'],
@@ -895,7 +903,7 @@ def stage_upload(upload, user):
 
 def _lock_tables():
     if connection.vendor == 'postgresql':
-        tables = sorted({m._meta.db_table for m in backup_models().values()}
+        tables = sorted({m._meta.db_table for m in (*backup_models().values(), BackupIdentity, BackupBranchHistory)}
                         | {f.remote_field.through._meta.db_table for m in backup_models().values()
                            for f in m._meta.many_to_many})
         with connection.cursor() as cursor:
@@ -903,7 +911,14 @@ def _lock_tables():
                            + ' IN SHARE ROW EXCLUSIVE MODE')
 
 
-def _resolved_fields(record, mapped, media_plan):
+def _lock_imports():
+    if connection.vendor == 'postgresql':
+        with connection.cursor() as cursor:
+            cursor.execute('LOCK TABLE ' + connection.ops.quote_name(BackupImport._meta.db_table)
+                           + ' IN SHARE ROW EXCLUSIVE MODE')
+
+
+def _resolved_fields(record, mapped, media_plan, *, replacing=False):
     model = backup_models()[record['model']]
     values = {}
     for field in model._meta.concrete_fields:
@@ -914,7 +929,7 @@ def _resolved_fields(record, mapped, media_plan):
             value = mapped[value][1] if value is not None else None
         elif isinstance(field, models.FileField):
             name = value['path']
-            value = media_plan[name]['target'] if name in media_plan else name
+            value = media_plan[name]['target'] if name in media_plan else ('' if replacing else name)
             if field.max_length and len(value) > field.max_length:
                 raise BackupError('اسم صورة مستعادة يتجاوز طول الحقل؛ لم يطبق الدمج.')
         else:
@@ -933,7 +948,7 @@ def _resolved_fields(record, mapped, media_plan):
     return values
 
 
-def _apply_records(records, plan):
+def _apply_records(records, plan, *, replacing=False):
     registry, mapped = backup_models(), plan['mapped']
     # Django's PostgreSQL/SQLite foreign keys are initially deferred. Allocate
     # every destination key first, then verify all constraints after all rows
@@ -942,7 +957,7 @@ def _apply_records(records, plan):
         if plan['actions'][record['uid']] == 'create':
             model = registry[record['model']]
             pk = mapped[record['uid']][1]
-            obj = model(pk=pk, **_resolved_fields(record, mapped, plan['media']))
+            obj = model(pk=pk, **_resolved_fields(record, mapped, plan['media'], replacing=replacing))
             obj.save_base(raw=True, force_insert=True)
     for record in records:
         if plan['actions'][record['uid']] == 'update':
@@ -952,10 +967,12 @@ def _apply_records(records, plan):
         action = plan['actions'][record['uid']]
         if action == 'defer':
             continue
-        if action in {'create', 'update'}:
+        if action in {'create', 'update'} and record['m2m']:
             obj = registry[record['model']]._base_manager.get(pk=mapped[record['uid']][1])
             for name, values in record['m2m'].items():
                 getattr(obj, name).set([mapped[uid][1] for uid in values])
+        if replacing:
+            continue
         label, pk = mapped[record['uid']]
         identity = BackupIdentity.objects.filter(uid=record['uid']).first()
         primary_exists = BackupIdentity.objects.filter(model_label=label, object_pk=str(pk), is_primary=True).exists()
@@ -963,6 +980,14 @@ def _apply_records(records, plan):
         primary = bool(same_object and identity.is_primary) or not primary_exists
         BackupIdentity.objects.update_or_create(
             uid=record['uid'], defaults={'model_label': label, 'object_pk': str(pk), 'is_primary': primary})
+    if replacing:
+        for offset in range(0, len(records), 500):
+            BackupIdentity.objects.bulk_create([
+                BackupIdentity(uid=record['uid'], model_label=record['model'],
+                               object_pk=str(mapped[record['uid']][1]), is_primary=True)
+                for record in records[offset:offset + 500]
+            ])
+        return
     with connection.cursor() as cursor:
         for sql in connection.ops.sequence_reset_sql(no_style(), list(registry.values())):
             cursor.execute(sql)
@@ -997,13 +1022,20 @@ def _install_media(path, plan, created_paths):
                 raise BackupError('تغيرت صورة أثناء الدمج؛ ألغيت العملية.')
 
 
-def _staged_plan(job, resolution):
+def _read_staged_archive(job):
     if timezone.now() - job.created_at > timedelta(hours=1):
         raise BackupError('انتهت صلاحية المعاينة. ارفع النسخة من جديد.')
     path = staged_path(job.pk)
     if not path.is_file() or file_digest(path) != job.archive_digest:
         raise BackupError('ملف المعاينة غير متاح أو تغير؛ ارفع النسخة من جديد.')
     manifest, records = read_archive(path)
+    return path, manifest, records
+
+
+def _staged_plan(job, resolution):
+    if job.summary.get('mode') == 'replace':
+        raise BackupError('تتطلب هذه النسخة تأكيد الاستعادة الكاملة.')
+    path, manifest, records = _read_staged_archive(job)
     plan = plan_merge(manifest, records, resolution=resolution)
     if plan['fingerprint'] != job.preview_digest:
         raise BackupError('تغيرت البيانات أو الصور بعد المعاينة. ارفع النسخة مجددًا لمراجعة خطة محدثة.')
@@ -1012,6 +1044,7 @@ def _staged_plan(job, resolution):
 
 def preview_resolution(job_id, user, resolution):
     with unscoped(), transaction.atomic():
+        _lock_imports()
         job = BackupImport.objects.select_for_update().get(pk=job_id, created_by=user)
         if job.completed_at:
             return job
@@ -1025,6 +1058,7 @@ def apply_import(job_id, user, *, resolution=STRICT):
     created_paths = []
     try:
         with unscoped(), transaction.atomic():
+            _lock_imports()
             job = BackupImport.objects.select_for_update().get(pk=job_id, created_by=user)
             if job.completed_at:
                 return job

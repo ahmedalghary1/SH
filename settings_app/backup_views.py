@@ -1,4 +1,5 @@
 from django.contrib import messages
+from django.contrib.auth import logout
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -9,11 +10,12 @@ from django.views.decorators.cache import never_cache
 from accounts.permissions import SuperuserRequiredMixin
 from config.error_email import email_status
 from .backup_errors import report_backup_error
-from .backup_forms import BackupConfirmForm, BackupResolutionForm, BackupUploadForm
+from .backup_forms import BackupConfirmForm, BackupReplaceConfirmForm, BackupResolutionForm, BackupUploadForm
+from .backup_replace import REPLACE, apply_replacement, stage_replacement
 from .backup_resolution import STRICT
 from .backup_services import (
     BackupError, apply_import, build_backup, cleanup_archives, ensure_backup_schema, limits,
-    preview_resolution, stage_upload,
+    preview_resolution,
 )
 from .models import BackupImport
 
@@ -68,7 +70,7 @@ class BackupPageView(BackupAccessView):
         form = BackupUploadForm(request.POST, request.FILES)
         if form.is_valid():
             try:
-                job = stage_upload(form.cleaned_data['archive'], request.user)
+                job = stage_replacement(form.cleaned_data['archive'], request.user)
                 return redirect('settings_app:backup_preview', job_id=job.pk)
             except BackupError as exc:
                 form.add_error('archive', str(exc))
@@ -103,10 +105,25 @@ class BackupPreviewView(BackupAccessView):
 
     def get(self, request, job_id):
         job = get_object_or_404(BackupImport, pk=job_id, created_by=request.user)
+        if job.summary.get('mode') == REPLACE:
+            return self.render_replacement(request, job, BackupReplaceConfirmForm())
         return self.render_preview(request, job)
 
     def post(self, request, job_id):
         job = get_object_or_404(BackupImport, pk=job_id, created_by=request.user)
+        if job.summary.get('mode') == REPLACE:
+            form = BackupReplaceConfirmForm(request.POST)
+            if form.is_valid():
+                try:
+                    result = apply_replacement(job.pk, request.user)
+                except BackupError as exc:
+                    form.add_error(None, str(exc))
+                except Exception as exc:
+                    return backup_failure_response(request, exc, 'restore')
+                else:
+                    logout(request)
+                    return render(request, 'settings/backup_restored.html', {'summary': result})
+            return self.render_replacement(request, job, form)
         if 'preview_resolution' in request.POST:
             resolution_form = BackupResolutionForm(request.POST)
             if resolution_form.is_valid():
@@ -133,3 +150,8 @@ class BackupPreviewView(BackupAccessView):
             except Exception as exc:
                 return backup_failure_response(request, exc, 'merge')
         return self.render_preview(request, job, form=form)
+
+    def render_replacement(self, request, job, form):
+        return render(request, 'settings/backup_replace_preview.html', {
+            'job': job, 'summary': job.summary, 'form': form,
+        })

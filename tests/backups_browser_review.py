@@ -1,6 +1,7 @@
 """Real browser backup download/upload/confirmation, using disposable data only."""
 from contextlib import ExitStack
 import os
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -121,6 +122,7 @@ def main():
             fail_download.clear()
             page.locator('[data-backup-error] a').click()
             page.wait_for_selector('input[type=file]')
+            Product.objects.create(name='Current only', sku='CURRENT-ONLY')
             page.locator('input[type=file]').set_input_files(str(archive))
             page.locator('button[type=submit]').filter(has_text='رفع').click()
             page.wait_for_selector('input[name=confirm]')
@@ -131,12 +133,25 @@ def main():
                 page.wait_for_timeout(350)
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), width
             page.screenshot(path=str(screenshots / 'preview-mobile.png'), full_page=True)
+            assert page.get_by_role('alert').get_by_text('احفظ نسخة أمان أولًا').count() == 1
+            with page.expect_download() as downloaded:
+                page.locator('a[href="/settings/backups/download/"]').click()
+            with zipfile.ZipFile(downloaded.value.path()) as zipped:
+                assert any(row['model'] == 'products.product' and row['fields']['sku'] == 'CURRENT-ONLY'
+                           for row in json.loads(zipped.read('data.json')))
+            page.locator('input[name=saved_backup]').check()
             page.locator('input[name=confirm]').check()
             page.locator('button[type=submit]').filter(has_text='تأكيد').click()
-            page.wait_for_selector('h1:has-text("اكتمل دمج النسخة")')
+            page.wait_for_selector('h1:has-text("اكتملت استعادة النسخة")')
             assert Product.all_objects.filter(sku='BROWSER-BACKUP').count() == 1
+            assert not Product.all_objects.filter(sku='CURRENT-ONLY').exists()
+            page.get_by_role('link', name='تسجيل الدخول').click()
+            page.locator('input[name=username]').fill(user.username)
+            page.locator('input[name=password]').fill('test-password')
+            page.get_by_role('button', name='دخول', exact=True).click()
+            page.wait_for_url(base + '/')
             assert not errors, errors
-            print('PASS: real Chromium controlled by service worker, download longer than eight seconds, valid ZIP contents, visible failures without HTML downloads, upload/merge, four viewport widths, no JS errors')
+            print('PASS: slow ZIP download, four viewport widths, safety download, complete replacement and login using restored credentials')
 
 
 if __name__ == '__main__':

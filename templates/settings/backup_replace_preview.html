@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}معاينة الاستعادة الكاملة{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>معاينة الاستعادة الكاملة</h1>
+    <a class="btn btn-light" href="{% url 'settings_app:backups' %}">النسخ الاحتياطي</a>
+</div>
+<section class="card" role="alert">
+    <h2>احفظ نسخة أمان أولًا</h2>
+    <p>زامن العمليات المعلقة في أجهزة المندوبين ثم نزّل نسخة من البيانات الحالية. سيحفظ الخادم أيضًا نسخة أمان قبل الاستبدال.</p>
+    <p>ستُستبدل بيانات كل المعارض وحسابات الدخول وصلاحياتها، وستنتهي جلسات المستخدمين. ستحتاج إلى بيانات دخول مسؤول من النسخة المستعادة.</p>
+    <a class="btn btn-primary" href="{% url 'settings_app:backup_download' %}">تنزيل نسخة أمان من البيانات الحالية</a>
+</section>
+<section class="card">
+    <p><strong>{{ job.original_name }}</strong> <span dir="ltr">{{ summary.created_at }}</span></p>
+    <p>المعارض في النسخة {% for branch in summary.branches %}{{ branch.name }} ({{ branch.code }}){% if not forloop.last %}، {% endif %}{% endfor %}</p>
+    <div class="summary-grid">
+        <div><strong>{{ summary.current_count }}</strong><p>سجل في القاعدة الحالية</p></div>
+        <div><strong>{{ summary.restored_count }}</strong><p>سجل في النسخة</p></div>
+        <div><strong>{{ summary.media_count }}</strong><p>صورة أو مرفق في النسخة</p></div>
+    </div>
+    {% if summary.missing_media %}<p class="form-errors">تعذر تضمين {{ summary.missing_media }} مرفقًا عند إنشاء النسخة. تظهر السجلات المستعادة من دون هذه المرفقات.</p>{% endif %}
+    <div class="table-wrap"><table>
+        <thead><tr><th>البيانات</th><th>حاليًا</th><th>بعد الاستعادة</th></tr></thead>
+        <tbody>{% for row in summary.rows %}<tr><td>{{ row.label }}</td><td>{{ row.current }}</td><td>{{ row.incoming }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+</section>
+<section class="card">
+    <h2>تأكيد الاستبدال</h2>
+    <p>إذا تغيّرت البيانات أو الصور منذ المعاينة، أعد رفع النسخة لتحديثها قبل التأكيد.</p>
+    <form method="post" target="_top" class="form-grid">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <label>{{ form.saved_backup }}<span>{{ form.saved_backup.label }}</span>{{ form.saved_backup.errors }}</label>
+        <label>{{ form.confirm }}<span>{{ form.confirm.label }}</span>{{ form.confirm.errors }}</label>
+        <div class="form-actions"><button class="btn btn-danger" type="submit">تأكيد الاستعادة الكاملة</button></div>
+    </form>
+</section>
+{% endblock %}
