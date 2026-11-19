@@ -459,9 +459,17 @@ def process_order(operation, user):
         existing_order.save(update_fields=['notes', 'status', 'updated_at'])
         return response_success(operation['local_uuid'], existing_order.pk, 'Order', resolution='local_applied')
 
+    document_type = order_data.get('document_type') or Order.DOCUMENT_SALE
+    order_type = order_data.get('order_type') or Order.TYPE_B2C
+    payment_method = order_data.get('payment_method') or Order.METHOD_CASH
     customer = _customer_from_payload(order_data, operation.get('device_id') or '')
     if customer is None:
-        raise ValidationError('Cannot create offline invoice before its customer is synced')
+        if any(order_data.get(field) for field in ('customer_server_id', 'customer_local_uuid', 'customer', 'phone')):
+            raise ValidationError('يجب مزامنة العميل المحدد قبل حفظ الفاتورة.')
+        if order_type == Order.TYPE_B2B:
+            raise ValidationError('بيانات العميل مطلوبة عند البيع جملة أو لتاجر.')
+        if document_type != Order.DOCUMENT_QUOTE and payment_method == Order.METHOD_CREDIT:
+            raise ValidationError('اختر العميل عند تسجيل فاتورة آجلة.')
 
     default_warehouse = _model_by_pk(Warehouse, order_data.get('warehouse')) or _default_warehouse(user)
     if default_warehouse is None:
@@ -488,16 +496,14 @@ def process_order(operation, user):
             'discount_amount': Decimal(str(item.get('discount_amount') or item.get('discount') or 0)),
             'discount_percentage': Decimal(str(item.get('discount_percentage') or 0)),
         })
-    confirm = order_data.get('action') == 'confirm'
-    if order_data.get('document_type') == Order.DOCUMENT_QUOTE:
-        confirm = False
+    confirm = order_data.get('action') == 'confirm' and document_type != Order.DOCUMENT_QUOTE
     order = create_order(
         order_data={
             'customer': customer,
             'warehouse': default_warehouse,
-            'document_type': order_data.get('document_type') or Order.DOCUMENT_SALE,
-            'order_type': order_data.get('order_type') or Order.TYPE_B2C,
-            'payment_method': order_data.get('payment_method') or Order.METHOD_CASH,
+            'document_type': document_type,
+            'order_type': order_type,
+            'payment_method': payment_method,
             'paid_amount': Decimal(str(order_data.get('paid_amount') or 0)),
             'notes': order_data.get('notes') or '',
             'discount_amount': Decimal(str(order_data.get('discount_amount') or order_data.get('discount') or 0)),

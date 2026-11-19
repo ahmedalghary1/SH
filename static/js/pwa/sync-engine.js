@@ -164,7 +164,7 @@ async function prepareAppShell(extraUrls = []) {
                     channel.port1.close();
                     resolve(event.data);
                 };
-                worker.postMessage({ type: "CACHE_URLS", urls, scope,
+                worker.postMessage({ type: "CACHE_URLS", urls, scope, requiredUrls: uniqueUrls(['/', ...authorizedPages]),
                     details }, [channel.port2]);
             });
             shellCached = Boolean(result && !result.failed.length);
@@ -208,23 +208,23 @@ async function jsonFetch(url, options = {}) {
     if (csrf) headers["X-CSRFToken"] = csrf;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), url.includes('bootstrap') ? 60000 : 15000);
-    let response;
-    try { response = await fetch(url, {
-        credentials: "same-origin",
-        cache: "no-store",
-        ...options,
-        signal: controller.signal,
-        headers,
-    }); } finally { window.clearTimeout(timeout); }
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || response.redirected || !(response.headers.get("content-type") || "").includes("application/json")) {
+    try {
+        const response = await fetch(url, {
+            credentials: "same-origin",
+            cache: "no-store",
+            ...options,
+            signal: controller.signal,
+            headers,
+        });
+        const isJson = (response.headers.get("content-type") || "").includes("application/json");
+        if (response.ok && !response.redirected && isJson) return await response.json();
+        const payload = isJson ? await response.json().catch(() => ({})) : {};
         const error = new Error(payload.error || payload.message || ([401, 403].includes(response.status) || response.redirected
             ? "انتهت الجلسة. سجّل الدخول بالحساب نفسه لإكمال المزامنة." : `HTTP ${response.status}`));
         error.status = response.redirected ? 401 : response.status;
         error.code = payload.code;
         throw error;
-    }
-    return payload;
+    } finally { window.clearTimeout(timeout); }
 }
 
 function endpointFor(item) {
@@ -303,6 +303,9 @@ async function bootstrapSnapshot() {
     try {
         const expectedQueueRevision = Number(await getMetadata('queue_revision') || 0);
         const payload = await jsonFetch("/api/sync/bootstrap-browser/");
+        if (!Array.isArray(payload.products) || !Array.isArray(payload.variants)) {
+            throw new Error('استجابة تنزيل المنتجات غير مكتملة.');
+        }
         bootstrapError = '';
         bootstrapErrorCode = '';
         const imported = await importBootstrap(payload, { expectedQueueRevision });

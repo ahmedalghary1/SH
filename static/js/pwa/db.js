@@ -464,6 +464,7 @@ export async function importBootstrap(payload, { expectedQueueRevision } = {}) {
         throw new Error("تغير الحساب أو المعرض. أعد فتح الصفحة قبل تنزيل البيانات.");
     }
     const importedAt = nowIso();
+    const hasCatalog = Array.isArray(payload.products) && Array.isArray(payload.variants);
 
     const snapshots = new Map();
     const collect = (storeName, record) => snapshots.get(storeName).push(record);
@@ -538,45 +539,59 @@ export async function importBootstrap(payload, { expectedQueueRevision } = {}) {
     const db = await openOfflineDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction([...snapshots.keys(), STORE_NAMES.syncQueue, STORE_NAMES.metadata], "readwrite");
+        const metadata = tx.objectStore(STORE_NAMES.metadata);
+        const queueStore = tx.objectStore(STORE_NAMES.syncQueue);
         let imported = false;
         tx.oncomplete = () => resolve(imported);
         tx.onerror = tx.onabort = () => reject(tx.error);
-        const queue = tx.objectStore(STORE_NAMES.syncQueue).count();
+        const replaceSnapshot = (name, records) => {
+            const store = tx.objectStore(name);
+            const request = store.getAll();
+            request.onsuccess = () => {
+                const pending = new Set();
+                request.result.forEach((row) => {
+                    if (row.sync_status !== "synced") pending.add(row.id);
+                    else store.delete(row.id);
+                });
+                records.forEach((row) => { if (!pending.has(row.id)) store.put(row); });
+            };
+        };
+        const markCatalogDownloaded = () => {
+            metadata.put({key: 'last_catalog_at', value: importedAt, updated_at: importedAt});
+        };
+        const queue = queueStore.count();
         queue.onsuccess = () => {
-            if (queue.result) return;
-            const revision = tx.objectStore(STORE_NAMES.metadata).get('queue_revision');
+            const revision = metadata.get('queue_revision');
             revision.onsuccess = () => {
                 // Protect browsers without Web Locks too: another tab may have
                 // queued AND synchronized a sale while this download was in flight.
                 if (expectedQueueRevision !== undefined
                     && Number(revision.result?.value || 0) !== expectedQueueRevision) return;
-                applySnapshot();
+                if (!queue.result) {
+                    imported = true;
+                    for (const key of ['user', 'company', 'cash', 'offline_pages', 'offline_details']) {
+                        if (payload[key]) metadata.put({ key, value: payload[key], updated_at: importedAt });
+                    }
+                    metadata.put({ key: 'last_bootstrap_at', value: importedAt, updated_at: importedAt });
+                    if (hasCatalog) markCatalogDownloaded();
+                    snapshots.forEach((records, name) => replaceSnapshot(name, records));
+                } else if (hasCatalog) {
+                    // Sales and payments may hold up stock and ledger refreshes.
+                    // Their local effects do not change catalog records.
+                    const productWrites = queueStore.index('entity_name').count('products');
+                    productWrites.onsuccess = () => {
+                        if (productWrites.result) return;
+                        replaceSnapshot(STORE_NAMES.products, snapshots.get(STORE_NAMES.products));
+                        replaceSnapshot(STORE_NAMES.productVariants, snapshots.get(STORE_NAMES.productVariants));
+                        markCatalogDownloaded();
+                    };
+                }
             };
-        };
-        const applySnapshot = () => {
-            imported = true;
-            const metadata = tx.objectStore(STORE_NAMES.metadata);
-            for (const key of ['user', 'company', 'cash', 'offline_pages', 'offline_details']) {
-                if (payload[key]) metadata.put({ key, value: payload[key], updated_at: importedAt });
-            }
-            metadata.put({ key: 'last_bootstrap_at', value: importedAt, updated_at: importedAt });
-            for (const [name, records] of snapshots) {
-                const store = tx.objectStore(name);
-                const request = store.getAll();
-                request.onsuccess = () => {
-                    const pending = new Set();
-                    request.result.forEach((row) => {
-                        if (row.sync_status !== "synced") pending.add(row.id);
-                        else store.delete(row.id);
-                    });
-                    records.forEach((row) => { if (!pending.has(row.id)) store.put(row); });
-                };
-            }
         };
     });
 }
 
-export async function searchProducts(query = "") {
+export async function searchProducts(query = "", offset = 0, limit = 10) {
     const q = normalizeText(query);
     const [products, variants] = await Promise.all([
         getAll(STORE_NAMES.products),
@@ -589,7 +604,7 @@ export async function searchProducts(query = "") {
         variantByProduct.set(String(variant.product_id), list);
     });
     return products
-        .filter((product) => product.is_active !== false)
+        .filter((product) => product.is_active !== false && product.operation_type !== 'delete')
         .filter((product) => {
             if (!q) return true;
             const productText = normalizeText([product.name, product.sku, product.category].join(" "));
@@ -599,7 +614,8 @@ export async function searchProducts(query = "") {
                 .join(" "));
             return productText.includes(q) || variantText.includes(q);
         })
-        .slice(0, 10)
+        .sort((a, b) => (a.server_id || Number.MAX_SAFE_INTEGER) - (b.server_id || Number.MAX_SAFE_INTEGER))
+        .slice(offset, offset + limit)
         .map((product) => ({
             id: variantByProduct.has(String(product.id)) ? product.id : product.server_id || product.id,
             name: product.name,
@@ -609,9 +625,11 @@ export async function searchProducts(query = "") {
 
 export async function variantsForProduct(productId) {
     const variants = await getAll(STORE_NAMES.productVariants);
+    const mappedVariant = /^\d+$/.test(String(productId)) ? null : await getMetadata(`product_variant_mapping:${productId}`);
     return variants
         .filter((variant) => (String(variant.product_id) === String(productId)
-            || variant.product_local_uuid === productId) && variant.is_active !== false)
+            || variant.product_local_uuid === productId
+            || (mappedVariant && String(variant.server_id) === String(mappedVariant))) && variant.is_active !== false)
         .map((variant) => ({
             id: variant.server_id || variant.id,
             sku: variant.variant_sku,
@@ -648,6 +666,9 @@ export async function stockForVariant(variantId) {
 }
 
 export async function priceForVariant(variantId, orderType = "b2c") {
+    if (String(variantId).startsWith('local-variant-')) {
+        variantId = await getMetadata(`product_variant_mapping:${String(variantId).slice('local-variant-'.length)}`) || variantId;
+    }
     const variants = await getAll(STORE_NAMES.productVariants);
     const variant = variants.find((row) => String(row.server_id || row.id) === String(variantId) || String(row.id) === String(variantId));
     if (!variant) return "0.00";

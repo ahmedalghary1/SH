@@ -45,15 +45,17 @@ async function render() {
     const q = (params.get('q') || '').trim().toLocaleLowerCase();
     const matches = row => !q || JSON.stringify(row).toLocaleLowerCase().includes(q);
     const title = node('h1', productList ? 'المنتجات المحلية' : customerList ? 'العملاء المحليون' : path.includes('quotes') ? 'عروض الأسعار المحلية' : 'الفواتير المحلية');
-    const children = [title, node('p', `بيانات محفوظة على هذا الجهاز — آخر تحميل: ${new Date(downloaded).toLocaleString('ar-EG')}`)];
+    const header = detail ? null : container.querySelector('.page-head');
+    const invoiceNavigation = orderList ? container.querySelector('.invoice-navigation') : null;
+    const children = [header || title];
+    if (invoiceNavigation) children.push(invoiceNavigation);
+    children.push(node('p', `بيانات محفوظة على هذا الجهاز — آخر تحميل: ${new Date(downloaded).toLocaleString('ar-EG')}`));
     if (productList) {
-        children.push(link('إضافة منتج', '/products/create/'));
         children.push(table(['المنتج', 'الكود', 'سعر الجملة', 'سعر القطاعي'], products.filter(matches).map(row => [
             row.server_id ? link(row.name, `/products/${row.server_id}/`) : row.name, row.sku, row.wholesale_price, row.retail_price,
         ])));
     } else if (orderList) {
         const quote = path.includes('quotes');
-        children.push(link(quote ? 'عرض سعر جديد' : 'فاتورة جديدة', `/orders/create/${quote ? '?document=quote' : ''}`));
         children.push(table(['المستند', 'العميل', 'الإجمالي', 'المدفوع', 'المتبقي', 'الحالة'], orders
             .filter(row => (row.document_type === 'quote') === quote && matches(row))
             .filter(row => !params.get('status') || row.status === params.get('status'))

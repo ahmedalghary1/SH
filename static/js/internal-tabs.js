@@ -28,7 +28,7 @@
   let controller = null;
   let navigationNumber = 0;
   let openNextInNewTab = false;
-  const shellScriptPattern = /\/static\/js\/(?:main|internal-tabs|table-controls)\.js|\/static\/js\/pwa\//;
+  const shellScriptPattern = /\/static\/js\/(?:main|internal-tabs|table-controls|table-navigation)\.js$|\/static\/js\/pwa\//;
   const save = () => {
     state.activeUrl = activeUrl || lastLoadedUrl;
     try { sessionStorage.setItem(storageKey, JSON.stringify(state)); } catch (_error) { /* Private browsing may block storage. */ }
@@ -150,7 +150,18 @@
     bar.scrollLeft = previousScrollLeft;
   }
 
-  async function runPageScripts(doc, thisNavigation) {
+  async function loadPageAssets(doc, url, thisNavigation) {
+    for (const style of doc.querySelectorAll('head link[rel="stylesheet"][href]')) {
+      const href = new URL(style.getAttribute('href'), new URL(url, location.origin));
+      if (href.origin !== location.origin) continue;
+      const loaded = Array.from(document.head.querySelectorAll('link[rel="stylesheet"]'))
+        .some(link => link.href === href.href);
+      if (!loaded) {
+        const link = document.importNode(style, false);
+        link.href = href.href;
+        document.head.append(link);
+      }
+    }
     for (const script of doc.querySelectorAll('script')) {
       if (thisNavigation !== navigationNumber) return;
       if (script.src) {
@@ -243,7 +254,7 @@
       lastLoadedUrl = url;
       if (push) history.pushState({workspace: true}, '', url);
       document.title = doc.title || document.title;
-      await runPageScripts(doc, thisNavigation);
+      await loadPageAssets(doc, url, thisNavigation);
       if (thisNavigation !== navigationNumber) return;
       save();
       render();
@@ -333,7 +344,7 @@
       lastLoadedUrl = url;
       history.replaceState({workspace: true}, '', url);
       document.title = doc.title || document.title;
-      await runPageScripts(doc, thisNavigation);
+      await loadPageAssets(doc, url, thisNavigation);
       if (thisNavigation !== navigationNumber) return true;
       save();
       render();

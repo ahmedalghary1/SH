@@ -9,7 +9,7 @@
             <svg class="ui-icon"><use href="#icon-plus"></use></svg>
             عرض سعر
         </a>
-    {% else %}
+    {% elif request.user.is_manager or request.user.is_sales %}
         <a class="btn btn-accent" href="{% url 'orders:create' %}">
             <svg class="ui-icon"><use href="#icon-plus"></use></svg>
             إضافة فاتورة

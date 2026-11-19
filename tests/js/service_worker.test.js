@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const { test } = require('node:test');
 const source = fs.readFileSync('static/service-worker.js', 'utf8');
+const staticCache = `${source.match(/const CACHE_VERSION = "([^"]+)"/)[1]}-static`;
 
 function worker() {
     const handlers = {}, stores = new Map();
@@ -19,7 +20,11 @@ function worker() {
             const key = (request) => typeof request === 'string' ? request : request.url;
             return {
                 async put(request, response) { entries.set(key(request), response.clone()); },
-                async match(request) { return entries.get(key(request))?.clone(); },
+                async match(request, options = {}) {
+                    const response = entries.get(key(request));
+                    if (!options.ignoreVary && response?.headers.get('Vary') === 'Accept' && request.headers?.get('Accept')) return;
+                    return response?.clone();
+                },
                 async keys() { return [...entries.keys()].map(url => new Request(url)); },
                 async delete(request) { return entries.delete(key(request)); },
             };
@@ -73,11 +78,57 @@ test('a proxy HTML response cannot masquerade as a JavaScript offline asset', as
     await assert.rejects(installation, /main\.js/);
 });
 
+test('offline stylesheets match precached public files despite Accept and version query differences', async () => {
+    const w = worker();
+    const css = 'https://erp.test/static/css/main.css';
+    w.stores.set(staticCache, new Map([
+        [css, new Response('body {display:block}', {headers: {'Content-Type': 'text/css', 'Vary': 'Accept'}})],
+    ]));
+    w.setOnline(false);
+    w.fetch(async () => { throw new Error('offline'); });
+    for (const url of [css, css + '?v=1']) {
+        let response;
+        w.handlers.fetch({
+            request: new Request(url, {headers: {'Accept': 'text/css,*/*;q=0.1'}}),
+            respondWith(value) { response = value; },
+        });
+        assert.equal(await (await response).text(), 'body {display:block}');
+    }
+});
+
+test('prepared create screens survive browsing more than the private cache limit', async () => {
+    const w = worker();
+    const scope = 'u1-b1-rmanager-s0';
+    const path = '/customers/simple/create/';
+    w.fetch(async request => {
+        const url = new URL(request.url);
+        const type = url.pathname.endsWith('.js') ? 'text/javascript'
+            : url.pathname.endsWith('.css') ? 'text/css'
+            : url.pathname.endsWith('.json') ? 'application/json' : 'text/html';
+        return url.pathname.startsWith('/static/') || url.pathname === '/manifest.json' || url.pathname === '/offline/'
+            ? new Response('asset', {headers: {'Content-Type': type}})
+            : privateResponse(scope, url.pathname);
+    });
+    let prepared;
+    w.handlers.message({
+        data: {type: 'CACHE_URLS', urls: [path], requiredUrls: [path], scope},
+        waitUntil(value) { prepared = value; },
+    });
+    await prepared;
+    for (let i = 1; i <= 101; i++) await w.navigate(`/products/${i}/`);
+    w.setOnline(false);
+    assert.equal(await (await w.navigate(path)).text(), path);
+    assert.equal((await w.navigate('/products/1/')).headers.get('X-PWA-Local'), null);
+});
+
 test('an incomplete release cannot install or remove the previous offline shell', async () => {
     const w = worker();
     const oldCache = 'sh-pwa-vprevious-static';
     w.stores.set(oldCache, new Map());
-    const asset = request => new Response('asset', {headers: {'Content-Type': request.url.endsWith('.js') ? 'text/javascript' : request.url.endsWith('.css') ? 'text/css' : 'application/json'}});
+    const asset = request => {
+        const {pathname} = new URL(request.url);
+        return new Response('asset', {headers: {'Content-Type': pathname.endsWith('.js') ? 'text/javascript' : pathname.endsWith('.css') ? 'text/css' : 'application/json'}});
+    };
     w.fetch(async request => request.url.endsWith('/pwa/install.js') ? new Response('missing', {status: 404}) : asset(request));
     let done;
     w.handlers.install({waitUntil(value) { done = value; }});

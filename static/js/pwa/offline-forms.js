@@ -237,6 +237,12 @@ function statusForOrderPath(path, fields = {}) {
 
 function orderPayload(fields, path, localUuid, serverId = "") {
     const items = parseItemsJson(fields.items_json);
+    if (path === '/orders/create/' && !fields.customer) {
+        if (fields.order_type === 'b2b') throw new Error('بيانات العميل مطلوبة عند البيع جملة أو لتاجر.');
+        if (fields.document_type !== 'quote' && fields.payment_method === 'credit') {
+            throw new Error('اختر العميل عند تسجيل فاتورة آجلة.');
+        }
+    }
     return {
         id: localUuid,
         local_uuid: localUuid,
@@ -561,10 +567,20 @@ function submitNormally(form, submitter = null) {
 
 export async function handleJsonRequest(url, options = {}) {
     const parsed = new URL(url, window.location.origin);
+    if (parsed.origin !== window.location.origin) return null;
     const path = parsed.pathname;
 
     if (path === "/orders/ajax/search-products/") {
-        return { success: true, message: "Loaded offline", data: await searchProducts(parsed.searchParams.get("q") || "") };
+        if (!(await getMetadata('last_catalog_at') || await getMetadata('last_bootstrap_at'))) {
+            return { success: false, message: 'لم يكتمل تنزيل المنتجات. اتصل بالإنترنت واضغط مزامنة ثم أعد المحاولة.' };
+        }
+        const offset = Number(parsed.searchParams.get('offset') || 0);
+        if (!Number.isSafeInteger(offset) || offset < 0 || offset > 2147483647) {
+            return { success: false, message: 'موضع نتائج البحث غير صالح.' };
+        }
+        const pageSize = 10;
+        const page = await searchProducts(parsed.searchParams.get('q') || '', offset, pageSize + 1);
+        return { success: true, data: page.slice(0, pageSize), has_more: page.length > pageSize };
     }
     const productVariantsMatch = path.match(/^\/orders\/ajax\/products\/([^/]+)\/variants\/$/);
     if (productVariantsMatch) {
@@ -603,7 +619,7 @@ export async function handleJsonRequest(url, options = {}) {
         const body = typeof options.body === "string" ? JSON.parse(options.body || "{}") : {};
         return { success: true, message: "Calculated offline", data: await estimateOrderTotals(body) };
     }
-    throw new Error("No offline handler for this request");
+    return null;
 }
 
 async function serverIsReachable(form) {

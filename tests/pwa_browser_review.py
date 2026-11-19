@@ -73,6 +73,10 @@ def main(startup_review=None):
             if unavailable.is_set():
                 start_response('503 Service Unavailable', [('Content-Type', 'text/plain')])
                 return [b'Simulated server outage']
+            if environ['PATH_INFO'].startswith('/static/css/'):
+                def stylesheet_response(status, headers, exc_info=None):
+                    return start_response(status, [*headers, ('Vary', 'Accept')], exc_info)
+                return application(environ, stylesheet_response)
             return application(environ, start_response)
 
         server = make_server('127.0.0.1', 0, server_application, handler_class=QuietHandler)
@@ -144,6 +148,15 @@ def main(startup_review=None):
                 return {imported,stock:(await db.getRecord(db.STORE_NAMES.stock,stockKey)).quantity};
             }""")
             assert result == dict(imported=False, stock=4), result
+            result = page.evaluate("""async () => {
+                const scope = (await import('/static/js/pwa/identity.js')).getOfflineScope();
+                const imported = await db.importBootstrap({scope, products:[{id:101, name:'Refreshed catalog'}],
+                    variants:[{id:102, product_id:101, variant_sku:'REFRESHED'}],
+                    stock:[{warehouse_id:fixture.warehouse,variant_id:fixture.variant,quantity:10}]});
+                return {imported, product:(await db.searchProducts('REFRESHED'))[0]?.id,
+                    stock:(await db.getRecord(db.STORE_NAMES.stock,stockKey)).quantity};
+            }""")
+            assert result == dict(imported=False, product=101, stock=4), result
             print('PASS: atomic stock/invoice/queue, concurrent sale rejection, pending snapshot protection', flush=True)
             # Simulate server commit with a lost response, then safely retry the same key.
             page.evaluate("""() => {

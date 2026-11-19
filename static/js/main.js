@@ -181,28 +181,40 @@ function formatExactNumber(value) {
 
 window.SHNumbers = { normalize: normalizeNumberText, format: formatExactNumber };
 
-async function requestJson(url, options = {}) {
+async function offlineJson(url, options) {
+    const payload = await window.SHOffline?.handleJsonRequest(url, options);
+    if (payload?.success === false) throw new Error(payload.message || 'تعذر تنفيذ العملية على الجهاز.');
+    return payload;
+}
+
+async function requestJson(url, { preferLocal = false, readTimeout = 0, ...options } = {}) {
     const method = (options.method || 'GET').toUpperCase();
     const isRead = method === 'GET' || method === 'HEAD';
-    if (navigator.onLine === false && window.SHOffline?.handleJsonRequest) {
-        const payload = await window.SHOffline.handleJsonRequest(url, options);
-        if (payload?.success === false) throw new Error(payload.message || 'تعذر تنفيذ العملية على الجهاز.');
-        return payload;
+    if (navigator.onLine === false || (isRead && preferLocal)) {
+        const local = await offlineJson(url, options);
+        if (local) return local;
+        if (navigator.onLine === false) throw new Error('هذه العملية تحتاج إلى اتصال بالإنترنت.');
     }
+    const controller = isRead && readTimeout && !options.signal ? new AbortController() : null;
+    const timer = controller && setTimeout(() => controller.abort(), readTimeout);
     let response;
     try {
-        response = await fetch(url, { credentials: 'same-origin', ...options });
+        response = await fetch(url, { credentials: 'same-origin', ...options, signal: options.signal || controller?.signal });
     } catch (error) {
         // A server may have committed a POST before its response was lost.
         // Falling back to the offline queue afterwards would duplicate it.
-        if (isRead && error.name !== 'AbortError' && window.SHOffline?.handleJsonRequest) {
-            try { return await window.SHOffline.handleJsonRequest(url, options); } catch (_offlineError) { /* Show the original connection failure. */ }
+        if (isRead && (error.name !== 'AbortError' || controller?.signal.aborted)) {
+            const local = await offlineJson(url, options);
+            if (local) return local;
         }
-        if (error.name === 'AbortError') throw error;
+        if (error.name === 'AbortError' && !controller?.signal.aborted) throw error;
         throw new Error(isRead ? 'تعذر الاتصال. تحقق من الإنترنت ثم حاول مرة أخرى.' : 'تعذر تأكيد نتيجة الحفظ. تحقق من السجلات قبل إعادة المحاولة.');
+    } finally {
+        if (controller) clearTimeout(timer);
     }
-    if (isRead && (response.redirected || [502, 503, 504].includes(response.status)) && window.SHOffline?.handleJsonRequest) {
-        try { return await window.SHOffline.handleJsonRequest(url, options); } catch (_offlineError) { /* Unknown reads keep their server response. */ }
+    if (isRead && (response.redirected || [502, 503, 504].includes(response.status))) {
+        const local = await offlineJson(url, options);
+        if (local) return local;
     }
     if (!(response.headers.get('content-type') || '').includes('application/json')) {
         throw new Error(response.redirected ? 'انتهت الجلسة. حدّث الصفحة ثم سجّل الدخول مجددًا.' : 'تعذر الاتصال بالخادم. حاول مرة أخرى.');

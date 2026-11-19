@@ -1,5 +1,5 @@
 // Release all shell assets together; private pages require a verified scope.
-const CACHE_VERSION = "sh-pwa-v2026-11-18-scope-ready-03";
+const CACHE_VERSION = "sh-pwa-v2026-11-19-offline-sales-01";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_PREFIX = 'sh-pwa-pages-v2-';
 const META_CACHE = "sh-pwa-identity-v1";
@@ -20,6 +20,7 @@ const CORE_ASSETS = [
   "/static/js/pwa/customer-ledger.js",
   "/static/js/internal-tabs.js", "/static/js/orders.js", "/static/js/inventory.js",
   "/static/js/product_create.js", "/static/js/purchase_create.js", "/static/js/purchase_return.js",
+  "/static/js/product_create.js?v=20260808-01",
   "/static/js/pwa/identity.js", "/static/js/pwa/db.js", "/static/js/pwa/sync-queue.js",
   "/static/js/pwa/install.js",
   "/static/js/pwa/sync-engine.js", "/static/js/pwa/offline-forms.js", "/static/js/pwa/offline-list-view.js",
@@ -29,6 +30,7 @@ const CORE_ASSETS = [
   "/static/fonts/cairo/Cairo-600.ttf", "/static/fonts/cairo/Cairo-700.ttf",
   "/static/icons/icon-192.png", "/static/icons/icon-512.png",
 ];
+const CORE_STATIC_PATHS = new Set(CORE_ASSETS.filter(path => path.startsWith('/static/') && !path.includes('?')));
 const clientScopes = new Map();
 let activeScope;
 const validScope = (value) => /^u\d+-b(?:\d+|all)-r[a-z_]+-s[01]$/.test(value || "");
@@ -92,12 +94,18 @@ async function storeResponse(request, response, scope) {
   const url = sameOriginUrl(request);
   if (!url || !canStore(response, url, scope)) return;
   const name = isPublicAsset(url) ? STATIC_CACHE : `${PAGE_PREFIX}${scope}`;
-  const cache = await caches.open(name);
   // Retain Vary. Ignore it only when reading this account/branch's exact URL.
   try {
+    const cache = await caches.open(name);
     await cache.put(new Request(url.href), response.clone());
     if (name.startsWith(PAGE_PREFIX)) {
-      const keys = (await cache.keys()).filter(key => !PINNED_PATHS.has(new URL(key.url).pathname));
+      const metadata = await caches.open(META_CACHE);
+      const saved = await metadata.match(`/__pwa_required_pages__/${scope}`);
+      const required = new Set(await saved?.json() || []);
+      const keys = (await cache.keys()).filter(key => {
+        const {pathname, search} = new URL(key.url);
+        return !required.has(pathname + search) && (search || !PINNED_PATHS.has(pathname));
+      });
       await Promise.all(keys.slice(0, Math.max(0, keys.length - MAX_PAGES)).map((key) => cache.delete(key)));
     }
   } catch { /* A cache/quota error must never fail a successful network GET. */ }
@@ -106,7 +114,7 @@ async function storeResponse(request, response, scope) {
 async function offlineFallback() {
   try {
     const cache = await caches.open(STATIC_CACHE);
-    const cached = await cache.match(OFFLINE_URL);
+    const cached = await cache.match(OFFLINE_URL, {ignoreVary: true});
     if (cached) return cached;
   } catch { /* A disabled/full cache must still return a visible HTML screen. */ }
   return new Response(
@@ -198,13 +206,25 @@ async function networkNavigation(request, event) {
   } finally { clearTimeout(timeout); }
 }
 
-async function staticAsset(request) {
-  const cache = await caches.open(STATIC_CACHE);
-  const cached = await cache.match(request);
+async function staticAsset(request, url) {
+  const cache = await caches.open(STATIC_CACHE).catch(() => null);
+  // Precaching uses a programmatic GET. A stylesheet or script can send a
+  // different Accept header even though the public file at the URL is identical.
+  const cached = await cache?.match(url.href, {ignoreVary: true}).catch(() => null);
   if (cached) return cached;
-  const response = await fetch(request);
-  await storeResponse(request, response, null);
-  return response;
+  const fallback = url.search && CORE_STATIC_PATHS.has(url.pathname)
+    ? await cache?.match(new URL(url.pathname, url.origin).href, {ignoreVary: true}).catch(() => null)
+    : null;
+  if (fallback && self.navigator?.onLine === false) return fallback;
+  try {
+    const response = await fetch(request);
+    if (canStore(response, url, null)) await storeResponse(request, response, null);
+    else if (fallback) return fallback;
+    return response;
+  } catch (error) {
+    if (fallback) return fallback;
+    throw error;
+  }
 }
 
 async function cacheUrls(urls, scope) {
@@ -295,7 +315,7 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith('/settings/backups/')) return;
   if (request.mode === "navigate" || request.destination === "document" || request.headers?.get('X-Workspace-Tab') === '1') {
     event.respondWith(networkNavigation(request, event).catch(() => offlineFallback()));
-  } else if (isPublicAsset(url)) event.respondWith(staticAsset(request));
+  } else if (isPublicAsset(url)) event.respondWith(staticAsset(request, url));
 });
 self.addEventListener("message", (event) => {
   const message = event.data || {};
@@ -306,9 +326,14 @@ self.addEventListener("message", (event) => {
   }
   if (message.type === "CACHE_URLS" && validScope(message.scope)) {
     event.waitUntil((async () => {
+      const metadata = await caches.open(META_CACHE);
       if (Array.isArray(message.details)) {
-        const metadata = await caches.open(META_CACHE);
         await metadata.put(`/__pwa_details__/${message.scope}`, new Response(JSON.stringify(message.details)));
+      }
+      if (Array.isArray(message.requiredUrls)) {
+        const required = message.requiredUrls.slice(0, MAX_PAGES).map(sameOriginUrl)
+          .filter(url => url && isPrivatePage(url)).map(url => url.pathname + url.search);
+        await metadata.put(`/__pwa_required_pages__/${message.scope}`, new Response(JSON.stringify(required)));
       }
       const assets = await cacheUrls(CORE_ASSETS, null);
       const pages = await cacheUrls(Array.isArray(message.urls) ? message.urls.slice(0, MAX_PAGES) : [], message.scope);

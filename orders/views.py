@@ -588,11 +588,17 @@ def ajax_search_products(request):
     except RateLimitExceeded:
         return JsonResponse({'success': False, 'message': 'تجاوزت الحد المسموح من الطلبات. يرجى المحاولة مرة أخرى بعد دقيقة.'}, status=429)
     q = request.GET.get('q', '').strip()
+    raw_offset = request.GET.get('offset', '0')
+    offset = 0 if raw_offset == '0' else positive_id(raw_offset)
+    if offset is None or offset > 2147483647:
+        return JsonResponse({'success': False, 'message': 'موضع نتائج البحث غير صالح.'}, status=400)
     qs = _available_products_for_user(request.user)
     if q:
-        qs = qs.filter(arabic_search_q(('name', 'sku', 'variants__variant_sku'), q)).distinct()
-    data = [{'id': p.id, 'name': p.name, 'sku': p.sku} for p in qs[:10]]
-    return JsonResponse({'success': True, 'message': 'تم جلب المنتجات', 'data': data})
+        qs = qs.filter(arabic_search_q(('name', 'sku', 'variants__variant_sku', 'variants__barcode'), q)).distinct()
+    page_size = 10
+    page = list(qs.order_by('pk')[offset:offset + page_size + 1])
+    data = [{'id': p.id, 'name': p.name, 'sku': p.sku} for p in page[:page_size]]
+    return JsonResponse({'success': True, 'message': 'تم جلب المنتجات', 'data': data, 'has_more': len(page) > page_size})
 
 
 @require_GET

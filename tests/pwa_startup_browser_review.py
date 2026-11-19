@@ -4,11 +4,17 @@ Set PWA_BROWSER_EXECUTABLE to test the installed Brave binary on Windows.
 """
 from django.test import Client
 
-from pwa_browser_review import main
+from pwa_browser_review import main, wait_for
 
 
 def review(browser, base, unavailable):
     from accounts.models import User
+    from inventory.models import Warehouse
+    from inventory.services import stock_in
+    from invoices.models import Invoice
+    from orders.models import Order
+    from products.models import Product, ProductVariant
+    from sync_api.models import SyncOperation
 
     # Browser UI can install the manifest even before the first sign-in.
     public = browser.new_context()
@@ -27,8 +33,22 @@ def review(browser, base, unavailable):
         unavailable.clear()
         public.close()
 
+    manager = User.objects.get(username='pwa-test')
+    warehouse = Warehouse.objects.get(name='PWA warehouse')
+    for index in range(12):
+        product = Product.objects.create(name=f'Catalog product {index}', sku=f'CAT-PWA-{index}')
+        variant = ProductVariant.objects.create(
+            product=product, variant_sku=f'CAT-V-{index}', barcode=f'9876543210{index}',
+            retail_price=30, cost_price=10,
+        )
+    stock_in(variant=variant, warehouse=warehouse, quantity=5, unit_cost=10, user=manager)
     client = Client()
-    client.force_login(User.objects.get(username='pwa-test'))
+    client.force_login(manager)
+    catalog_page = client.get('/orders/ajax/search-products/?offset=10').json()
+    assert variant.product_id in [row['id'] for row in catalog_page['data']]
+    assert not catalog_page['has_more']
+    barcode_match = client.get('/orders/ajax/search-products/?q=987654321011').json()
+    assert [row['id'] for row in barcode_match['data']] == [variant.product_id]
     context = browser.new_context()
     pending_images = []
     context.route('**/__pwa_slow_image__', lambda route: pending_images.append(route))
@@ -72,6 +92,63 @@ def review(browser, base, unavailable):
         page.evaluate('window.SHSync.bootstrapNow()')
         page.wait_for_function('window.SHSync.isOfflineReady()', timeout=90000)
         print('PASS: reconnect completes the snapshot and required screens before enabling offline installation', flush=True)
+
+        # No prior visit to these lists or the statement. The server outage
+        # leaves navigator.onLine true throughout navigation and invoice entry.
+        unavailable.set()
+        release_images()
+        page.close()
+        page = context.new_page()
+        context.new_cdp_session(page).send('Network.clearBrowserCache')
+        response = page.goto(base + '/invoices/', wait_until='domcontentloaded')
+        assert response.from_service_worker and page.evaluate('navigator.onLine')
+        page.wait_for_selector('[data-local-data-view]')
+        assert page.locator('.page-head').evaluate("(el) => getComputedStyle(el).display") == 'flex'
+        assert page.locator('body').evaluate("(el) => getComputedStyle(el).fontFamily").startswith('Cairo')
+        assert page.locator('[data-page-content] .invoice-navigation').count() == 1
+        page.evaluate("window.SHWorkspace.navigate('/customers/')")
+        page.wait_for_selector('[data-local-data-view] .page-head a[href="/customers/simple/create/"]')
+        page.evaluate("window.SHWorkspace.navigate('/finance/statements/customer/')")
+        page.wait_for_function("getComputedStyle(document.querySelector('.statement-head') || document.body).display === 'flex'")
+        page.evaluate("window.SHWorkspace.navigate('/invoices/')")
+        page.locator('a.btn[href="/orders/create/"]').click()
+        page.wait_for_selector('#order-form[data-order-ready]')
+        page.locator('#invoice-kind').evaluate("""select => {
+            select.value = 'retail';
+            select.dispatchEvent(new Event('change', {bubbles:true}));
+        }""")
+        page.locator('#product-search').focus()
+        page.locator('[data-product-offset]').click()
+        page.locator('#product-results .search-result').filter(has_text='CAT-PWA-11').wait_for()
+        page.locator('#product-search').fill('987654321011')
+        matching = page.locator('#product-results .search-result')
+        matching.filter(has_text='CAT-PWA-11').wait_for()
+        page.wait_for_function("document.querySelectorAll('#product-results .search-result').length === 1")
+        matching.click()
+        page.wait_for_function("(id) => !!document.querySelector(`#variant-select option[value='${id}']`)", arg=variant.pk)
+        page.locator('#variant-select').evaluate("(select, id) => {select.value = id; select.dispatchEvent(new Event('change', {bubbles:true}));}", str(variant.pk))
+        page.wait_for_function("(id) => document.querySelector('#item-warehouse').value === id", arg=str(warehouse.pk))
+        page.locator('#add-item').click()
+        assert 'Catalog product 11' in page.locator('#order-items-body').inner_text()
+        page.locator('#order-form button[value="confirm"]').click()
+        page.wait_for_function("document.querySelector('#order-form').dataset.offlineQueued === 'true'")
+        queued = page.evaluate("""async () => {
+            const db = await import('/static/js/pwa/db.js');
+            return await db.getAll(db.STORE_NAMES.syncQueue);
+        }""")
+        assert len(queued) == 1 and queued[0]['payload']['order']['action'] == 'confirm', queued
+        assert not Invoice.objects.exists()
+        unavailable.clear()
+        page.evaluate('window.SHSync.processQueue()')
+        wait_for(page, """async () => {
+            const db = await import('/static/js/pwa/db.js');
+            return !(await db.getAll(db.STORE_NAMES.syncQueue)).length;
+        }""")
+        assert Invoice.objects.filter(order__items__variant=variant, order__customer__isnull=True).count() == 1, (
+            list(Order.objects.values('id', 'status', 'document_type')),
+            list(SyncOperation.objects.values_list('response_json', flat=True)),
+        )
+        print('PASS: cached CSS, add actions, complete catalog and invoice entry survive a cold offline page load', flush=True)
     finally:
         unavailable.clear()
         release_images()
@@ -79,7 +156,6 @@ def review(browser, base, unavailable):
 
     # Realistic existing administrator: profile assigned to one branch, UI set
     # to all branches. This must not send a branch-specific scope to the API.
-    manager = User.objects.get(username='pwa-test')
     administrator = User.objects.create_superuser(username='all-branches-ready', branch_id=manager.branch_id)
     client.force_login(administrator)
     context = browser.new_context()

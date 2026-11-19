@@ -294,7 +294,10 @@
             if (!(options.body instanceof FormData) && !headers['Content-Type']) {
                 headers['Content-Type'] = 'application/json';
             }
-        return window.SHHttp.json(url, { ...options, headers });
+        return window.SHHttp.json(url, {
+            ...options, headers, readTimeout: 5000,
+            preferLocal: Boolean(form.closest('[data-pwa-local]')),
+        });
     }
 
     function customerLabel(customer) {
@@ -319,20 +322,24 @@
         searchInput.setAttribute("aria-expanded", "false");
     }
 
-    async function renderProductResults(query) {
+    async function renderProductResults(query, offset = 0) {
         const thisSearch = ++productSearchNumber;
         let data;
         try {
-            data = await fetchJson(`/orders/ajax/search-products/?q=${encodeURIComponent(query)}`);
+            const params = new URLSearchParams({q: query, offset: String(offset)});
+            data = await fetchJson(`/orders/ajax/search-products/?${params}`);
         } catch (error) {
             if (thisSearch !== productSearchNumber) return;
-            resultsBox.textContent = error.message;
+            if (!offset) resultsBox.textContent = error.message;
+            else window.alert(error.message);
             openProductResults();
             return;
         }
         if (thisSearch !== productSearchNumber) return;
-        resultsBox.innerHTML = "";
+        if (offset) resultsBox.querySelector('[data-product-offset]')?.remove();
+        else resultsBox.replaceChildren();
         if (!data.data.length) {
+            if (offset) return;
             const empty = document.createElement("div");
             empty.className = "combo-empty";
             empty.textContent = "لا توجد نتائج";
@@ -351,6 +358,17 @@
             button.dataset.name = product.name;
             resultsBox.appendChild(button);
         });
+        if (data.has_more) {
+            const more = document.createElement('button');
+            more.type = 'button';
+            more.className = 'combo-option';
+            more.tabIndex = -1;
+            more.setAttribute('role', 'option');
+            more.dataset.productOffset = offset + data.data.length;
+            more.addEventListener('click', () => renderProductResults(query, Number(more.dataset.productOffset)));
+            more.textContent = 'عرض المزيد من المنتجات';
+            resultsBox.appendChild(more);
+        }
         openProductResults();
     }
 
