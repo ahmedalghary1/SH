@@ -89,7 +89,6 @@ class OrderListView(RoleRequiredMixin, ExportListMixin, ListView):
     model = Order
     template_name = 'orders/list.html'
     context_object_name = 'orders'
-    paginate_by = 20
     document_type = Order.DOCUMENT_SALE
     export_title = 'قائمة الفواتير'
     export_filename = 'orders'

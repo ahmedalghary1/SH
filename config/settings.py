@@ -126,7 +126,7 @@ USE_WHITENOISE = (
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
+    'config.admin_site.SystemAdminConfig',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',

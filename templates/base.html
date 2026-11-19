@@ -26,7 +26,7 @@
     <main class="main-area" id="main-content" tabindex="-1">
         {% include 'partials/navbar.html' %}
         <nav class="workspace-tabs" data-workspace-tabs aria-label="التبويبات المفتوحة"></nav>
-        <section class="page-content" data-page-content{% if page_obj %} data-total-records="{{ page_obj.paginator.count }}"{% endif %}>
+        <section class="page-content" data-page-content>
             {% include 'partials/messages.html' %}
             {% block content %}{% endblock %}
             {% current_page_audit_history %}

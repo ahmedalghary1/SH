@@ -236,6 +236,6 @@ def get_crm_dashboard_context(user=None):
         'due_followups_count': due_followups.count(),
         'open_complaints_count': open_complaints.count(),
         'top_customers': get_top_customers(5, user=user),
-        'recent_interactions': recent_interactions.order_by('-created_at')[:10],
-        'due_followups': due_followups[:10],
+        'recent_interactions': recent_interactions.order_by('-created_at'),
+        'due_followups': due_followups,
     }

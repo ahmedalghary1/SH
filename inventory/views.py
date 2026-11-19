@@ -26,7 +26,6 @@ class WarehouseListView(RoleRequiredMixin, ExportListMixin, ListView):
     model = Warehouse
     template_name = 'inventory/warehouses/list.html'
     context_object_name = 'warehouses'
-    paginate_by = 20
     export_title = 'قائمة المخازن'
     export_filename = 'warehouses'
     export_columns = (
@@ -72,7 +71,6 @@ class StockListView(RoleRequiredMixin, ExportListMixin, ListView):
     model = Stock
     template_name = 'inventory/stock/list.html'
     context_object_name = 'stocks'
-    paginate_by = 30
     export_title = 'قائمة المخزون'
     export_filename = 'stock'
     
@@ -135,13 +133,10 @@ class StockListView(RoleRequiredMixin, ExportListMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        pagination_params = self.request.GET.copy()
-        pagination_params.pop('page', None)
         context['warehouses'] = self.get_allowed_warehouses()
         context['selected_warehouse_id'] = self.request.GET.get('warehouse', '')
         context['search_query'] = self.request.GET.get('q', '')
         context['low_only'] = self.request.GET.get('low', '')
-        context['pagination_query'] = pagination_params.urlencode()
         context['can_view_costs'] = can_view_costs(self.request.user)
         return context
 
@@ -151,7 +146,6 @@ class StockMovementListView(RoleRequiredMixin, ExportListMixin, ListView):
     model = StockMovement
     template_name = 'inventory/movements/list.html'
     context_object_name = 'movements'
-    paginate_by = 30
     export_title = 'قائمة الحركات المخزنية'
     export_filename = 'stock-movements'
     export_columns = (
@@ -177,7 +171,6 @@ class ProductMovementListView(RoleRequiredMixin, ListView):
     allowed_roles = ('manager', 'warehouse')
     template_name = 'inventory/movements/product_detail.html'
     context_object_name = 'movements'
-    paginate_by = 50
 
     def get_queryset(self):
         from products.models import Product
@@ -190,7 +183,7 @@ class ProductMovementListView(RoleRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         params = self.request.GET.copy()
         params.pop('page', None)
-        context.update(product=self.product, pagination_query=params.urlencode(),
+        context.update(product=self.product, filter_query=params.urlencode(),
                        filters=params, warehouses=Warehouse.objects.all(),
                        movement_types=StockMovement.MOVEMENT_TYPE_CHOICES)
         context['movements'] = movement_balance_rows(

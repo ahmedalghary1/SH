@@ -833,7 +833,7 @@ def plan_merge(manifest, records, *, resolution=STRICT):
             'create': sum(c['create'] for c in counts.values()),
             'update': sum(c['update'] for c in counts.values()),
             'skip': sum(c['skip'] for c in counts.values()),
-            'conflict_count': len(conflicts), 'conflicts': conflicts[:100], 'preserved_users': retained,
+            'conflict_count': len(conflicts), 'conflicts': conflicts, 'preserved_users': retained,
             'resolution': resolution, 'resolution_label': dict(RESOLUTIONS).get(resolution, ''),
             'deferred_count': len(deferred), 'deferred_reasons': list(Counter(deferred.values()).items()),
             'media_count': len(media_plan),

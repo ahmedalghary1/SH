@@ -1,6 +1,5 @@
 from django.contrib import messages
 from django.db import transaction
-from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
 from datetime import datetime
 
@@ -168,7 +167,7 @@ class CashDashboardView(ManagerRequiredMixin, TemplateView):
             },
             'sale_type_choices': Order.ORDER_TYPE_CHOICES,
             'period_label': date_from.strftime('%Y-%m-%d') if date_from == date_to else f'{date_from:%Y-%m-%d} - {date_to:%Y-%m-%d}',
-            'transactions': transactions[:50],
+            'transactions': transactions,
         })
         return context
 
@@ -207,7 +206,7 @@ class CashShiftView(SalesRequiredMixin, TemplateView):
             'cash_refunds': cash_refunds,
             'total_in': total_in,
             'total_out': total_out,
-            'transactions': transactions[:50],
+            'transactions': transactions,
         })
         return context
 
@@ -216,7 +215,6 @@ class CashAccountListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = CashAccount
     template_name = 'finance/accounts/list.html'
     context_object_name = 'accounts'
-    paginate_by = 20
     export_title = 'قائمة الحسابات المالية'
     export_filename = 'cash-accounts'
     export_columns = (
@@ -280,7 +278,6 @@ class CashAccountDetailView(ManagerRequiredMixin, DetailView):
     model = CashAccount
     template_name = 'finance/accounts/detail.html'
     context_object_name = 'account'
-    paginate_by = 30
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -306,12 +303,7 @@ class CashAccountDetailView(ManagerRequiredMixin, DetailView):
 
         total_in = transactions.filter(direction=PaymentTransaction.DIRECTION_IN).aggregate(v=Sum('amount'))['v'] or 0
         total_out = transactions.filter(direction=PaymentTransaction.DIRECTION_OUT).aggregate(v=Sum('amount'))['v'] or 0
-        paginator = Paginator(transactions, self.paginate_by)
-        page_obj = paginator.get_page(self.request.GET.get('page'))
-        context['transactions'] = page_obj.object_list
-        context['page_obj'] = page_obj
-        context['paginator'] = paginator
-        context['is_paginated'] = page_obj.has_other_pages()
+        context['transactions'] = transactions
         context['total_in'] = total_in
         context['total_out'] = total_out
         context['net_total'] = total_in - total_out
@@ -323,9 +315,6 @@ class CashAccountDetailView(ManagerRequiredMixin, DetailView):
             'date_from': self.request.GET.get('date_from', ''),
             'date_to': self.request.GET.get('date_to', ''),
         }
-        query = self.request.GET.copy()
-        query.pop('page', None)
-        context['pagination_query'] = query.urlencode()
         return context
 
 
@@ -333,7 +322,6 @@ class TransactionListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = PaymentTransaction
     template_name = 'finance/transactions/list.html'
     context_object_name = 'transactions'
-    paginate_by = 30
     export_title = 'قائمة المعاملات المالية'
     export_filename = 'transactions'
     export_columns = (
@@ -432,7 +420,6 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
     template_name = 'finance/transactions/collection.html'
     form_class = CustomerCollectionForm
     success_url = reverse_lazy('finance:collection_create')
-    paginate_by = 30
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -484,18 +471,9 @@ class CustomerCollectionView(RoleRequiredMixin, FormView):
         context = super().get_context_data(**kwargs)
         queryset = self.get_collection_queryset()
         total_amount = queryset.aggregate(total=Sum('amount'))['total'] or 0
-        paginator = Paginator(queryset, self.paginate_by)
-        page_obj = paginator.get_page(self.request.GET.get('page'))
-        query_params = self.request.GET.copy()
-        query_params.pop('page', None)
-
         form = context['form']
         context.update({
-            'collections': page_obj.object_list,
-            'page_obj': page_obj,
-            'paginator': paginator,
-            'is_paginated': page_obj.has_other_pages(),
-            'pagination_query': query_params.urlencode(),
+            'collections': queryset,
             'total_amount': total_amount,
             'filter_customers': form.fields['customer'].queryset,
             'filter_cash_accounts': CashAccount.objects.filter(is_active=True).order_by('name'),
@@ -877,6 +855,6 @@ class ExpenseReportView(ManagerRequiredMixin, TemplateView):
         transactions = PaymentTransaction.objects.filter(
             transaction_type=PaymentTransaction.TYPE_EXPENSE,
         ).select_related('cash_account', 'created_by')
-        context['transactions'] = transactions[:100]
+        context['transactions'] = transactions
         context['total'] = transactions.aggregate(v=Sum('amount'))['v'] or 0
         return context

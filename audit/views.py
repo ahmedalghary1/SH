@@ -53,7 +53,7 @@ def audit_log_list(request):
     actions = AuditLog.ACTION_CHOICES
     
     context = {
-        'logs': queryset[:500],  # Limit to 500 for performance
+        'logs': queryset,
         'users': users,
         'sections': sections,
         'actions': actions,

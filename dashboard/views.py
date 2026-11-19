@@ -61,9 +61,9 @@ class DashboardView(RoleRequiredMixin, TemplateView):
                 {'label': 'المخزون', 'href': reverse('inventory:stock'), 'icon': 'icon-warehouse'},
             ]
             context.update({
-                'preparing_orders': Order.objects.filter(status=Order.STATUS_PREPARING).select_related('customer', 'warehouse')[:20],
-                'low_stocks': Stock.objects.select_related('warehouse', 'variant__product').filter(quantity__lte=F('min_quantity'))[:10],
-                'latest_movements': StockMovement.objects.select_related('variant__product', 'from_warehouse', 'to_warehouse').order_by('-created_at')[:10],
+                'preparing_orders': Order.objects.filter(status=Order.STATUS_PREPARING).select_related('customer', 'warehouse'),
+                'low_stocks': Stock.objects.select_related('warehouse', 'variant__product').filter(quantity__lte=F('min_quantity')),
+                'latest_movements': StockMovement.objects.select_related('variant__product', 'from_warehouse', 'to_warehouse').order_by('-created_at'),
             })
         else:
             context['workflow_title'] = 'بيع سريع'
@@ -79,7 +79,7 @@ class DashboardView(RoleRequiredMixin, TemplateView):
                 'my_orders_today': my_orders.count(),
                 'my_sales_today': my_orders.aggregate(v=Sum('total'))['v'] or 0,
                 'my_customers': Customer.objects.filter(created_by=user, created_at__date=today).count(),
-                'latest_orders': Order.objects.filter(created_by=user).exclude(status=Order.STATUS_DRAFT).select_related('customer').order_by('-created_at')[:10],
+                'latest_orders': Order.objects.filter(created_by=user).exclude(status=Order.STATUS_DRAFT).select_related('customer').order_by('-created_at'),
             })
         return context
 

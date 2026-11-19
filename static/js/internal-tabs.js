@@ -37,7 +37,6 @@
 
   function pageMetadata(source = content) {
     return {
-      totalRecords: source.hasAttribute('data-total-records') ? source.dataset.totalRecords : null,
       pwaLocal: source.hasAttribute('data-pwa-local'),
       title: document.title,
     };
@@ -47,11 +46,6 @@
     if (metadata?.pwaLocal) content.setAttribute('data-pwa-local', '1');
     else content.removeAttribute('data-pwa-local');
     content.removeAttribute('data-local-data-view');
-    if (metadata?.totalRecords !== null && metadata?.totalRecords !== undefined) {
-      content.dataset.totalRecords = metadata.totalRecords;
-    } else {
-      delete content.dataset.totalRecords;
-    }
   }
 
   function ensureTab(url, title) {

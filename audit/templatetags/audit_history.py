@@ -264,7 +264,7 @@ def audit_model_label(model_name):
 
 
 @register.inclusion_tag('audit/object_history.html', takes_context=True)
-def current_page_audit_history(context, limit=20):
+def current_page_audit_history(context):
     request = context.get('request')
     user = getattr(request, 'user', None)
     obj = _current_object(context)
@@ -275,7 +275,7 @@ def current_page_audit_history(context, limit=20):
         model_name=obj.__class__.__name__,
         object_id=str(obj.pk),
         action__in=(AuditLog.ACTION_UPDATE, AuditLog.ACTION_DELETE),
-    ).order_by('-created_at')[:limit]
+    ).order_by('-created_at')
 
     return {
         'show_history': True,

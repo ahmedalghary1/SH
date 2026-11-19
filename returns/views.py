@@ -58,7 +58,6 @@ class SalesReturnListView(RoleRequiredMixin, ExportListMixin, ListView):
     model = SalesReturn
     template_name = 'returns/list.html'
     context_object_name = 'returns'
-    paginate_by = 20
     export_title = 'قائمة المرتجعات'
     export_filename = 'returns'
     export_columns = (

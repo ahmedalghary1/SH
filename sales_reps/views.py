@@ -31,8 +31,8 @@ class SalesRepDashboardView(RoleRequiredMixin, TemplateView):
         if self.request.user.role == 'sales' and not self.request.user.is_superuser:
             assignments = assignments.filter(sales_rep=self.request.user)
             collections = collections.filter(sales_rep=self.request.user)
-        context['assignments'] = assignments.order_by('-created_at')[:30]
-        context['collections'] = collections.order_by('-created_at')[:30]
+        context['assignments'] = assignments.order_by('-created_at')
+        context['collections'] = collections.order_by('-created_at')
         return context
 
 
@@ -125,7 +125,6 @@ class AssignmentListView(RoleRequiredMixin, ExportListMixin, ListView):
     model = SalesRepStockAssignment
     template_name = 'sales_reps/assignments.html'
     context_object_name = 'assignments'
-    paginate_by = 30
     export_title = 'قائمة عهد المناديب'
     export_filename = 'sales-rep-assignments'
     export_columns = (

@@ -112,7 +112,6 @@ class InvoiceListView(SalesRequiredMixin, ListView):
     model = Invoice
     template_name = 'invoices/list.html'
     context_object_name = 'invoices'
-    paginate_by = 20
 
     def get_queryset(self):
         qs = Invoice.objects.exclude(order__status=Order.STATUS_CANCELLED).select_related('order__customer', 'order__created_by').order_by('-issued_at')

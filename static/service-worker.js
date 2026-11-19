@@ -1,5 +1,5 @@
 // Release all shell assets together; private pages require a verified scope.
-const CACHE_VERSION = "sh-pwa-v2026-11-19-offline-sales-01";
+const CACHE_VERSION = "sh-pwa-v2026-11-19-table-sort-01";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_PREFIX = 'sh-pwa-pages-v2-';
 const META_CACHE = "sh-pwa-identity-v1";

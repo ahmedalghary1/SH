@@ -130,7 +130,6 @@ class SimpleSupplierListView(ManagerRequiredMixin, ListView):
     model = Supplier
     template_name = 'purchases/suppliers/simple_list.html'
     context_object_name = 'suppliers'
-    paginate_by = 20
 
     def get_queryset(self):
         qs = Supplier.objects.filter(is_active=True).annotate(
@@ -203,8 +202,8 @@ class SimpleSupplierDetailView(ManagerRequiredMixin, DetailView):
         statement = self._generate_statement(supplier, purchase_orders, transactions)
         
         context.update({
-            'purchase_orders': purchase_orders[:20],
-            'transactions': transactions[:20],
+            'purchase_orders': purchase_orders,
+            'transactions': transactions,
             'summary': {
                 'total_purchases': total_purchases,
                 'total_paid': total_paid,
@@ -272,7 +271,6 @@ class SupplierListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = Supplier
     template_name = 'purchases/suppliers/list.html'
     context_object_name = 'suppliers'
-    paginate_by = 20
     export_title = 'قائمة الموردين'
     export_filename = 'suppliers'
     export_columns = (
@@ -359,8 +357,8 @@ class SupplierDetailView(ManagerRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['purchase_orders'] = self.object.purchase_orders.order_by('-created_at')[:20]
-        context['transactions'] = self.object.payment_transactions.select_related('cash_account', 'created_by')[:20]
+        context['purchase_orders'] = self.object.purchase_orders.order_by('-created_at')
+        context['transactions'] = self.object.payment_transactions.select_related('cash_account', 'created_by')
         return context
 
 
@@ -380,7 +378,6 @@ class PurchaseOrderListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = PurchaseOrder
     template_name = 'purchases/orders/list.html'
     context_object_name = 'purchase_orders'
-    paginate_by = 20
     export_title = 'قائمة شراء البضاعة'
     export_filename = 'direct-purchases'
     export_columns = (
@@ -798,7 +795,7 @@ class PurchaseReportView(ManagerRequiredMixin, TemplateView):
             paid_amount=Sum('paid_amount'),
             remaining_amount=Sum('remaining_amount'),
         )
-        context['orders'] = orders.select_related('supplier').order_by('-created_at')[:100]
+        context['orders'] = orders.select_related('supplier').order_by('-created_at')
         context['total_amount'] = agg['total_amount'] or 0
         context['paid_amount'] = agg['paid_amount'] or 0
         context['remaining_amount'] = agg['remaining_amount'] or 0
@@ -814,5 +811,5 @@ class SupplierDueReportView(ManagerRequiredMixin, TemplateView):
         context['total_due'] = context['suppliers'].aggregate(v=Sum('current_balance'))['v'] or 0
         context['payments'] = PaymentTransaction.objects.filter(
             transaction_type=PaymentTransaction.TYPE_SUPPLIER_PAYMENT,
-        ).select_related('related_supplier', 'cash_account')[:50]
+        ).select_related('related_supplier', 'cash_account')
         return context

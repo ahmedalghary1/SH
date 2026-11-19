@@ -59,7 +59,6 @@ class UserListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = User
     template_name = 'accounts/users/list.html'
     context_object_name = 'users'
-    paginate_by = 20
     export_title = 'قائمة المستخدمين'
     export_filename = 'users'
     export_columns = (

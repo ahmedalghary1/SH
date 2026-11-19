@@ -87,7 +87,7 @@ def visible_orders_for_user(user):
 def sales_report(request):
     qs = apply_order_filters(visible_orders_for_user(request.user), request)
     rows = []
-    for order in qs[:300]:
+    for order in qs:
         rows.append({
             'order_number': order.order_number,
             'date': order.created_at.date(),
@@ -163,7 +163,7 @@ def net_profit_report(request):
         },
         'rows': list(expenses.select_related('cash_account', 'created_by').values(
             'transaction_date', 'amount', 'cash_account__name', 'notes', 'created_by__username',
-        )[:200]),
+        )),
     }
 
 
@@ -177,7 +177,7 @@ def customer_debt_report():
     return {
         'title': 'مديونيات العملاء',
         'summary': {'total_debt': qs.aggregate(v=Sum('remaining'))['v'] or ZERO},
-        'rows': list(qs.values('name', 'phone', 'customer_type', 'opening_balance', 'credit_limit', 'purchases', 'remaining')[:200]),
+        'rows': list(qs.values('name', 'phone', 'customer_type', 'opening_balance', 'credit_limit', 'purchases', 'remaining')),
     }
 
 
@@ -188,7 +188,7 @@ def inactive_customer_report(days=90):
     return {
         'title': 'تقرير العملاء غير النشطين',
         'summary': {'days': days, 'customers': qs.count()},
-        'rows': list(qs.values('name', 'phone', 'customer_type', 'created_at')[:200]),
+        'rows': list(qs.values('name', 'phone', 'customer_type', 'created_at')),
     }
 
 
@@ -203,7 +203,7 @@ def discount_report(request):
         'rows': list(orders.values(
             'order_number', 'created_at', 'customer__name', 'created_by__username',
             'subtotal', 'discount', 'discount_amount', 'discount_percentage', 'total', 'discount_reason',
-        )[:300]),
+        )),
     }
 
 
@@ -222,7 +222,7 @@ def sales_rep_custody_report(request):
         'rows': list(assignments.values(
             'sales_rep__username', 'product_variant__product__name', 'source_warehouse__name',
             'quantity_assigned', 'quantity_sold', 'quantity_returned', 'quantity_remaining', 'is_active',
-        )[:300]),
+        )),
     }
 
 
@@ -239,7 +239,7 @@ def sales_rep_collections_report(request):
         'rows': list(collections.values(
             'collection_date', 'sales_rep__username', 'customer__name', 'order__order_number',
             'amount', 'handed_over_amount', 'handed_over', 'cash_account__name',
-        )[:300]),
+        )),
     }
 
 
@@ -248,7 +248,7 @@ def low_stock_report():
     return {
         'title': 'المنتجات الناقصة',
         'summary': {'items': qs.count()},
-        'rows': list(qs.values('warehouse__name', 'variant__product__name', 'variant__variant_sku', 'quantity', 'min_quantity')[:300]),
+        'rows': list(qs.values('warehouse__name', 'variant__product__name', 'variant__variant_sku', 'quantity', 'min_quantity')),
     }
 
 
@@ -260,7 +260,7 @@ def stale_products_report(days=90):
     return {
         'title': 'المنتجات الراكدة',
         'summary': {'days': days, 'variants': qs.count()},
-        'rows': list(qs.values('product__name', 'variant_sku', 'barcode', 'product__sku', 'cost_price', 'sale_price')[:300]),
+        'rows': list(qs.values('product__name', 'variant_sku', 'barcode', 'product__sku', 'cost_price', 'sale_price')),
     }
 
 
@@ -276,12 +276,12 @@ def returns_report(request):
     return {
         'title': 'تقرير المرتجعات',
         'summary': {'returns': qs.count(), 'refund_amount': _sum(qs, 'refund_amount')},
-        'rows': list(qs.values('created_at', 'order__order_number', 'customer__name', 'return_type', 'status', 'refund_amount', 'reason')[:300]),
+        'rows': list(qs.values('created_at', 'order__order_number', 'customer__name', 'return_type', 'status', 'refund_amount', 'reason')),
         'sections': {
-            'top_reasons': list(qs.values('reason').annotate(count=Count('id'), refund=Sum('refund_amount')).order_by('-count')[:20]),
+            'top_reasons': list(qs.values('reason').annotate(count=Count('id'), refund=Sum('refund_amount')).order_by('-count')),
             'top_products': list(SalesReturnItem.objects.filter(sales_return__in=qs).values(
                 'product_variant__product__name',
-            ).annotate(quantity=Sum('quantity'), refund=Sum('refund_amount')).order_by('-quantity')[:20]),
+            ).annotate(quantity=Sum('quantity'), refund=Sum('refund_amount')).order_by('-quantity')),
         },
     }
 
@@ -301,7 +301,7 @@ def purchase_report(request):
             'paid_amount': _sum(qs, 'paid_amount'),
             'remaining_amount': _sum(qs, 'remaining_amount'),
         },
-        'rows': list(qs.values('purchase_number', 'order_date', 'supplier__name', 'status', 'total_amount', 'paid_amount', 'remaining_amount')[:300]),
+        'rows': list(qs.values('purchase_number', 'order_date', 'supplier__name', 'status', 'total_amount', 'paid_amount', 'remaining_amount')),
     }
 
 
@@ -310,7 +310,7 @@ def supplier_dues_report():
     return {
         'title': 'مديونيات الموردين',
         'summary': {'suppliers': qs.count(), 'total_due': _sum(qs, 'current_balance')},
-        'rows': list(qs.values('name', 'company_name', 'phone', 'opening_balance', 'current_balance')[:300]),
+        'rows': list(qs.values('name', 'company_name', 'phone', 'opening_balance', 'current_balance')),
     }
 
 
@@ -412,7 +412,7 @@ def filtered_stock_movements(params):
 
 
 def movement_product_summaries(movements, warehouse_id=None):
-    """Aggregate the full filtered history, before pagination, once per product."""
+    """Aggregate the full filtered history once per product."""
     from django.db.models import BigIntegerField, Max, OuterRef, Subquery
     from django.db.models.functions import Coalesce
 

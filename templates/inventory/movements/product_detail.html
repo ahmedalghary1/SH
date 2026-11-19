@@ -2,7 +2,7 @@
 {% block title %}حركة الصنف {{ product.name }}{% endblock %}
 {% block content %}
 <div class="page-head"><h1>حركة الصنف: {{ product.name }}</h1><p>{{ product.sku }} — جميع مرات دخول وخروج الصنف، مع رصيد كل مخزن قبل الحركة وبعدها.</p>
-<a class="btn btn-light" href="{% url 'reports:stock_movement' %}?{{ pagination_query }}">العودة إلى تقرير حركة المخزن</a></div>
+<a class="btn btn-light" href="{% url 'reports:stock_movement' %}?{{ filter_query }}">العودة إلى تقرير حركة المخزن</a></div>
 <form method="get" class="card filters-form">
     <div class="form-grid">
         <div class="form-group"><label for="warehouse">المخزن</label><select id="warehouse" name="warehouse"><option value="">كل المخازن</option>{% for warehouse in warehouses %}<option value="{{ warehouse.pk }}" {% if filters.warehouse == warehouse.pk|stringformat:'s' %}selected{% endif %}>{{ warehouse.name }}</option>{% endfor %}</select></div>
@@ -20,5 +20,4 @@
         <td>{{ movement.previous_balance }}</td><td>{{ movement.quantity_change }}</td><td>{{ movement.current_balance }}</td><td>{{ movement.created_by|default:'-' }}</td><td>{{ movement.note|default:'-' }}</td>
     </tr>{% empty %}<tr><td colspan="11">لا توجد حركات مطابقة.</td></tr>{% endfor %}</tbody>
 </table></div>
-{% include 'partials/pagination.html' %}
 {% endblock %}

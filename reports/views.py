@@ -589,7 +589,7 @@ class DailySalesReportView(RoleRequiredMixin, TemplateView):
             context['low_stocks_count'] = Stock.objects.filter(quantity__lte=F('min_quantity')).count()
         context['paid_total'] = orders.aggregate(v=Sum('paid_amount'))['v'] or 0
         context['remaining_total'] = orders.aggregate(v=Sum('remaining_amount'))['v'] or 0
-        context['top_products'] = OrderItem.objects.filter(order__in=orders).values('variant__product__name').annotate(qty=Sum('quantity')).order_by('-qty')[:10]
+        context['top_products'] = OrderItem.objects.filter(order__in=orders).values('variant__product__name').annotate(qty=Sum('quantity')).order_by('-qty')
         context['employee_sales'] = orders.values('created_by__username').annotate(total=Sum('total'), count=Count('id')).order_by('-total')
         return context
 
@@ -630,9 +630,9 @@ class CustomerReportView(ManagerRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context['can_view_costs'] = can_view_costs(self.request.user)
         valid_orders = Order.objects.exclude(status__in=services.EXCLUDED_SALES_STATUSES)
-        context['new_customers'] = Customer.objects.order_by('-created_at')[:20]
-        context['top_customers'] = valid_orders.values('customer__name', 'customer__phone').annotate(total=Sum('total'), count=Count('id')).order_by('-total')[:20]
-        context['debt_customers'] = valid_orders.filter(remaining_amount__gt=0).values('customer__name', 'customer__phone').annotate(remaining=Sum('remaining_amount')).order_by('-remaining')[:20]
+        context['new_customers'] = Customer.objects.order_by('-created_at')
+        context['top_customers'] = valid_orders.values('customer__name', 'customer__phone').annotate(total=Sum('total'), count=Count('id')).order_by('-total')
+        context['debt_customers'] = valid_orders.filter(remaining_amount__gt=0).values('customer__name', 'customer__phone').annotate(remaining=Sum('remaining_amount')).order_by('-remaining')
         return context
 
 
@@ -683,7 +683,6 @@ class StockMovementReportView(RoleRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['can_view_costs'] = can_view_costs(self.request.user)
-        from django.core.paginator import Paginator
         from django.urls import reverse
 
         params = self.request.GET
@@ -692,14 +691,11 @@ class StockMovementReportView(RoleRequiredMixin, TemplateView):
         q = params.get('q', '').strip()
         summaries = services.movement_product_summaries(
             services.filtered_stock_movements(params), positive_id(warehouse_id))
-        page = Paginator(summaries, 50).get_page(params.get('page'))
         query = params.copy()
         query.pop('page', None)
-        for row in page.object_list:
+        for row in summaries:
             row['detail_url'] = reverse('inventory:product_movements', args=[row['variant__product_id']]) + '?' + query.urlencode()
-        context['products'] = page.object_list
-        context['page_obj'] = page
-        context['pagination_query'] = query.urlencode()
+        context['products'] = summaries
         context['warehouses'] = Warehouse.objects.filter(is_active=True)
         context['movement_types'] = [
             (value, MOVEMENT_TYPE_LABELS.get(value, label))

@@ -59,7 +59,6 @@ class ProductListView(RoleRequiredMixin, ExportListMixin, ListView):
     model = Product
     template_name = 'products/list.html'
     context_object_name = 'products'
-    paginate_by = 20
     export_title = 'قائمة المنتجات'
     export_filename = 'products'
     export_columns = (
@@ -151,7 +150,7 @@ class ProductDetailView(RoleRequiredMixin, DetailView):
         ).select_related('order__customer', 'order__created_by', 'variant__color', 'variant__size').order_by('-order__created_at')
         movements = StockMovement.objects.filter(variant__product=self.object).select_related(
             'variant__color', 'variant__size', 'from_warehouse', 'to_warehouse', 'created_by',
-        ).order_by('-created_at')[:100]
+        ).order_by('-created_at')
         agg = order_items.aggregate(
             sold_quantity=Sum('quantity'),
             product_sales_total=Sum('total'),
@@ -164,7 +163,7 @@ class ProductDetailView(RoleRequiredMixin, DetailView):
         context['sales_count'] = order_items.values('order_id').distinct().count()
         context['product_sales_total'] = agg['product_sales_total'] or 0
         context['product_profit_total'] = agg['product_profit_total'] or 0
-        context['order_items'] = order_items[:50]
+        context['order_items'] = order_items
         context['current_quantity'] = stock_agg['current_quantity'] or 0
         context['variants'] = variants
         return context
@@ -215,8 +214,8 @@ class ProductMovementReportView(RoleRequiredMixin, DetailView):
             'day': self.request.GET.get('day', ''),
             'date_from': self.request.GET.get('date_from', ''),
             'date_to': self.request.GET.get('date_to', ''),
-            'movement_rows': movements.order_by('-created_at')[:300],
-            'order_items': order_items.order_by('-order__created_at')[:300],
+            'movement_rows': movements.order_by('-created_at'),
+            'order_items': order_items.order_by('-order__created_at'),
             'stock_rows': Stock.objects.filter(variant__product=self.object).select_related('variant__color', 'variant__size', 'warehouse'),
             'batch_rows': batches.order_by('received_at', 'pk'),
         })
@@ -708,7 +707,6 @@ class CategoryListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = Category
     template_name = 'products/catalog/categories.html'
     context_object_name = 'categories'
-    paginate_by = 20
     export_title = 'قائمة التصنيفات'
     export_filename = 'categories'
     export_columns = (
@@ -753,7 +751,6 @@ class ColorListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = Color
     template_name = 'products/catalog/colors.html'
     context_object_name = 'colors'
-    paginate_by = 20
     ordering = ('name',)
     export_title = 'قائمة الألوان'
     export_filename = 'colors'
@@ -795,7 +792,6 @@ class SizeListView(ManagerRequiredMixin, ExportListMixin, ListView):
     model = Size
     template_name = 'products/catalog/sizes.html'
     context_object_name = 'sizes'
-    paginate_by = 20
     export_title = 'قائمة المقاسات'
     export_filename = 'sizes'
     export_columns = (

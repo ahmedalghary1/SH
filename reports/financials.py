@@ -112,9 +112,13 @@ def financial_sections(financials):
             for field in ('total', 'cost', 'profit'):
                 group[field] += row[field]
             group['orders'] += 1
-    top = lambda rows: sorted(rows, key=lambda row: row['profit'], reverse=True)[:50]
-    return {'profit_by_product': top(products), 'profit_by_category': top(categories.values()),
-            'profit_by_employee': top(employees.values()), 'profit_by_customer': top(customers.values())}
+    return {
+        key: sorted(rows, key=lambda row: row['profit'], reverse=True)
+        for key, rows in {
+            'profit_by_product': products, 'profit_by_category': categories.values(),
+            'profit_by_employee': employees.values(), 'profit_by_customer': customers.values(),
+        }.items()
+    }
 
 
 def financial_periods(financials, period):

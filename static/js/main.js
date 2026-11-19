@@ -285,26 +285,6 @@ function enhanceSharedPageUi(root = document) {
         input.lang = 'en';
         if (input.step === 'any' || String(input.step).includes('.')) input.inputMode = 'decimal';
     });
-    const pageContent = root.closest?.('[data-page-content]') || document.querySelector('[data-page-content]');
-    const paginatedTable = pageContent?.querySelector('table');
-    root.querySelectorAll('table').forEach((table) => {
-        if (table.dataset.countEnhanced) return;
-        table.dataset.countEnhanced = '1';
-        const rows = [...table.querySelectorAll('tbody tr')].filter(row => !row.querySelector('td[colspan]'));
-        const badge = document.createElement('div');
-        badge.className = 'table-record-count';
-        // The paginator count belongs only to the page's primary table. Using
-        // it for every table made all secondary tables show the same total.
-        const paginatedCount = table === paginatedTable ? pageContent?.dataset.totalRecords : null;
-        const tableCount = paginatedCount !== undefined && paginatedCount !== null && paginatedCount !== ''
-            ? paginatedCount
-            : rows.length;
-        badge.textContent = `إجمالي العدد: ${formatExactNumber(String(tableCount))}`;
-        badge.classList.add('number-value');
-        const region = table.closest('.responsive-table-region');
-        if (region?.parentElement) region.parentElement.insertBefore(badge, region);
-        else table.parentElement?.insertBefore(badge, table);
-    });
     root.querySelectorAll('td, .stat-card strong, .summary-value, [data-number]').forEach((node) => {
         if (node.children.length || node.dataset.numberEnhanced) return;
         const raw = normalizeNumberText(node.textContent);

@@ -60,7 +60,7 @@
         </tr>
         {% endfor %}</tbody>
     </table></div>
-    {% if summary.conflict_count > 100 %}<p class="muted">تعرض أول 100 حالة فقط.</p>{% endif %}
+    {% if summary.conflicts|length < summary.conflict_count %}<p class="muted">تعرض هذه المعاينة المحفوظة {{ summary.conflicts|length }} من {{ summary.conflict_count }} حالة.</p>{% endif %}
 </section>
 {% endif %}
 {% if summary.deferred_count %}

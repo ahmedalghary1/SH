@@ -14,6 +14,26 @@ from config.ratelimit import RateLimitExceeded, get_client_ip, rate_limit
 User = get_user_model()
 
 
+class CompleteTableTests(TestCase):
+    def test_filtered_catalog_and_admin_links_display_all_records(self):
+        from django.urls import reverse
+        from products.models import Product
+
+        self.client.force_login(User.objects.create_superuser(username='table-manager', role='manager', password=None))
+        Product.objects.bulk_create([Product(name=f'catalog-{i:03d}', sku=f'CAT-{i}') for i in range(115)])
+        Product.objects.create(name='unrelated', sku='OTHER')
+
+        listing = self.client.get(reverse('products:list'), {'q': 'catalog', 'page': 2})
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual(len(listing.context['products']), 115)
+        self.assertNotContains(listing, 'unrelated')
+
+        admin_list = self.client.get(reverse('admin:products_product_changelist'), {'p': 2})
+        self.assertEqual(admin_list.status_code, 200)
+        self.assertEqual(len(admin_list.context['cl'].result_list), 116)
+        self.assertContains(admin_list, 'js/table-controls.js')
+
+
 # ================================================================== #
 #  Rate Limit Tests (existing — preserved)                           #
 # ================================================================== #

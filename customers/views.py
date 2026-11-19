@@ -127,7 +127,6 @@ class SimpleCustomerListView(SalesRequiredMixin, ListView):
     model = Customer
     template_name = 'customers/simple_list.html'
     context_object_name = 'customers'
-    paginate_by = 20
 
     def get_queryset(self):
         qs = Customer.objects.select_related('created_by', 'sales_representative').filter(is_active=True)
@@ -231,7 +230,6 @@ class CustomerListView(SalesRequiredMixin, ExportListMixin, ListView):
     model = Customer
     template_name = 'customers/list.html'
     context_object_name = 'customers'
-    paginate_by = 20
     export_title = 'قائمة العملاء'
     export_filename = 'customers'
     export_columns = (
@@ -551,7 +549,7 @@ class CustomerDetailView(CustomerVisibilityMixin, SalesRequiredMixin, DetailView
         ).select_related('order__created_by', 'variant__product', 'variant__color', 'variant__size').order_by('-order__created_at')
         context['summary'] = get_customer_summary(self.object)
         context['orders'] = orders.order_by('-created_at')
-        context['movement_rows'] = order_items[:100]
+        context['movement_rows'] = order_items
         context['total_discounts'] = orders.aggregate(total=Sum('discount'))['total'] or 0
         return context
 
@@ -574,10 +572,10 @@ class CustomerCRMDetailView(CustomerVisibilityMixin, SalesRequiredMixin, DetailV
         context = super().get_context_data(**kwargs)
         customer = self.object
         context['summary'] = get_customer_summary(customer)
-        context['orders'] = Order.objects.filter(customer=customer).order_by('-created_at')[:20]
-        context['payments'] = PaymentTransaction.objects.filter(related_customer=customer).select_related('cash_account').order_by('-created_at')[:20]
-        context['returns'] = SalesReturn.objects.filter(customer=customer).order_by('-created_at')[:20]
-        context['interactions'] = customer.interactions.select_related('created_by')[:20]
+        context['orders'] = Order.objects.filter(customer=customer).order_by('-created_at')
+        context['payments'] = PaymentTransaction.objects.filter(related_customer=customer).select_related('cash_account').order_by('-created_at')
+        context['returns'] = SalesReturn.objects.filter(customer=customer).order_by('-created_at')
+        context['interactions'] = customer.interactions.select_related('created_by')
         return context
 
 
@@ -585,7 +583,6 @@ class CustomerInteractionListView(SalesRequiredMixin, ListView):
     model = CustomerInteraction
     template_name = 'customers/crm/interactions.html'
     context_object_name = 'interactions'
-    paginate_by = 30
 
     def dispatch(self, request, *args, **kwargs):
         self.customer = get_object_or_404(visible_customers_for_user(request.user, Customer.objects.all()), pk=kwargs['pk'])
@@ -670,7 +667,6 @@ class TodayInteractionsView(SalesRequiredMixin, ListView):
     model = CustomerInteraction
     template_name = 'customers/crm/today.html'
     context_object_name = 'interactions'
-    paginate_by = 30
 
     def get_queryset(self):
         return get_due_followups(user=self.request.user)
@@ -689,7 +685,6 @@ class InactiveCustomersReportView(SalesRequiredMixin, ListView):
     model = Customer
     template_name = 'customers/reports/inactive.html'
     context_object_name = 'customers'
-    paginate_by = 30
 
     def get_queryset(self):
         days = report_days(self.request.GET.get('days'))
@@ -706,7 +701,6 @@ class DebtorsReportView(SalesRequiredMixin, ListView):
     model = Customer
     template_name = 'customers/reports/debtors.html'
     context_object_name = 'customers'
-    paginate_by = 30
 
     def get_queryset(self):
         return get_customers_with_debt(user=self.request.user)
@@ -716,7 +710,6 @@ class ComplaintsReportView(SalesRequiredMixin, ListView):
     model = CustomerInteraction
     template_name = 'customers/reports/complaints.html'
     context_object_name = 'complaints'
-    paginate_by = 30
 
     def get_queryset(self):
         return get_open_complaints(user=self.request.user)
