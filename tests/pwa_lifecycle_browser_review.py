@@ -37,7 +37,7 @@ class Handler(SimpleHTTPRequestHandler):
             manifest['related_applications'] = [{'platform': 'webapp', 'id': origin + '/', 'url': origin + '/manifest.json'}]
             content = json.dumps(manifest).encode()
             content_type = 'application/manifest+json'
-        elif path in {'/', '/offline/'}:
+        elif path in {'/', '/invoices/', '/accounts/users/', '/offline/'}:
             content = b'''<!doctype html><html lang="ar"><head><meta name="viewport" content="width=device-width"><link rel="manifest" href="/manifest.json"><title>SH lifecycle</title></head>
 <body data-pwa-user-id="1" data-pwa-branch-id="1" data-pwa-role="manager" data-pwa-superuser="0"><section data-page-content>SH</section><button data-pwa-install hidden>Install</button><script src="/static/js/pwa/install.js"></script></body></html>'''
             content_type = 'text/html; charset=utf-8'
@@ -47,8 +47,9 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', content_type)
         self.send_header('Content-Length', str(len(content)))
-        if path == '/':
+        if path in {'/', '/invoices/', '/accounts/users/'}:
             self.send_header('X-PWA-Scope', 'u1-b1-rmanager-s0')
+        if path in {'/', '/invoices/'}:
             self.send_header('X-PWA-Cacheable', '1')
             self.send_header('Cache-Control', 'private, no-cache')
         self.end_headers()
@@ -100,6 +101,8 @@ def main():
                 }""")
                 assert operation['durability'] == 'strict', operation
                 print('PASS: simultaneous first use keeps one device ID across tabs', flush=True)
+                page.goto(base + '/invoices/')
+                page.goto(base + '/accounts/users/')
             finally:
                 context.close()
             # Shut the browser down completely. The fixture now refuses every
@@ -112,6 +115,8 @@ def main():
                 assert response.from_service_worker
                 assert response.headers.get('x-pwa-local') == '1'
                 assert page.locator('[data-pwa-local]').count() == 1
+                response = page.goto(base + '/invoices/')
+                assert response.headers.get('x-pwa-local') == '1'
                 retained = page.evaluate("""async () => {
                     const db=await import('/static/js/pwa/db.js');
                     return {rows:await db.getAll(db.STORE_NAMES.syncQueue),device:await db.getDeviceId()};

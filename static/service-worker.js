@@ -1,5 +1,5 @@
 // Release all shell assets together; private pages require a verified scope.
-const CACHE_VERSION = "sh-pwa-v2026-11-19-table-sort-01";
+const CACHE_VERSION = "sh-pwa-v2026-11-20-offline-navigation-01";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_PREFIX = 'sh-pwa-pages-v2-';
 const META_CACHE = "sh-pwa-identity-v1";
@@ -33,6 +33,9 @@ const CORE_ASSETS = [
 const CORE_STATIC_PATHS = new Set(CORE_ASSETS.filter(path => path.startsWith('/static/') && !path.includes('?')));
 const clientScopes = new Map();
 let activeScope;
+let scopeRevision = 0;
+let navigationSequence = 0;
+let lastIdentityNavigation = 0;
 const validScope = (value) => /^u\d+-b(?:\d+|all)-r[a-z_]+-s[01]$/.test(value || "");
 const sameOriginUrl = (input) => {
   try {
@@ -41,22 +44,30 @@ const sameOriginUrl = (input) => {
   } catch { return null; }
 };
 const isAuthUrl = (url) => url.pathname.startsWith("/accounts/") || url.pathname.startsWith("/admin/");
+const isGatewayFailure = (response) => [502, 503, 504].includes(response.status);
 const isPublicAsset = (url) => url.pathname.startsWith("/static/") || [OFFLINE_URL, "/manifest.json"].includes(url.pathname);
 const isPrivatePage = (url) => !isAuthUrl(url) && !url.pathname.startsWith("/api/")
   && !url.pathname.startsWith("/settings/backups/")
   && !url.pathname.startsWith("/media/") && !/\.(?:pdf|csv|xlsx?|zip)$/i.test(url.pathname)
   && !["export", "download", "format"].some((key) => url.searchParams.has(key));
 
-async function readActiveScope() {
-  if (activeScope !== undefined) return activeScope;
+async function storedScope() {
   const cache = await caches.open(META_CACHE);
   const response = await cache.match(META_URL);
   const data = await response?.json().catch(() => null);
-  activeScope = validScope(data?.scope) ? data.scope : null;
+  return validScope(data?.scope) ? data.scope : null;
+}
+
+async function readActiveScope() {
+  if (activeScope === undefined) {
+    const saved = await storedScope();
+    if (activeScope === undefined) activeScope = saved;
+  }
   return activeScope;
 }
 
 async function setActiveScope(scope) {
+  if (!scope || activeScope !== scope) scopeRevision++;
   activeScope = validScope(scope) ? scope : null;
   const cache = await caches.open(META_CACHE);
   await cache.put(META_URL, new Response(JSON.stringify({ scope: activeScope }), {
@@ -64,7 +75,8 @@ async function setActiveScope(scope) {
   }));
 }
 
-async function clearScope() {
+async function clearScope(navigation = ++navigationSequence) {
+  lastIdentityNavigation = navigation;
   await setActiveScope(null);
   clientScopes.clear();
   const keys = await caches.keys();
@@ -111,7 +123,10 @@ async function storeResponse(request, response, scope) {
   } catch { /* A cache/quota error must never fail a successful network GET. */ }
 }
 
-async function offlineFallback() {
+async function offlineFallback(request) {
+  if (request.headers?.get('X-Workspace-Tab') === '1') {
+    return new Response(null, {status: 503, headers: {'X-PWA-Unavailable': '1'}});
+  }
   try {
     const cache = await caches.open(STATIC_CACHE);
     const cached = await cache.match(OFFLINE_URL, {ignoreVary: true});
@@ -159,25 +174,31 @@ async function cachedPage(request, clientId) {
 async function networkNavigation(request, event) {
   const url = sameOriginUrl(request);
   if (!url) return fetch(request);
-  if (isAuthUrl(url)) {
-    await clearScope();
-    try { return await fetch(request); } catch { return offlineFallback(); }
-  }
+  const restricted = isAuthUrl(url);
+  const localPage = () => restricted ? null : cachedPage(request, event.clientId);
+  const navigation = ++navigationSequence;
   // A genuinely disconnected device should open its prepared UI immediately,
   // instead of showing a blank launch window until the network timeout expires.
   if (self.navigator?.onLine === false) {
-    return (await cachedPage(request, event.clientId)) || offlineFallback();
+    return (await localPage()) || offlineFallback(request);
   }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
     const response = await fetch(request, { signal: controller.signal });
+    // Account and admin screens are network-only. Merely visiting one (or
+    // failing to reach login) must leave the authenticated launch cache intact.
+    if (['/accounts/login/', '/admin/login/'].includes(url.pathname) && response.ok && !response.redirected
+        && !response.headers.get('X-PWA-Scope') && response.headers.get('Content-Type')?.includes('text/html')) {
+      if (navigation > lastIdentityNavigation) await clearScope(navigation);
+      return response;
+    }
     // Real top-level navigations use manual redirects. The worker sees an
     // opaque redirect, not the final login URL (unlike workspace fetches).
     // Check the read-only session endpoint before allowing an expired session
     // to replace a prepared local form with login and clear its page cache.
     if (response.type === 'opaqueredirect') {
-      const cached = await cachedPage(request, event.clientId);
+      const cached = await localPage();
       if (cached) {
         const session = await fetch(new URL('/api/sync/session/', self.location.origin).href, {
           credentials: 'same-origin', cache: 'no-store', redirect: 'follow', signal: controller.signal,
@@ -189,20 +210,22 @@ async function networkNavigation(request, event) {
     }
     const scope = response.headers.get("X-PWA-Scope");
     if (validScope(scope)) {
-      await setActiveScope(scope);
       if (event.resultingClientId) clientScopes.set(event.resultingClientId, scope);
-      await storeResponse(request, response, scope);
+      if (navigation > lastIdentityNavigation) {
+        lastIdentityNavigation = navigation;
+        await setActiveScope(scope);
+        if (!restricted) await storeResponse(request, response, scope);
+      }
     } else if (response.redirected && sameOriginUrl(response.url) && isAuthUrl(sameOriginUrl(response.url))) {
       // An expired session must not erase the working offline installation.
-      // Explicit login/logout still clear the active scope above.
-      return (await cachedPage(request, event.clientId)) || response;
+      return (await localPage()) || response;
     }
-    if ([502, 503, 504].includes(response.status)) {
-      return (await cachedPage(request, event.clientId)) || offlineFallback();
+    if (isGatewayFailure(response)) {
+      return (await localPage()) || offlineFallback(request);
     }
     return response;
   } catch {
-    return (await cachedPage(request, event.clientId)) || offlineFallback();
+    return (await localPage()) || offlineFallback(request);
   } finally { clearTimeout(timeout); }
 }
 
@@ -231,40 +254,53 @@ async function cacheUrls(urls, scope) {
   // A bounded pool avoids flooding PostgreSQL with every screen at startup.
   const pending = [...new Set(urls)].map(sameOriginUrl).filter(Boolean);
   const result = { cached: [], failed: [] };
+  const initialRevision = scopeRevision;
+  let verifiedScope = scope && await storedScope();
   async function run() {
     while (pending.length) {
       const url = pending.shift();
-      if (!isPublicAsset(url) && (!validScope(scope) || !isPrivatePage(url))) continue;
+      const asset = isPublicAsset(url);
+      const path = url.pathname + url.search;
+      if (!asset && (!validScope(scope) || !isPrivatePage(url))) continue;
+      let usable = false;
       try {
         // Normal navigation still revalidates. Repeated shell requests can use
         // a recent cached copy rather than query every screen on each page load.
-        const cache = await caches.open(isPublicAsset(url) ? STATIC_CACHE : `${PAGE_PREFIX}${scope}`);
+        const cache = await caches.open(asset ? STATIC_CACHE : `${PAGE_PREFIX}${scope}`);
         const cached = await cache.match(url.href, { ignoreVary: true });
+        usable = canStore(cached, url, scope) && (asset || verifiedScope === scope);
         const age = Date.now() - Date.parse(cached?.headers.get("Date") || "");
-        if (cached && (isPublicAsset(url) || (age >= 0 && age < PREFETCH_FRESH_MS))) {
-          result.cached.push(url.pathname + url.search);
+        if (usable && (asset || (age >= 0 && age < PREFETCH_FRESH_MS))) {
+          result.cached.push(path);
           continue;
         }
         const request = new Request(url.href, { credentials: "same-origin", cache: "no-cache",
-          headers: !isPublicAsset(url) ? { "X-PWA-Scope": scope } : {} });
+          headers: asset ? {} : { "X-PWA-Scope": scope } });
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 20000);
         let response;
         try { response = await fetch(request, {signal: controller.signal}); }
         finally { clearTimeout(timer); }
         if (!canStore(response, url, scope)) {
-          result.failed.push(url.pathname + url.search);
+          if (usable && isGatewayFailure(response)) result.cached.push(path);
+          else result.failed.push(path);
           continue;
         }
-        if (!isPublicAsset(url)) await setActiveScope(scope);
+        if (!asset && (verifiedScope !== scope || activeScope !== scope)) {
+          if (scopeRevision !== initialRevision && activeScope !== scope) {
+            result.failed.push(path);
+            continue;
+          }
+          await setActiveScope(scope);
+          verifiedScope = scope;
+        }
         await storeResponse(request, response, scope);
-        if (await cache.match(url.href, { ignoreVary: true })) result.cached.push(url.pathname + url.search);
-        else result.failed.push(url.pathname + url.search);
+        if (canStore(await cache.match(url.href, { ignoreVary: true }), url, scope)) result.cached.push(path);
+        else result.failed.push(path);
       } catch {
         // A failed refresh does not remove an already prepared offline page.
-        const cache = await caches.open(isPublicAsset(url) ? STATIC_CACHE : `${PAGE_PREFIX}${scope}`);
-        if (await cache.match(url.href, { ignoreVary: true })) result.cached.push(url.pathname + url.search);
-        else result.failed.push(url.pathname + url.search);
+        if (usable) result.cached.push(path);
+        else result.failed.push(path);
       }
     }
   }
@@ -306,15 +342,18 @@ self.addEventListener("activate", (event) => {
 });
 self.addEventListener("fetch", (event) => {
   const request = event.request;
-  // A lost POST response can follow a commit: never replay a dispatched POST.
-  if (request.method !== "GET") return;
   const url = sameOriginUrl(request);
   if (!url) return;
+  if (request.method === 'POST' && ['/accounts/logout/', '/admin/logout/'].includes(url.pathname)) {
+    event.waitUntil(clearScope());
+  }
+  // A lost POST response can follow a commit: never replay a dispatched POST.
+  if (request.method !== "GET") return;
   // Backup generation can exceed the page timeout. Let the browser own the
   // request and its attachment/error response; never turn it into offline HTML.
   if (url.pathname.startsWith('/settings/backups/')) return;
   if (request.mode === "navigate" || request.destination === "document" || request.headers?.get('X-Workspace-Tab') === '1') {
-    event.respondWith(networkNavigation(request, event).catch(() => offlineFallback()));
+    event.respondWith(networkNavigation(request, event).catch(() => offlineFallback(request)));
   } else if (isPublicAsset(url)) event.respondWith(staticAsset(request, url));
 });
 self.addEventListener("message", (event) => {
@@ -325,6 +364,7 @@ self.addEventListener("message", (event) => {
     clientScopes.set(event.source.id, message.scope);
   }
   if (message.type === "CACHE_URLS" && validScope(message.scope)) {
+    const revision = scopeRevision;
     event.waitUntil((async () => {
       const metadata = await caches.open(META_CACHE);
       if (Array.isArray(message.details)) {
@@ -336,8 +376,12 @@ self.addEventListener("message", (event) => {
         await metadata.put(`/__pwa_required_pages__/${message.scope}`, new Response(JSON.stringify(required)));
       }
       const assets = await cacheUrls(CORE_ASSETS, null);
-      const pages = await cacheUrls(Array.isArray(message.urls) ? message.urls.slice(0, MAX_PAGES) : [], message.scope);
-      event.ports?.[0]?.postMessage({ cached: pages.cached, failed: [...assets.failed, ...pages.failed] });
+      const urls = Array.isArray(message.urls) ? message.urls.slice(0, MAX_PAGES) : [];
+      const pages = revision === scopeRevision || activeScope === message.scope
+        ? await cacheUrls(urls, message.scope) : {cached: [], failed: urls};
+      const scopeMatches = await storedScope() === message.scope;
+      event.ports?.[0]?.postMessage({ cached: scopeMatches ? pages.cached : [],
+        failed: [...assets.failed, ...(scopeMatches ? pages.failed : urls)] });
     })());
   }
 });

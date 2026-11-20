@@ -42,6 +42,7 @@
 <script src="{% static 'js/table-navigation.js' %}"></script>
 <script src="{% static 'js/table-controls.js' %}"></script>
 {% if request.user.is_authenticated %}
+{{ request.pwa_offline_pages|json_script:"pwa-offline-pages" }}
 <script type="module" src="{% static 'js/pwa/sync-engine.js' %}"></script>
 <script type="module" src="{% static 'js/pwa/offline-forms.js' %}"></script>
 <script type="module" src="{% static 'js/pwa/offline-list-view.js' %}"></script>

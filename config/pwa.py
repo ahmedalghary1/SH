@@ -6,6 +6,8 @@ from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import render
 from django.utils.cache import patch_cache_control, patch_vary_headers
 
+from sync_api.offline_manifest import offline_pages
+
 
 def offline_scope(user, branch_id):
     if not user or not user.is_authenticated:
@@ -28,6 +30,9 @@ class PwaScopeMiddleware:
         branch = getattr(request, 'active_branch', None)
         branch_id = branch.pk if branch else None
         request.pwa_scope = offline_scope(user, branch_id)
+        if request.pwa_scope:
+            # Evaluated by the authenticated shell, independently of the data download.
+            request.pwa_offline_pages = lambda: offline_pages(user)
         supplied_scope = request.headers.get('X-PWA-Scope')
         if supplied_scope and supplied_scope != request.pwa_scope:
             from django.http import JsonResponse

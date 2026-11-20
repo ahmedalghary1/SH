@@ -217,6 +217,7 @@
         location.href = response.url;
         return;
       }
+      checkOfflinePage(response);
       if (!response.ok) throw new Error('تعذر تحميل التبويب');
       const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
       if (thisNavigation !== navigationNumber) return;
@@ -269,10 +270,19 @@
     }
   }
 
+  function checkOfflinePage(response) {
+    if (response.headers?.get('X-PWA-Unavailable') === '1') {
+      const error = new Error('هذه الصفحة غير محفوظة للعمل دون اتصال. يمكنك متابعة العمل في الصفحات المجهزة.');
+      error.name = 'OfflinePageUnavailable';
+      throw error;
+    }
+  }
+
   function handleNavigationError(error) {
     if (error.name === 'AbortError') return;
-    if (typeof showPwaNotice === 'function') showPwaNotice('تعذر تحميل الصفحة. تحقق من الاتصال وحاول مرة أخرى.', true);
-    else alert('تعذر تحميل الصفحة. تحقق من الاتصال وحاول مرة أخرى.');
+    const message = error.name === 'OfflinePageUnavailable' ? error.message : 'تعذر تحميل الصفحة. تحقق من الاتصال وحاول مرة أخرى.';
+    if (typeof showPwaNotice === 'function') showPwaNotice(message, true);
+    else alert(message);
   }
 
   function formRequest(form, submitter) {
@@ -311,6 +321,7 @@
         cache.delete(sourceUrl);
         return true;
       }
+      checkOfflinePage(response);
       const responseUrl = new URL(response.url || request.url.href);
       if (responseUrl.origin !== location.origin || responseUrl.pathname.startsWith('/accounts/')) {
         location.href = responseUrl.href;
@@ -384,6 +395,7 @@
       render();
     }
     openTab(url.pathname + url.search, true, false, !newTab).catch(error => {
+      if (error.name === 'OfflinePageUnavailable') return handleNavigationError(error);
       if (error.name !== 'AbortError') {
         alert('تعذر تحميل الصفحة. سيتم فتحها بالطريقة العادية.');
         location.href = url.href;

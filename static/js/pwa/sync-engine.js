@@ -60,6 +60,7 @@ function showOfflineReadiness(detail) {
         pages_missing: `تعذر تجهيز ${readinessDetails.failed.length} من ملفات أو صفحات الأوفلاين؛ اضغط مزامنة`,
         worker_timeout: 'لم يرد مكوّن الأوفلاين؛ حدّث التطبيق ثم أعد المحاولة',
         worker_error: 'تعذر تشغيل مكوّن الأوفلاين؛ تحقق من السماح بتخزين بيانات الموقع',
+        worker_uncontrolled: 'أعد فتح التطبيق أثناء الاتصال لتفعيل الأوفلاين في هذه النافذة',
     };
     document.querySelectorAll('[data-offline-ready]').forEach(node => {
         node.textContent = offlineReady ? 'جاهز للعمل دون اتصال' : messages[detail.reason] || 'تعذر تجهيز الأوفلاين؛ أعد المحاولة';
@@ -138,11 +139,13 @@ async function prepareAppShell(extraUrls = []) {
         return;
     }
     if (!navigator.onLine) return;
-    const authorizedPages = await getMetadata('offline_pages') || [];
+    const embeddedPages = document.getElementById('pwa-offline-pages');
+    const snapshotPages = await getMetadata('offline_pages');
+    const authorizedPages = snapshotPages?.length ? snapshotPages : (embeddedPages ? JSON.parse(embeddedPages.textContent) : []);
     const urls = uniqueUrls([
         '/',
-        ...authorizedPages,
         `${window.location.pathname}${window.location.search}`,
+        ...authorizedPages,
         ...extraUrls,
     ]);
     if (!urls.length) return;
@@ -174,14 +177,15 @@ async function prepareAppShell(extraUrls = []) {
                 const needsMorePages = required.some(url => !urls.includes(url));
                 const hasSnapshot = Boolean(await getMetadata('last_bootstrap_at')) && latestPages.length > 0;
                 const failed = [...new Set([...(result?.failed || []), ...required.filter(url => !result?.cached?.includes(url))])];
-                const ready = shellCached && latestPages.length > 0
+                const controlled = navigator.serviceWorker.controller === worker;
+                const ready = controlled && shellCached && latestPages.length > 0
                     && required.every(url => result.cached.includes(url))
                     && hasSnapshot;
                 await setMetadata('offline_ready', ready);
                 await setMetadata('offline_failed_pages', failed);
                 showOfflineReadiness({ready, failed, error: hasSnapshot ? '' : bootstrapError,
                     reason: ready ? 'ready' : bootstrapErrorCode === 'scope_changed' ? 'scope_changed'
-                        : !result ? 'worker_timeout' : !hasSnapshot ? 'snapshot_missing'
+                        : !result ? 'worker_timeout' : !controlled ? 'worker_uncontrolled' : !hasSnapshot ? 'snapshot_missing'
                         : needsMorePages ? 'preparing' : 'pages_missing'});
                 syncStatusEvent({ state: ready ? 'offline_ready' : 'offline_not_ready', ...readinessDetails });
                 return needsMorePages;

@@ -73,9 +73,10 @@ def review(browser, base, unavailable):
         prepared = page.evaluate("""async () => {
             const scope=(await import('/static/js/pwa/identity.js')).getOfflineScope();
             const cache=await caches.open('sh-pwa-pages-v2-'+scope);
-            return !!await cache.match(location.origin+'/', {ignoreVary:true});
+            const paths = ['/', '/orders/create/', '/invoices/'];
+            return (await Promise.all(paths.map(path => cache.match(location.origin+path, {ignoreVary:true})))).every(Boolean);
         }""")
-        assert prepared, 'The launch URL must be cached independently of the first bootstrap'
+        assert prepared, 'Launch and authorized work screens must be cached independently of the first bootstrap'
         assert not page.evaluate('Boolean(window.startupLoaded)'), 'Offline preparation must not wait for image/window load'
         assert not page.evaluate('window.SHSync.isOfflineReady()')
         unavailable.set()
@@ -180,8 +181,46 @@ def review(browser, base, unavailable):
         }""")
         page.wait_for_function("!document.querySelector('[data-pwa-install]').hidden && !document.querySelector('[data-pwa-install]').disabled")
         assert not errors, errors
-        print('PASS: assigned administrator in all-branches mode completes offline preparation and enables installation in Brave', flush=True)
+        unavailable.set()
+        context.set_offline(True)
+        offline_paths = page.evaluate("JSON.parse(document.getElementById('pwa-offline-pages').textContent)")
+        page.goto(base + '/accounts/branches/', wait_until='domcontentloaded')
+        page.close()
+        page = context.new_page()
+        response = page.goto(base + '/', wait_until='domcontentloaded')
+        assert response.headers.get('x-pwa-local') == '1'
+        # An unsupported workspace link must leave the current document usable.
+        page.evaluate("""() => {
+            const link = document.createElement('a');
+            link.href = '/reports/unprepared-screen/';
+            document.body.append(link);
+            link.click();
+        }""")
+        page.wait_for_function("document.querySelector('[data-pwa-notice]')?.textContent.includes('غير محفوظة')")
+        assert page.url == base + '/'
+        page.evaluate("window.SHWorkspace.navigate('/invoices/')")
+        page.wait_for_selector('[data-local-data-view]')
+        failed_paths = page.evaluate("""async paths => {
+            const missing = [];
+            for (const path of paths) {
+                const response = await fetch(path, {headers: {'X-Workspace-Tab': '1'}});
+                if (response.headers.get('X-PWA-Local') !== '1' || !(await response.text()).includes('data-page-content')) missing.push(path);
+            }
+            return missing;
+        }""", offline_paths)
+        assert not failed_paths, failed_paths
+        print(f'PASS: after readiness and an unavailable branch screen, cold launch and all {len(offline_paths)} authorized screens work offline', flush=True)
+        unavailable.clear()
+        context.set_offline(False)
+        page.locator('form[action="/accounts/logout/"] button').click()
+        page.wait_for_url('**/accounts/login/')
+        unavailable.set()
+        response = page.goto(base + '/', wait_until='domcontentloaded')
+        assert response.from_service_worker and 'x-pwa-local' not in response.headers
+        assert not page.locator('[data-page-content]').count()
+        print('PASS: explicit sign-out revokes offline access to private screens', flush=True)
     finally:
+        unavailable.clear()
         context.close()
 
 

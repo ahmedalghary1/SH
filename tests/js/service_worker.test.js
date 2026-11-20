@@ -38,12 +38,14 @@ function worker() {
     return {
         stores, handlers, fetch(fn) { fetcher = fn; }, denyStorage() { blocked = true; },
         setOnline(online) { workerNavigator.onLine = online; },
-        async navigate(path, method = 'GET', workspace = false) {
-            let result;
+        async navigate(path, method = 'GET', workspace = false, clientId = 'page-1') {
+            let result, background;
             handlers.fetch({ request: { url: 'https://erp.test' + path, method,
                 mode: workspace ? 'cors' : 'navigate', destination: workspace ? '' : 'document',
                 headers: new Headers(workspace ? { 'X-Workspace-Tab': '1' } : {}),
-            }, clientId: 'page-1', resultingClientId: 'page-1', respondWith(promise) { result = promise; } });
+            }, clientId, resultingClientId: clientId, waitUntil(promise) { background = promise; },
+                respondWith(promise) { result = promise; } });
+            await background;
             return result;
         },
     };
@@ -166,11 +168,49 @@ test('authentication navigation clears private cached pages', async () => {
     const w = worker();
     w.fetch(async () => privateResponse('u1-b1-rmanager-s0'));
     await w.navigate('/orders/');
-    w.fetch(async () => new Response('login'));
+    w.fetch(async () => new Response('login', {headers: {'Content-Type': 'text/html'}}));
     await w.navigate('/accounts/login/');
     assert.equal([...w.stores.keys()].filter(key => key.includes('-pages-')).length, 0);
     w.fetch(async () => { throw new Error('offline'); });
     assert.equal((await w.navigate('/orders/')).status, 503);
+});
+
+test('late authenticated responses cannot replace a newer account or restore a signed-out session', async () => {
+    const w = worker();
+    let finish;
+    w.fetch(() => new Promise(resolve => { finish = resolve; }));
+    const oldPage = w.navigate('/', 'GET', false, 'old-tab');
+    w.fetch(async () => privateResponse('u2-b1-rmanager-s0', 'new account'));
+    await w.navigate('/');
+    finish(privateResponse('u1-b1-rmanager-s0', 'previous account'));
+    await oldPage;
+    w.setOnline(false);
+    assert.equal(await (await w.navigate('/')).text(), 'new account');
+    assert.equal((await w.navigate('/', 'GET', false, 'old-tab')).status, 503);
+
+    w.setOnline(true);
+    w.fetch(() => new Promise(resolve => { finish = resolve; }));
+    const beforeLogout = w.navigate('/');
+    await w.navigate('/accounts/logout/', 'POST');
+    finish(privateResponse('u2-b1-rmanager-s0'));
+    await beforeLogout;
+    w.setOnline(false);
+    assert.equal((await w.navigate('/')).status, 503);
+});
+
+test('account management and unavailable sign-in never discard a prepared offline installation', async () => {
+    const w = worker();
+    const scope = 'u1-b1-rmanager-s0';
+    w.fetch(async request => privateResponse(scope, new URL(request.url).pathname));
+    await w.navigate('/');
+    await w.navigate('/invoices/');
+    await w.navigate('/accounts/users/');
+    w.fetch(async () => { throw new Error('offline'); });
+    for (const path of ['/accounts/branches/', '/admin/', '/accounts/login/']) {
+        assert.equal((await w.navigate(path)).status, 503);
+        assert.equal(await (await w.navigate('/')).text(), '/');
+        assert.equal(await (await w.navigate('/invoices/', 'GET', true)).text(), '/invoices/');
+    }
 });
 
 test('a dispatched POST is never intercepted or automatically replayed', async () => {
@@ -179,6 +219,38 @@ test('a dispatched POST is never intercepted or automatically replayed', async (
     w.fetch(async () => { dispatched++; throw new Error('response lost'); });
     assert.equal(await w.navigate('/orders/create/', 'POST'), undefined);
     assert.equal(dispatched, 0);
+});
+
+test('preparation repairs a missing launch identity only after a verified online response', async () => {
+    const w = worker();
+    const scope = 'u1-b1-rmanager-s0';
+    const launch = privateResponse(scope, 'home');
+    launch.headers.set('Date', new Date().toUTCString());
+    w.fetch(async () => launch.clone());
+    await w.navigate('/');
+    w.stores.get('sh-pwa-identity-v1').delete('/__pwa_identity__');
+
+    async function prepare(online) {
+        let done, result;
+        w.fetch(async request => {
+            const path = new URL(request.url).pathname;
+            if (path === '/') {
+                if (!online) throw new Error('offline');
+                assert.equal(request.headers.get('X-PWA-Scope'), scope);
+                return launch.clone();
+            }
+            return new Response('asset', {headers: {'Content-Type': path.endsWith('.js') ? 'text/javascript'
+                : path.endsWith('.css') ? 'text/css' : 'application/json'}});
+        });
+        w.handlers.message({data: {type: 'CACHE_URLS', scope, urls: ['/']},
+            ports: [{postMessage(value) { result = value; }}], waitUntil(value) { done = value; }});
+        await done;
+        return result;
+    }
+    assert.ok((await prepare(false)).failed.includes('/'));
+    assert.ok((await prepare(true)).cached.includes('/'));
+    const saved = w.stores.get('sh-pwa-identity-v1').get('/__pwa_identity__');
+    assert.equal((await saved.json()).scope, scope);
 });
 
 test('permission errors and server 500 are visible instead of stale offline data', async () => {
@@ -299,7 +371,7 @@ test('an expired session keeps offline work available and explicit logout still 
     const offline = await w.navigate('/orders/create/');
     assert.equal(await offline.text(), 'prepared form');
     assert.equal(offline.headers.get('X-PWA-Local'), '1');
-    await w.navigate('/accounts/logout/');
+    assert.equal(await w.navigate('/accounts/logout/', 'POST'), undefined);
     w.fetch(async () => { throw new Error('offline'); });
     assert.equal((await w.navigate('/orders/create/')).status, 503);
 });
